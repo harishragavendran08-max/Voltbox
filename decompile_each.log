@@ -1,0 +1,232 @@
+﻿Decompile run start: 08/06/2026 00:52:47
+java.exe : Processing com.voltbox.ApiNoCacheFilter
+At line:12 char:3
++   & java -jar "$jar" "$f" --outputdir "$outRoot" 2>&1 | Out-File -Fil ...
++   ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: (Processing com.voltbox.ApiNoCacheFilter:String) [], RemoteException
+    + FullyQualifiedErrorId : NativeCommandError
+ 
+EXIT:0 -- C:\Users\acer\voltbox-java v11\target\classes\com\voltbox\ApiNoCacheFilter.class
+java.exe : Processing com.voltbox.BillMailer
+At line:12 char:3
++   & java -jar "$jar" "$f" --outputdir "$outRoot" 2>&1 | Out-File -Fil ...
++   ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: (Processing com.voltbox.BillMailer:String) [], RemoteException
+    + FullyQualifiedErrorId : NativeCommandError
+ 
+EXIT:0 -- C:\Users\acer\voltbox-java v11\target\classes\com\voltbox\BillMailer.class
+java.exe : Processing com.voltbox.CommunitySocket
+At line:12 char:3
++   & java -jar "$jar" "$f" --outputdir "$outRoot" 2>&1 | Out-File -Fil ...
++   ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: (Processing com.voltbox.CommunitySocket:String) [], RemoteException
+    + FullyQualifiedErrorId : NativeCommandError
+ 
+EXIT:0 -- C:\Users\acer\voltbox-java v11\target\classes\com\voltbox\CommunitySocket.class
+java.exe : Processing com.voltbox.Store$1
+At line:12 char:3
++   & java -jar "$jar" "$f" --outputdir "$outRoot" 2>&1 | Out-File -Fil ...
++   ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: (Processing com.voltbox.Store$1:String) [], RemoteException
+    + FullyQualifiedErrorId : NativeCommandError
+ 
+EXIT:0 -- C:\Users\acer\voltbox-java v11\target\classes\com\voltbox\Store$1.class
+java.exe : Processing com.voltbox.Store$Data
+At line:12 char:3
++   & java -jar "$jar" "$f" --outputdir "$outRoot" 2>&1 | Out-File -Fil ...
++   ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: (Processing com.voltbox.Store$Data:String) [], RemoteException
+    + FullyQualifiedErrorId : NativeCommandError
+ 
+EXIT:0 -- C:\Users\acer\voltbox-java v11\target\classes\com\voltbox\Store$Data.class
+java.exe : Processing com.voltbox.Store
+At line:12 char:3
++   & java -jar "$jar" "$f" --outputdir "$outRoot" 2>&1 | Out-File -Fil ...
++   ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: (Processing com.voltbox.Store:String) [], RemoteException
+    + FullyQualifiedErrorId : NativeCommandError
+ 
+EXIT:0 -- C:\Users\acer\voltbox-java v11\target\classes\com\voltbox\Store.class
+java.exe : Processing com.voltbox.VoltboxApp
+At line:12 char:3
++   & java -jar "$jar" "$f" --outputdir "$outRoot" 2>&1 | Out-File -Fil ...
++   ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: (Processing com.voltbox.VoltboxApp:String) [], RemoteException
+    + FullyQualifiedErrorId : NativeCommandError
+ 
+EXIT:0 -- C:\Users\acer\voltbox-java v11\target\classes\com\voltbox\VoltboxApp.class
+java.exe : Processing com.voltbox.WebSocketConfig
+At line:12 char:3
++   & java -jar "$jar" "$f" --outputdir "$outRoot" 2>&1 | Out-File -Fil ...
++   ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: (Processing com.voltbox.WebSocketConfig:String) [], RemoteException
+    + FullyQualifiedErrorId : NativeCommandError
+ 
+EXIT:0 -- C:\Users\acer\voltbox-java v11\target\classes\com\voltbox\WebSocketConfig.class
+java.exe : Processing com.voltbox.controller.AccountController$BillEmailRequest
+At line:12 char:3
++   & java -jar "$jar" "$f" --outputdir "$outRoot" 2>&1 | Out-File -Fil ...
++   ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: (Processing com....illEmailRequest:String) [], RemoteException
+    + FullyQualifiedErrorId : NativeCommandError
+ 
+EXIT:0 -- C:\Users\acer\voltbox-java v11\target\classes\com\voltbox\controller\AccountController$BillEmailRequest.class
+java.exe : Processing com.voltbox.controller.AccountController$CheckoutRequest
+At line:12 char:3
++   & java -jar "$jar" "$f" --outputdir "$outRoot" 2>&1 | Out-File -Fil ...
++   ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: (Processing com....CheckoutRequest:String) [], RemoteException
+    + FullyQualifiedErrorId : NativeCommandError
+ 
+EXIT:0 -- C:\Users\acer\voltbox-java v11\target\classes\com\voltbox\controller\AccountController$CheckoutRequest.class
+java.exe : Processing com.voltbox.controller.AccountController
+At line:12 char:3
++   & java -jar "$jar" "$f" --outputdir "$outRoot" 2>&1 | Out-File -Fil ...
++   ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: (Processing com....countController:String) [], RemoteException
+    + FullyQualifiedErrorId : NativeCommandError
+ 
+EXIT:0 -- C:\Users\acer\voltbox-java v11\target\classes\com\voltbox\controller\AccountController.class
+java.exe : Processing com.voltbox.controller.AuthController$GoogleLoginRequest
+At line:12 char:3
++   & java -jar "$jar" "$f" --outputdir "$outRoot" 2>&1 | Out-File -Fil ...
++   ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: (Processing com....gleLoginRequest:String) [], RemoteException
+    + FullyQualifiedErrorId : NativeCommandError
+ 
+EXIT:0 -- C:\Users\acer\voltbox-java v11\target\classes\com\voltbox\controller\AuthController$GoogleLoginRequest.class
+java.exe : Processing com.voltbox.controller.AuthController$LoginRequest
+At line:12 char:3
++   & java -jar "$jar" "$f" --outputdir "$outRoot" 2>&1 | Out-File -Fil ...
++   ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: (Processing com....er$LoginRequest:String) [], RemoteException
+    + FullyQualifiedErrorId : NativeCommandError
+ 
+EXIT:0 -- C:\Users\acer\voltbox-java v11\target\classes\com\voltbox\controller\AuthController$LoginRequest.class
+java.exe : Processing com.voltbox.controller.AuthController$SignupRequest
+At line:12 char:3
++   & java -jar "$jar" "$f" --outputdir "$outRoot" 2>&1 | Out-File -Fil ...
++   ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: (Processing com....r$SignupRequest:String) [], RemoteException
+    + FullyQualifiedErrorId : NativeCommandError
+ 
+EXIT:0 -- C:\Users\acer\voltbox-java v11\target\classes\com\voltbox\controller\AuthController$SignupRequest.class
+java.exe : Processing com.voltbox.controller.AuthController
+At line:12 char:3
++   & java -jar "$jar" "$f" --outputdir "$outRoot" 2>&1 | Out-File -Fil ...
++   ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: (Processing com.....AuthController:String) [], RemoteException
+    + FullyQualifiedErrorId : NativeCommandError
+ 
+EXIT:0 -- C:\Users\acer\voltbox-java v11\target\classes\com\voltbox\controller\AuthController.class
+java.exe : Can't load the class specified:
+At line:12 char:3
++   & java -jar "$jar" "$f" --outputdir "$outRoot" 2>&1 | Out-File -Fil ...
++   ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: (Can't load the class specified::String) [], RemoteException
+    + FullyQualifiedErrorId : NativeCommandError
+ 
+org.benf.cfr.reader.util.CannotLoadClassException: C:\Users\acer\voltbox-java 
+v11\target\classes\com\voltbox\controller\CommunityController$ApplicationRequest.class - java.io.IOException: No such 
+file C:\Users\acer\voltbox-java v11\target\classes\com\voltbox\controller\CommunityController$ApplicationRequest.class
+EXIT:0 -- C:\Users\acer\voltbox-java v11\target\classes\com\voltbox\controller\CommunityController$ApplicationRequest.class
+java.exe : Can't load the class specified:
+At line:12 char:3
++   & java -jar "$jar" "$f" --outputdir "$outRoot" 2>&1 | Out-File -Fil ...
++   ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: (Can't load the class specified::String) [], RemoteException
+    + FullyQualifiedErrorId : NativeCommandError
+ 
+org.benf.cfr.reader.util.CannotLoadClassException: C:\Users\acer\voltbox-java 
+v11\target\classes\com\voltbox\controller\CommunityController$GrantRequest.class - java.io.IOException: No such file 
+C:\Users\acer\voltbox-java v11\target\classes\com\voltbox\controller\CommunityController$GrantRequest.class
+EXIT:0 -- C:\Users\acer\voltbox-java v11\target\classes\com\voltbox\controller\CommunityController$GrantRequest.class
+java.exe : Processing com.voltbox.controller.CommunityController$ProductRequest
+At line:12 char:3
++   & java -jar "$jar" "$f" --outputdir "$outRoot" 2>&1 | Out-File -Fil ...
++   ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: (Processing com....$ProductRequest:String) [], RemoteException
+    + FullyQualifiedErrorId : NativeCommandError
+ 
+EXIT:0 -- C:\Users\acer\voltbox-java v11\target\classes\com\voltbox\controller\CommunityController$ProductRequest.class
+java.exe : Processing com.voltbox.controller.CommunityController$ReportRequest
+At line:12 char:3
++   & java -jar "$jar" "$f" --outputdir "$outRoot" 2>&1 | Out-File -Fil ...
++   ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: (Processing com....r$ReportRequest:String) [], RemoteException
+    + FullyQualifiedErrorId : NativeCommandError
+ 
+EXIT:0 -- C:\Users\acer\voltbox-java v11\target\classes\com\voltbox\controller\CommunityController$ReportRequest.class
+java.exe : Processing com.voltbox.controller.CommunityController$ResolveRequest
+At line:12 char:3
++   & java -jar "$jar" "$f" --outputdir "$outRoot" 2>&1 | Out-File -Fil ...
++   ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: (Processing com....$ResolveRequest:String) [], RemoteException
+    + FullyQualifiedErrorId : NativeCommandError
+ 
+EXIT:0 -- C:\Users\acer\voltbox-java v11\target\classes\com\voltbox\controller\CommunityController$ResolveRequest.class
+java.exe : Processing com.voltbox.controller.CommunityController
+At line:12 char:3
++   & java -jar "$jar" "$f" --outputdir "$outRoot" 2>&1 | Out-File -Fil ...
++   ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: (Processing com....unityController:String) [], RemoteException
+    + FullyQualifiedErrorId : NativeCommandError
+ 
+EXIT:0 -- C:\Users\acer\voltbox-java v11\target\classes\com\voltbox\controller\CommunityController.class
+java.exe : Processing com.voltbox.controller.ProductController
+At line:12 char:3
++   & java -jar "$jar" "$f" --outputdir "$outRoot" 2>&1 | Out-File -Fil ...
++   ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: (Processing com....oductController:String) [], RemoteException
+    + FullyQualifiedErrorId : NativeCommandError
+ 
+EXIT:0 -- C:\Users\acer\voltbox-java v11\target\classes\com\voltbox\controller\ProductController.class
+java.exe : Processing com.voltbox.model.Application
+At line:12 char:3
++   & java -jar "$jar" "$f" --outputdir "$outRoot" 2>&1 | Out-File -Fil ...
++   ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: (Processing com.voltbox.model.Application:String) [], RemoteException
+    + FullyQualifiedErrorId : NativeCommandError
+ 
+EXIT:0 -- C:\Users\acer\voltbox-java v11\target\classes\com\voltbox\model\Application.class
+java.exe : Processing com.voltbox.model.Order$Line
+At line:12 char:3
++   & java -jar "$jar" "$f" --outputdir "$outRoot" 2>&1 | Out-File -Fil ...
++   ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: (Processing com.voltbox.model.Order$Line:String) [], RemoteException
+    + FullyQualifiedErrorId : NativeCommandError
+ 
+EXIT:0 -- C:\Users\acer\voltbox-java v11\target\classes\com\voltbox\model\Order$Line.class
+java.exe : Processing com.voltbox.model.Order
+At line:12 char:3
++   & java -jar "$jar" "$f" --outputdir "$outRoot" 2>&1 | Out-File -Fil ...
++   ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: (Processing com.voltbox.model.Order:String) [], RemoteException
+    + FullyQualifiedErrorId : NativeCommandError
+ 
+EXIT:0 -- C:\Users\acer\voltbox-java v11\target\classes\com\voltbox\model\Order.class
+java.exe : Processing com.voltbox.model.Product
+At line:12 char:3
++   & java -jar "$jar" "$f" --outputdir "$outRoot" 2>&1 | Out-File -Fil ...
++   ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: (Processing com.voltbox.model.Product:String) [], RemoteException
+    + FullyQualifiedErrorId : NativeCommandError
+ 
+EXIT:0 -- C:\Users\acer\voltbox-java v11\target\classes\com\voltbox\model\Product.class
+java.exe : Processing com.voltbox.model.Report
+At line:12 char:3
++   & java -jar "$jar" "$f" --outputdir "$outRoot" 2>&1 | Out-File -Fil ...
++   ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: (Processing com.voltbox.model.Report:String) [], RemoteException
+    + FullyQualifiedErrorId : NativeCommandError
+ 
+EXIT:0 -- C:\Users\acer\voltbox-java v11\target\classes\com\voltbox\model\Report.class
+java.exe : Processing com.voltbox.model.User
+At line:12 char:3
++   & java -jar "$jar" "$f" --outputdir "$outRoot" 2>&1 | Out-File -Fil ...
++   ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: (Processing com.voltbox.model.User:String) [], RemoteException
+    + FullyQualifiedErrorId : NativeCommandError
+ 
+EXIT:0 -- C:\Users\acer\voltbox-java v11\target\classes\com\voltbox\model\User.class
+Decompile run end: 08/06/2026 00:53:17
