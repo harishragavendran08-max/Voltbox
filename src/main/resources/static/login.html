@@ -1,0 +1,72 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Sign in — Voltbox</title>
+  <meta name="description" content="Sign in to Voltbox." />
+
+  <!-- inter font — same one the shop uses, so the two pages feel related -->
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800&display=swap" rel="stylesheet" />
+
+  <link rel="stylesheet" href="style.css" />
+
+  <script>
+    if (localStorage.getItem("voltbox_token")) {
+      window.location.replace("index.html");
+    }
+  </script>
+</head>
+<body class="login-body">
+
+  <main class="login-card">
+
+    <!-- the little glowing logo up top -->
+    <div class="login-badge"><svg width="32" height="32" viewBox="0 0 24 24" aria-hidden="true"><path fill="#1a1d23" d="M13 2 3 14h7l-1 8 10-12h-7z"/></svg></div>
+    <h1 class="login-logo">voltbox</h1>
+    <p class="login-sub">Sign in to start your order.</p>
+
+    <!-- the actual form. app is handled in login.js -->
+    <form id="login-form" class="login-form" autocomplete="off" novalidate>
+
+      <label class="field">
+        <span class="field-label">Email</span>
+        <input id="email" name="email" type="email"
+               autocapitalize="off" spellcheck="false" required />
+      </label>
+
+      <label class="field">
+        <span class="field-label">Password</span>
+        <span class="field-pw">
+          <input id="password" name="password" type="password"
+                 autocomplete="current-password" required />
+          <!-- the eyeball toggles the password between hidden and visible -->
+          <button type="button" id="toggle-pw" class="pw-toggle"
+                  aria-label="Show password">show</button>
+        </span>
+      </label>
+
+      <!-- red error line — hidden until a login actually fails -->
+      <p id="login-error" class="login-error" role="alert" hidden></p>
+
+      <button type="submit" id="login-btn" class="login-btn">Sign in</button>
+    </form>
+
+
+    <div id="google-divider" class="auth-divider" hidden><span>or</span></div>
+    <div id="google-signin-button" class="google-btn-wrap" hidden></div>
+
+    <!-- a gentle hint, since this is a demo shop for a friend to poke at -->
+
+    <!-- new visitors go make their own account instead of using the demo one -->
+    <p class="auth-switch">
+      New here? <a href="signup.html">Create an account</a>
+    </p>
+
+  </main>
+  <script src="https://accounts.google.com/gsi/client" async defer></script>
+  <script src="login.js"></script>
+</body>
+</html>

@@ -1,0 +1,75 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Create account — Voltbox</title>
+  <meta name="description" content="Create a Voltbox account." />
+
+  <!-- inter font — same one the rest of the site uses -->
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800&display=swap" rel="stylesheet" />
+
+  <link rel="stylesheet" href="style.css" />
+
+
+  <script>
+    if (localStorage.getItem("voltbox_token")) {
+      window.location.replace("index.html");
+    }
+  </script>
+</head>
+<body class="login-body">
+
+  <main class="login-card">
+
+    <!-- same little glowing logo as the login page -->
+    <div class="login-badge"><svg width="32" height="32" viewBox="0 0 24 24" aria-hidden="true"><path fill="#1a1d23" d="M13 2 3 14h7l-1 8 10-12h-7z"/></svg></div>
+    <h1 class="login-logo">voltbox</h1>
+    <p class="login-sub">Create an account to start ordering.</p>
+
+    <!-- the actual form. handled in signup.js -->
+    <form id="signup-form" class="login-form" autocomplete="off" novalidate>
+
+      <label class="field">
+        <span class="field-label">Name</span>
+        <input id="name" name="name" type="text"
+               placeholder="Harish" autocomplete="name"
+               spellcheck="false" required />
+      </label>
+
+      <label class="field">
+        <span class="field-label">Email</span>
+        <input id="email" name="email" type="email"
+               placeholder="harish@voltbox.test" autocomplete="email"
+               autocapitalize="off" spellcheck="false" required />
+      </label>
+
+      <label class="field">
+        <span class="field-label">Password</span>
+        <span class="field-pw">
+          <input id="password" name="password" type="password"
+                 placeholder="at least 4 characters" autocomplete="new-password" required />
+          <!-- the eyeball toggles the password between hidden and visible -->
+          <button type="button" id="toggle-pw" class="pw-toggle"
+                  aria-label="Show password">show</button>
+        </span>
+      </label>
+
+      <!-- red error line — hidden until a signup actually fails -->
+      <p id="signup-error" class="login-error" role="alert" hidden></p>
+
+      <button type="submit" id="signup-btn" class="login-btn">Create account</button>
+    </form>
+
+    <!-- already have an account? back to the sign-in page -->
+    <p class="auth-switch">
+      Already have an account? <a href="login.html">Sign in</a>
+    </p>
+
+  </main>
+
+  <script src="signup.js"></script>
+</body>
+</html>

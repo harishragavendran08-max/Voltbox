@@ -1,0 +1,331 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Voltbox — Electronics Shop</title>
+  <meta name="description" content="Voltbox — a tiny electronics shop. Pick quantities, watch the total add up, print a retro receipt." />
+
+  <!-- inter font — looks clean and modern -->
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800&display=swap" rel="stylesheet" />
+  <!-- a monospace font for the receipt, so it reads like a real printed bill -->
+  <link href="https://fonts.googleapis.com/css2?family=VT323&family=JetBrains+Mono:wght@400;700&display=swap" rel="stylesheet" />
+
+  <link rel="stylesheet" href="style.css" />
+
+  <script>
+    if (!localStorage.getItem("voltbox_token")) {
+      window.location.replace("login.html");
+    }
+  </script>
+</head>
+<body>
+
+  <div class="app">
+
+    <!-- the top bar — logo (and donate) on the left, cart + avatar on the
+         right. the buttons on the right open a panel that drops down. -->
+    <header class="topbar" id="topbar">
+
+      <div class="topbar-left">
+        <h1 class="logo">
+          <span class="logo-mark" aria-hidden="true"><svg width="30" height="30" viewBox="0 0 40 40" xmlns="http://www.w3.org/2000/svg"><defs><linearGradient id="vbLogo" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#ffd23f"/><stop offset="1" stop-color="#ffb400"/></linearGradient></defs><rect x="3" y="3" width="34" height="34" rx="10" fill="url(#vbLogo)"/><svg x="9" y="9" width="22" height="22" viewBox="0 0 24 24"><path fill="#1a1d23" d="M13 2 3 14h7l-1 8 10-12h-7z"/></svg></svg></span>
+          voltbox
+        </h1>
+        <!-- the donate button lives here (added lower in the file's flow) -->
+        <button class="donate-btn" id="donate-btn">
+          <span data-icon="heart" data-icon-size="16"></span> Donate
+        </button>
+      </div>
+
+      <!-- search — filters the grid live as you type. see filterProducts() in app.js -->
+      <div class="topbar-search">
+        <span class="search-icon" data-icon="search" data-icon-size="17"></span>
+        <input id="product-search" type="search" placeholder="Search parts…"
+               autocomplete="off" spellcheck="false" aria-label="Search products" />
+      </div>
+
+      <div class="topbar-right">
+
+        <!-- ── the admin / community panel — what's inside depends on your
+             role (member, contributor, or moderator). built by community.js ── -->
+        <div class="drop" id="admin-drop">
+          <button class="icon-btn" id="admin-btn" aria-haspopup="true" aria-expanded="false"
+                  aria-label="Community">
+            <span data-icon="shield"></span>
+            <!-- red dot when the moderator has applications/reports waiting -->
+            <span class="badge alert" id="admin-badge" hidden>0</span>
+          </button>
+
+          <div class="sheet admin-sheet" id="admin-sheet" hidden>
+            <div class="sheet-head">
+              <span id="admin-title">Community</span>
+              <span class="sheet-head-note" id="admin-role-note"></span>
+            </div>
+            <!-- the whole body is drawn by community.js for the current role -->
+            <div id="admin-body"></div>
+          </div>
+        </div>
+
+        <!-- ── the cart button + its drop-down panel ── -->
+        <div class="drop" id="cart-drop">
+          <button class="icon-btn" id="cart-btn" aria-haspopup="true" aria-expanded="false"
+                  aria-label="Cart">
+            <span data-icon="cart"></span>
+            <!-- the little number badge; hidden while the cart is empty -->
+            <span class="badge" id="cart-badge" hidden>0</span>
+          </button>
+
+          <div class="sheet cart-sheet" id="cart-sheet" hidden>
+            <div class="sheet-head">
+              <span>Your cart</span>
+              <span class="sheet-head-note" id="cart-head-note">empty</span>
+            </div>
+
+            <!-- one row per item, built by app.js -->
+            <div class="sheet-body" id="cart-lines"></div>
+
+            <div class="sheet-divider"></div>
+
+            <div class="sheet-row total-row">
+              <span>Total</span>
+              <span class="strong">$<span id="cart-sheet-total">0.00</span></span>
+            </div>
+
+            <button class="sheet-btn solid" id="cart-sheet-checkout" disabled>
+              Checkout&nbsp;→
+            </button>
+          </div>
+        </div>
+
+
+        <!-- ── the avatar button + the profile panel ── -->
+        <div class="drop" id="profile-drop">
+          <button class="avatar-btn" id="avatar-btn" aria-haspopup="true" aria-expanded="false"
+                  aria-label="Your account">
+            <!-- the letter and the colour both come from the server -->
+            <span class="avatar" id="avatar">?</span>
+          </button>
+
+          <div class="sheet profile-sheet" id="profile-sheet" hidden>
+
+            <!-- who you are -->
+            <div class="profile-head">
+              <span class="avatar big" id="avatar-big">?</span>
+              <div class="profile-who">
+                <div class="profile-name" id="profile-name">friend</div>
+                <div class="profile-email" id="profile-email"></div>
+              </div>
+            </div>
+
+            <div class="sheet-divider"></div>
+
+            <!-- where bills get emailed. "linking" is just saving an address. -->
+            <div class="sheet-section">
+              <div class="sheet-label">Bills by email</div>
+              <p class="sheet-note" id="bill-email-note">
+                Add an address and your bills can be sent straight to your inbox.
+              </p>
+              <div class="link-row">
+                <input id="bill-email-input" type="email" placeholder="you@gmail.com"
+                       autocapitalize="off" spellcheck="false" />
+                <button class="sheet-btn small" id="bill-email-save">Link</button>
+              </div>
+              <p class="sheet-msg" id="bill-email-msg" hidden></p>
+            </div>
+
+            <div class="sheet-divider"></div>
+
+            <!-- past bills. the row is a button; tapping it opens the list. -->
+            <div class="sheet-section tight">
+              <button class="history-toggle" id="history-toggle" aria-expanded="false">
+                <span class="sheet-label">History</span>
+                <span class="history-count" id="history-count">0 bills</span>
+                <span class="chevron" id="history-chevron" data-icon="chevron-down" data-icon-size="16"></span>
+              </button>
+              <div class="history-list" id="history-list" hidden></div>
+            </div>
+
+            <div class="sheet-divider"></div>
+
+            <button class="sheet-btn ghost wide" id="logout-btn">Sign out</button>
+          </div>
+        </div>
+
+      </div>
+    </header>
+
+    <!-- product cards get dumped in here by app.js -->
+    <main>
+      <div class="grid" id="product-grid">
+        <div class="loading" id="loading">
+          <div class="spinner"></div>
+          <p>loading products…</p>
+        </div>
+      </div>
+    </main>
+
+    <!-- the bar stuck to the bottom — subtotal / tax / total + the checkout button -->
+    <div class="order-bar">
+      <div class="order-lines">
+        <div class="order-line muted">
+          <span>Subtotal</span>
+          <span>$<span id="subtotal">0.00</span></span>
+        </div>
+        <div class="order-line muted">
+          <span>Tax (8.25%)</span>
+          <span>$<span id="tax">0.00</span></span>
+        </div>
+        <div class="order-line total">
+          <span>Total</span>
+          <span>$<span id="total">0.00</span></span>
+        </div>
+      </div>
+      <button class="checkout-btn" id="checkout-btn" disabled>
+        Checkout&nbsp;→
+      </button>
+    </div>
+
+  </div>
+
+  <div class="modal-overlay" id="checkout-overlay" aria-hidden="true">
+    <div class="modal-card" id="checkout-card" role="dialog" aria-modal="true" aria-label="Checkout">
+      <button class="modal-close" id="checkout-close" aria-label="Close"><span data-icon="x" data-icon-size="18"></span></button>
+
+      <div id="checkout-form">
+        <h2 class="modal-title">Where's this headed?</h2>
+        <p class="modal-text">Fill this in and we'll ring it up — nothing here is a real charge.</p>
+
+        <label class="field">
+          <span class="field-label">Name</span>
+          <input id="checkout-name" type="text" autocomplete="name" placeholder="Your name" />
+        </label>
+        <label class="field">
+          <span class="field-label">Shipping address</span>
+          <textarea id="checkout-address" rows="2" placeholder="Street, city, postcode"></textarea>
+        </label>
+
+        <p class="modal-text small">
+          Card details — <strong>this is a demo, nothing here is real or saved.</strong>
+          Any numbers work.
+        </p>
+        <label class="field">
+          <span class="field-label">Card number</span>
+          <input id="checkout-card-number" type="text" inputmode="numeric" autocomplete="off"
+                 maxlength="19" placeholder="4242 4242 4242 4242" />
+        </label>
+        <div class="admin-row2">
+          <label class="field">
+            <span class="field-label">Expiry</span>
+            <input id="checkout-card-expiry" type="text" inputmode="numeric" autocomplete="off"
+                   maxlength="5" placeholder="MM/YY" />
+          </label>
+          <label class="field">
+            <span class="field-label">CVV</span>
+            <input id="checkout-card-cvv" type="text" inputmode="numeric" autocomplete="off"
+                   maxlength="4" placeholder="123" />
+          </label>
+        </div>
+
+        <p class="modal-msg" id="checkout-msg" hidden></p>
+        <button class="modal-btn solid" id="checkout-pay">Pay Now</button>
+      </div>
+
+      <!-- shown in place of the form for a beat once the fake charge "goes through" -->
+      <div class="pay-success" id="checkout-success" hidden>
+        <div class="pay-success-tick"><span data-icon="check" data-icon-size="30"></span></div>
+        <p class="pay-success-text">Payment successful</p>
+      </div>
+    </div>
+  </div>
+
+
+
+  <div class="receipt-overlay" id="receipt-overlay" aria-hidden="true">
+    <div class="receipt-sheet" id="receipt-sheet" role="dialog" aria-modal="true" aria-label="Your receipt">
+
+      <!-- the paper. everything printed lives inside here. -->
+      <div class="receipt-paper" id="receipt-paper">
+        <div id="receipt-body"><!-- built by app.js --></div>
+      </div>
+
+      <!-- buttons sit OUTSIDE the paper so they don't get printed -->
+      <div class="receipt-actions">
+        <button class="receipt-btn ghost" id="receipt-close">Keep shopping</button>
+        <button class="receipt-btn ghost" id="receipt-email"><span data-icon="mail" data-icon-size="16"></span> Email me this bill</button>
+        <button class="receipt-btn solid" id="receipt-print"><span data-icon="printer" data-icon-size="16"></span> Print / Save</button>
+      </div>
+
+      <!-- confirmation / error line under the buttons after emailing -->
+      <p class="receipt-msg" id="receipt-msg" hidden></p>
+    </div>
+  </div>
+
+
+  <div class="modal-overlay" id="donate-overlay" aria-hidden="true">
+    <div class="modal-card" id="donate-card" role="dialog" aria-modal="true" aria-label="Support Voltbox">
+      <button class="modal-close" id="donate-close" aria-label="Close"><span data-icon="x" data-icon-size="18"></span></button>
+      <div class="donate-badge" aria-hidden="true"><span data-icon="heart" data-icon-size="26"></span></div>
+      <h2 class="modal-title">Support Voltbox and feed poor kids</h2>
+      <p class="modal-text">
+        Every price here is kept honest by people who work with this gear day
+        to day — and it's free to use. If it's saved you time or money, a small
+        donation helps keep the lights on, grow the catalog, and put food on the
+        table for poor kids.
+      </p>
+      <div class="donate-photos" id="donate-photos" hidden></div>
+      <a class="modal-btn solid" id="donate-link" href="#" target="_blank" rel="noopener">
+        <span data-icon="heart" data-icon-size="16"></span> Donate
+      </a>
+      <div class="donate-upi" id="donate-upi" hidden>
+        <div class="donate-upi-row">
+          <span class="donate-upi-id" id="donate-upi-id"></span>
+          <button class="icon-mini" id="donate-upi-copy" aria-label="Copy UPI ID">
+            <span data-icon="copy" data-icon-size="15"></span>
+          </button>
+        </div>
+        <img class="donate-qr" id="donate-qr-img" alt="UPI QR code" hidden />
+      </div>
+
+      <p class="modal-fineprint">Totally optional. No pressure, no paywall.</p>
+    </div>
+  </div>
+
+
+  
+  <div class="modal-overlay" id="report-overlay" aria-hidden="true">
+    <div class="modal-card" id="report-card" role="dialog" aria-modal="true" aria-label="Report a listing">
+      <button class="modal-close" id="report-close" aria-label="Close"><span data-icon="x" data-icon-size="18"></span></button>
+      <div class="report-badge" aria-hidden="true"><span data-icon="flag" data-icon-size="24"></span></div>
+      <h2 class="modal-title">Report a listing</h2>
+      <p class="modal-text" id="report-what">Flag this listing for the moderator to look at.</p>
+
+      <label class="field">
+        <span class="field-label">What's wrong?</span>
+        <select id="report-reason">
+          <option value="Not an IT/electrical part">Not an IT/electrical part</option>
+          <option value="Wrong or misleading price">Wrong or misleading price</option>
+          <option value="Duplicate listing">Duplicate listing</option>
+          <option value="Spam or advertising">Spam or advertising</option>
+          <option value="Something else">Something else</option>
+        </select>
+      </label>
+
+      <label class="field">
+        <span class="field-label">Anything to add? (optional)</span>
+        <textarea id="report-note" rows="2" placeholder="A quick note for the moderator…"></textarea>
+      </label>
+
+      <p class="modal-msg" id="report-msg" hidden></p>
+      <button class="modal-btn solid" id="report-submit"><span data-icon="flag" data-icon-size="16"></span> Send report</button>
+    </div>
+  </div>
+
+
+  <script src="icons.js"></script>
+  <script src="app.js"></script>
+  <script src="community.js"></script>
+</body>
+</html>

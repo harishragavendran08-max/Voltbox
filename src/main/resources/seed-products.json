@@ -1,0 +1,173 @@
+[
+  {
+    "title": "USB-C 7-in-1 Hub",
+    "price": 34.99,
+    "description": "HDMI, USB-A, SD and passthrough charging in one dongle.",
+    "category": "adapters",
+    "image": "https://store.storeimages.cdn-apple.com/1/as-images.apple.com/is/MDGA4_AV1?wid=1144&hei=1144&fmt=jpeg&qlt=90&.v=SDhpTGdmZkRsb2JvWWpYWm5hZHJibFZya2lKWlJmUEwrYndWOTJiVWJWQUYwVmtIbGRkS25RMVpBRlo0bk5DUUNtQWV1RHBjR2p3SHN0Z2JBWE9kWlE",
+    "ratingRate": 4.7,
+    "ratingCount": 3041
+  },
+  {
+    "title": "USB-C to USB-C Cable 2m (100W)",
+    "price": 12.5,
+    "description": "Braided, 100W PD, doesn't fray after a week.",
+    "category": "cables",
+    "image": "https://images.unsplash.com/photo-1518770660439-4636190af475?auto=format&fit=crop&w=900&q=80",
+    "ratingRate": 4.7,
+    "ratingCount": 23
+  },
+  {
+    "title": "NZXT H5 Flow",
+    "price": 94.99,
+    "description": "Clean airflow case that's easy to build in.",
+    "category": "cases",
+    "image": "https://images.unsplash.com/photo-1591799264318-7e6ef8ddb7ea?auto=format&fit=crop&w=900&q=80",
+    "ratingRate": 4.0,
+    "ratingCount": 79
+  },
+  {
+    "title": "830-Point Solderless Breadboard",
+    "price": 5.99,
+    "description": "The standard breadboard for prototyping.",
+    "category": "components",
+    "image": "https://images.unsplash.com/photo-1516321318423-f06f85e504b3?auto=format&fit=crop&w=900&q=80",
+    "ratingRate": 4.6,
+    "ratingCount": 917
+  },
+  {
+    "title": "Dupont Connector Kit (620 pcs)",
+    "price": 15.99,
+    "description": "Crimp housings and pins in every count.",
+    "category": "connectors",
+    "image": "https://images.unsplash.com/photo-1558346490-a72e53ae2d4f?auto=format&fit=crop&w=900&q=80",
+    "ratingRate": 4.1,
+    "ratingCount": 2737
+  },
+  {
+    "title": "Noctua NH-D15",
+    "price": 109.99,
+    "description": "The legendary air cooler that shames some liquid loops.",
+    "category": "cooling",
+    "image": "https://images.unsplash.com/photo-1518770660439-4636190af475?auto=format&fit=crop&w=900&q=80",
+    "ratingRate": 4.4,
+    "ratingCount": 27
+  },
+  {
+    "title": "AMD Ryzen 5 5600",
+    "price": 129.99,
+    "description": "6-core AM4 workhorse, still the value pick for a budget build.",
+    "category": "cpus",
+    "image": "https://images.unsplash.com/photo-1535223289827-42f1e9919769?auto=format&fit=crop&w=900&q=80",
+    "ratingRate": 4.6,
+    "ratingCount": 21
+  },
+  {
+    "title": "NVIDIA RTX 4070 SUPER",
+    "price": 599.0,
+    "description": "The 1440p high-refresh pick, 12GB of VRAM.",
+    "category": "gpus",
+    "image": "https://images.unsplash.com/photo-1627875764093-315831ac12f7?auto=format&fit=crop&w=900&q=80",
+    "ratingRate": 4.1,
+    "ratingCount": 47
+  },
+  {
+    "title": "Corsair Vengeance 32GB DDR5-6000",
+    "price": 99.99,
+    "description": "2x16GB, the AM5 sweet spot for speed and stability.",
+    "category": "memory",
+    "image": "https://images.unsplash.com/photo-1565610222536-ef125c59da2b?auto=format&fit=crop&w=900&q=80",
+    "ratingRate": 4.2,
+    "ratingCount": 2899
+  },
+  {
+    "title": "Raspberry Pi 5 8GB",
+    "price": 79.99,
+    "description": "The fast one \u2014 a genuinely usable little desktop.",
+    "category": "microcontrollers",
+    "image": "https://images.unsplash.com/photo-1518770660439-4636190af475?auto=format&fit=crop&w=900&q=80",
+    "ratingRate": 4.4,
+    "ratingCount": 328
+  },
+  {
+    "title": "LG 27GL850 27\" 1440p Nano IPS",
+    "price": 349.0,
+    "description": "Fast IPS with lovely colour.",
+    "category": "monitors",
+    "image": "https://images.unsplash.com/photo-1524758631624-e2822e304c36?auto=format&fit=crop&w=900&q=80",
+    "ratingRate": 4.4,
+    "ratingCount": 1885
+  },
+  {
+    "title": "MSI B550 Tomahawk",
+    "price": 179.99,
+    "description": "The community-favourite AM4 board, strong VRMs.",
+    "category": "motherboards",
+    "image": "https://images.unsplash.com/photo-1518770660439-4636190af475?auto=format&fit=crop&w=900&q=80",
+    "ratingRate": 4.6,
+    "ratingCount": 1685
+  },
+  {
+    "title": "TP-Link Archer AX73 Wi-Fi 6 Router",
+    "price": 149.99,
+    "description": "Fast AX5400 router that covers a whole house.",
+    "category": "networking",
+    "image": "https://images.unsplash.com/photo-1544197150-b99a580bb7a8?auto=format&fit=crop&w=900&q=80",
+    "ratingRate": 4.8,
+    "ratingCount": 49
+  },
+  {
+    "title": "Logitech MX Master 3S",
+    "price": 99.99,
+    "description": "The productivity mouse, near-silent clicks.",
+    "category": "peripherals",
+    "image": "https://images.unsplash.com/photo-1527814050087-3793815479db?auto=format&fit=crop&w=900&q=80",
+    "ratingRate": 4.8,
+    "ratingCount": 1252
+  },
+  {
+    "title": "Corsair RM750e 750W 80+ Gold",
+    "price": 99.99,
+    "description": "Quiet, fully modular, ATX 3.0 ready.",
+    "category": "power",
+    "image": "https://images.unsplash.com/photo-1518770660439-4636190af475?auto=format&fit=crop&w=900&q=80",
+    "ratingRate": 4.8,
+    "ratingCount": 353
+  },
+  {
+    "title": "DHT22 Temp/Humidity Sensor",
+    "price": 9.99,
+    "description": "Reliable readings for a room monitor project.",
+    "category": "sensors",
+    "image": "https://images.unsplash.com/photo-1504384308090-c894fdcc538d?auto=format&fit=crop&w=900&q=80",
+    "ratingRate": 4.4,
+    "ratingCount": 52
+  },
+  {
+    "title": "Samsung 990 Pro 1TB NVMe",
+    "price": 109.99,
+    "description": "Gen4 flagship, blistering reads for OS and games.",
+    "category": "storage",
+    "image": "https://images.unsplash.com/photo-1587825140708-dfaf72ae4b04?auto=format&fit=crop&w=900&q=80",
+    "ratingRate": 4.8,
+    "ratingCount": 52
+  },
+  {
+    "title": "Fluke 117 Digital Multimeter",
+    "price": 199.0,
+    "description": "The multimeter electricians actually trust.",
+    "category": "tools",
+    "image": "https://images.unsplash.com/photo-1558618666-fcd25c85cd64?auto=format&fit=crop&w=900&q=80",
+    "ratingRate": 4.2,
+    "ratingCount": 20
+  },
+  {
+    "title": "Graphics card",
+    "price": 199.0,
+    "description": "A focused GPU for creative work and high-refresh gaming.",
+    "category": "gpus",
+    "image": "https://images.unsplash.com/photo-1591488320449-011701bb6704?auto=format&fit=crop&w=900&q=80",
+    "ratingRate": 4.2,
+    "ratingCount": 20
+  }
+]
