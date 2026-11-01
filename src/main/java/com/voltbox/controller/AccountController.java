@@ -4,17 +4,20 @@ import com.voltbox.BillMailer;
 import com.voltbox.CommunitySocket;
 import com.voltbox.Store;
 import com.voltbox.entity.Cart;
+import com.voltbox.entity.ProductEntity;
 import com.voltbox.model.Order;
 import com.voltbox.model.Product;
 import com.voltbox.model.User;
 import com.voltbox.service.CartService;
 import com.voltbox.service.InventoryService;
+import com.voltbox.service.ProductService;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.*;
+import java.util.stream.Collectors;
 
 @RestController
 public class AccountController {
@@ -23,6 +26,7 @@ public class AccountController {
     private final CommunitySocket socket;
     private final CartService cartService;
     private final InventoryService inventoryService;
+    private final ProductService productService;
 
     @Value("${voltbox.donate.url:https://share.google/5TT6WxXqXBWnaoSIP}")
     private String donateUrl;
@@ -38,12 +42,14 @@ public class AccountController {
             BillMailer mailer,
             CommunitySocket socket,
             CartService cartService,
-            InventoryService inventoryService) {
+            InventoryService inventoryService,
+            ProductService productService) {
         this.store = store;
         this.mailer = mailer;
         this.socket = socket;
         this.cartService = cartService;
         this.inventoryService = inventoryService;
+        this.productService = productService;
     }
 
     private User authUser(String authHeader) {
@@ -51,11 +57,36 @@ public class AccountController {
         return store.findByToken(authHeader.substring("Bearer ".length()).trim());
     }
 
+    private boolean canContribute(User u) {
+        return u != null && ("contributor".equals(u.role) || "moderator".equals(u.role));
+    }
+
+    @GetMapping("/api/my-products")
+    public ResponseEntity<?> getMyProducts(
+            @RequestHeader(value = "Authorization", required = false) String auth) {
+        User u = authUser(auth);
+        if (u == null) {
+            return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(Map.of("ok", false));
+        }
+        if (!canContribute(u)) {
+            return ResponseEntity.status(HttpStatus.FORBIDDEN)
+                    .body(Map.of("ok", false, "message", "Only contributors have an upload history."));
+        }
+
+        List<ProductEntity> mine = store.getProducts().stream()
+                .filter(p -> p.addedByEmail != null && p.addedByEmail.equalsIgnoreCase(u.email))
+                .map(productService::enrich)
+                .collect(Collectors.toList());
+        Collections.reverse(mine);
+        return ResponseEntity.ok(mine);
+    }
+
     @GetMapping("/api/me")
     public ResponseEntity<?> me(@RequestHeader(value = "Authorization", required = false) String auth) {
         User u = authUser(auth);
         if (u == null) return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(Map.of("ok", false));
 
+        boolean isAdmin = "moderator".equalsIgnoreCase(u.role) || "admin".equalsIgnoreCase(u.role);
         Map<String, Object> res = new LinkedHashMap<>();
         res.put("name", u.name);
         res.put("email", u.email);
@@ -65,6 +96,8 @@ public class AccountController {
         res.put("billEmail", u.billEmail != null ? u.billEmail : "");
         res.put("mailReady", mailer.isReady());
         res.put("role", u.role);
+        res.put("isAdmin", isAdmin);
+        res.put("canAccessAdminDashboard", isAdmin);
         res.put("donateUrl", donateUrl);
         res.put("upiId", upiId);
         res.put("donateQr", donateQr);

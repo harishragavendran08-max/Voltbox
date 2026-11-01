@@ -1375,5 +1375,99 @@ export function computeSystemHealthMetrics(input: {
   };
 }
 
+export interface AccountPermissions {
+  role: 'member' | 'contributor' | 'moderator';
+  isAdmin: boolean;
+  canBrowseAndBuy: boolean;
+  canAccessAdminDashboard: boolean;
+  canManageInventory: boolean;
+  roleBadge: string;
+  allowedLoginModes: Array<'user' | 'admin'>;
+}
 
+export function evaluateAccountPermissions(rawRole?: string | null): AccountPermissions {
+  const normalized = String(rawRole || 'member').trim().toLowerCase();
+  if (normalized === 'moderator' || normalized === 'admin') {
+    return {
+      role: 'moderator',
+      isAdmin: true,
+      canBrowseAndBuy: true,
+      canAccessAdminDashboard: true,
+      canManageInventory: true,
+      roleBadge: 'ADMIN · FULL ACCESS',
+      allowedLoginModes: ['user', 'admin'],
+    };
+  }
+  if (normalized === 'contributor') {
+    return {
+      role: 'contributor',
+      isAdmin: false,
+      canBrowseAndBuy: true,
+      canAccessAdminDashboard: false,
+      canManageInventory: true,
+      roleBadge: 'CONTRIBUTOR · CATALOG',
+      allowedLoginModes: ['user'],
+    };
+  }
+  return {
+    role: 'member',
+    isAdmin: false,
+    canBrowseAndBuy: true,
+    canAccessAdminDashboard: false,
+    canManageInventory: false,
+    roleBadge: 'USER · SHOPPER',
+    allowedLoginModes: ['user'],
+  };
+}
 
+export interface SocialLoginIdentity {
+  provider: 'google' | 'apple';
+  email: string;
+  name: string;
+  role: 'member';
+  isPrivateRelay: boolean;
+}
+
+export function resolveSocialLoginIdentity(input: {
+  provider: 'google' | 'apple';
+  email?: string | null;
+  name?: string | null;
+  hideMyEmail?: boolean;
+}): SocialLoginIdentity {
+  const provider = input.provider === 'apple' ? 'apple' : 'google';
+  let rawEmail = String(input.email || '').trim().toLowerCase();
+  let rawName = String(input.name || '').trim();
+
+  if (!rawEmail) {
+    rawEmail = provider === 'apple' ? 'maya.lin@icloud.com' : 'alex.chen@gmail.com';
+  }
+  if (!rawEmail.includes('@')) {
+    rawEmail = `${rawEmail}@${provider === 'apple' ? 'icloud.com' : 'gmail.com'}`;
+  }
+
+  let isPrivateRelay = false;
+  if (provider === 'apple' && input.hideMyEmail) {
+    const localPart = rawEmail.split('@')[0].replace(/[^a-z0-9._-]/g, '') || 'apple.user';
+    rawEmail = `${localPart}.relay@privaterelay.appleid.com`;
+    isPrivateRelay = true;
+  } else if (rawEmail.endsWith('@privaterelay.appleid.com')) {
+    isPrivateRelay = true;
+  }
+
+  if (!rawName) {
+    const handle = rawEmail.split('@')[0].replace(/\.relay$/, '');
+    rawName = handle
+      .split(/[._-]+/)
+      .filter(Boolean)
+      .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+      .join(' ') || (provider === 'apple' ? 'Apple Shopper' : 'Google Shopper');
+  }
+
+  return {
+    provider,
+    email: rawEmail,
+    name: rawName,
+    role: 'member',
+    isPrivateRelay,
+  };
+}

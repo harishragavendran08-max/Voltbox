@@ -214,3 +214,53 @@ function shake() {
   void card.offsetWidth;
   card.classList.add("shake");
 }
+
+var signupGoogleBtn = document.getElementById("signup-google-btn");
+var signupAppleBtn  = document.getElementById("signup-apple-btn");
+
+function socialSignup(provider) {
+  hideError();
+  setBusy(true);
+  pulseSignalTraces();
+  var isApple = provider === "apple";
+  var nm = (nameEl && nameEl.value.trim()) || (isApple ? "Maya Lin" : "Alex Chen");
+  var em = (emailEl && emailEl.value.trim()) || (isApple ? "maya.lin@icloud.com" : "alex.chen@gmail.com");
+
+  fetch(isApple ? "/api/auth/apple" : "/api/auth/google", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ name: nm, email: em })
+  })
+    .then(function (r) {
+      return r.json().then(function (data) { return { ok: r.ok, data: data }; });
+    })
+    .then(function (res) {
+      if (res.ok) {
+        sessionStorage.removeItem("voltbox_signed_out");
+        localStorage.setItem("voltbox_token", res.data.token);
+        localStorage.setItem("voltbox_user", res.data.name || nm);
+        localStorage.setItem("voltbox_role", res.data.role || "member");
+        localStorage.setItem("voltbox_auth_provider", provider);
+        window.location.replace("index.html");
+      } else {
+        setBusy(false);
+        showError((res.data && res.data.message) || "Social sign-in failed.");
+      }
+    })
+    .catch(function () {
+      setBusy(false);
+      showError("Can't reach the server — is it still running?");
+    });
+}
+
+if (signupGoogleBtn) {
+  signupGoogleBtn.addEventListener("click", function () {
+    socialSignup("google");
+  });
+}
+
+if (signupAppleBtn) {
+  signupAppleBtn.addEventListener("click", function () {
+    socialSignup("apple");
+  });
+}

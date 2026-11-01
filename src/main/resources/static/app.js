@@ -293,6 +293,14 @@ function fetchInventorySummary() {
     .catch(function () { return null; });
 }
 
+function isCurrentUserAdmin() {
+  return Boolean(me && (me.isAdmin || me.role === "moderator" || me.role === "admin"));
+}
+
+function canCurrentUserRestock() {
+  return Boolean(me && (me.isAdmin || me.role === "moderator" || me.role === "admin" || me.role === "contributor"));
+}
+
 function paintProfile() {
   avatarEl.textContent = me.initial;
   avatarBigEl.textContent = me.initial;
@@ -302,6 +310,86 @@ function paintProfile() {
   profileNameEl.textContent = me.name;
   profileEmailEl.textContent = me.email;
 
+  var isAdmin = isCurrentUserAdmin();
+  localStorage.setItem("voltbox_role", me.role || "member");
+
+  var adminConsoleLinkEl = document.getElementById("admin-console-link");
+  if (adminConsoleLinkEl) {
+    adminConsoleLinkEl.hidden = !isAdmin;
+  }
+
+  var adminDropEl = document.getElementById("admin-drop");
+  if (adminDropEl) {
+    adminDropEl.hidden = !canCurrentUserRestock();
+  }
+
+  var roleBadgeEl = document.getElementById("topbar-role-badge");
+  var roleLabelEl = document.getElementById("topbar-role-label");
+  var roleLedEl   = document.getElementById("topbar-role-led");
+  if (roleLabelEl) {
+    roleLabelEl.textContent = isAdmin ? "ADMIN LOGIN · Storefront + /admin" : "USER LOGIN · Browse & Buy Only";
+  }
+  if (roleLedEl) {
+    roleLedEl.className = isAdmin ? "led-dot amber" : "led-dot emerald";
+  }
+  if (roleBadgeEl) {
+    roleBadgeEl.setAttribute("data-role", isAdmin ? "admin" : "user");
+  }
+
+  var profileRolePillEl = document.getElementById("profile-role-pill");
+  if (profileRolePillEl) {
+    profileRolePillEl.textContent = isAdmin
+      ? "ADMIN LOGIN · Storefront + Admin Console"
+      : "USER LOGIN · Shopper · Browse & Buy Only";
+    profileRolePillEl.className = isAdmin ? "profile-role-pill admin" : "profile-role-pill user";
+  }
+
+  var profileAdminShortcutEl = document.getElementById("profile-admin-shortcut");
+  if (profileAdminShortcutEl) {
+    profileAdminShortcutEl.hidden = !isAdmin;
+  }
+
+  // Update Storefront Role & Capability Strip
+  var srbBannerEl      = document.getElementById("storefront-role-banner");
+  var srbBadgeEl       = document.getElementById("srb-badge");
+  var srbModeSubEl     = document.getElementById("srb-mode-sub");
+  var srbPermsListEl   = document.getElementById("srb-perms-list");
+  var srbSwitchUserBtn = document.getElementById("srb-switch-user-btn");
+  var srbSwitchAdmBtn  = document.getElementById("srb-switch-admin-btn");
+  var srbOpenAdmLink   = document.getElementById("srb-open-admin-link");
+
+  if (srbBannerEl) {
+    srbBannerEl.setAttribute("data-role", isAdmin ? "admin" : "user");
+  }
+  if (srbBadgeEl) {
+    srbBadgeEl.textContent = isAdmin ? "ADMIN LOGIN" : "USER LOGIN";
+    srbBadgeEl.className = isAdmin ? "rc-badge admin" : "rc-badge user";
+  }
+  if (srbModeSubEl) {
+    srbModeSubEl.textContent = isAdmin
+      ? "Storefront + Admin Console"
+      : "Shopper · Browse & Buy (Browse & Buy Only)";
+  }
+  if (srbPermsListEl) {
+    srbPermsListEl.innerHTML = isAdmin
+      ? '<span class="srb-perm">✓ Full access to Storefront Catalog &amp; Checkout</span>' +
+        '<span class="srb-perm">✓ Dedicated <code>/admin</code> CRUD Dashboard</span>' +
+        '<span class="srb-perm">✓ Real-time Warehouse Stock &amp; Restock Controls</span>' +
+        '<span class="srb-perm">✓ Spring Boot JPA &amp; JVM System Health Telemetry</span>'
+      : '<span class="srb-perm">✓ Sign in with <strong>Google</strong> or <strong>Apple ID</strong></span>' +
+        '<span class="srb-perm">✓ Browse 22+ PC parts, specs &amp; 6M price charts</span>' +
+        '<span class="srb-perm">✓ Build a 4-slot Rig &amp; checkout with thermal receipts</span>' +
+        '<span class="srb-perm restricted">✕ No access to <code>/admin</code> CRUD or stock controls</span>';
+  }
+  if (srbSwitchUserBtn) srbSwitchUserBtn.hidden = !isAdmin;
+  if (srbSwitchAdmBtn)  srbSwitchAdmBtn.hidden  = isAdmin;
+  if (srbOpenAdmLink)   srbOpenAdmLink.hidden   = !isAdmin;
+
+  var portalCardUser  = document.getElementById("portal-card-user");
+  var portalCardAdmin = document.getElementById("portal-card-admin");
+  if (portalCardUser)  portalCardUser.classList.toggle("active", !isAdmin);
+  if (portalCardAdmin) portalCardAdmin.classList.toggle("active", isAdmin);
+
   billInputEl.value = me.billEmail || "";
   paintHistoryCount(me.orderCount);
 
@@ -310,6 +398,65 @@ function paintProfile() {
       "Emailing bills isn't switched on for this shop yet — you can still " +
       "save an address here for when it is.";
   }
+}
+
+function openRolePortalModal() {
+  var overlay = document.getElementById("role-portal-overlay");
+  if (!overlay) return;
+  closeAllSheets();
+  overlay.classList.add("open");
+  overlay.setAttribute("aria-hidden", "false");
+  document.body.classList.add("no-scroll");
+}
+
+function closeRolePortalModal() {
+  var overlay = document.getElementById("role-portal-overlay");
+  if (!overlay) return;
+  overlay.classList.remove("open");
+  overlay.setAttribute("aria-hidden", "true");
+  document.body.classList.remove("no-scroll");
+}
+
+function switchStorefrontSession(mode, provider, redirectUrl) {
+  var endpoint = "/api/login";
+  var payload;
+  if (provider === "google") {
+    endpoint = "/api/auth/google";
+    payload = { email: "alex.chen@gmail.com", name: "Alex Chen" };
+  } else if (provider === "apple") {
+    endpoint = "/api/auth/apple";
+    payload = { email: "maya.lin@icloud.com", name: "Maya Lin", hideMyEmail: false };
+  } else if (mode === "admin") {
+    endpoint = "/api/login";
+    payload = { email: "harish@voltbox.test", password: "Harish123", loginType: "admin" };
+  } else {
+    endpoint = "/api/login";
+    payload = { email: "alex.chen@gmail.com", password: "Shopper123", loginType: "user" };
+  }
+
+  fetch(endpoint, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload)
+  })
+    .then(function (r) { return r.json(); })
+    .then(function (data) {
+      if (data && data.token) {
+        sessionStorage.removeItem("voltbox_signed_out");
+        localStorage.setItem("voltbox_token", data.token);
+        localStorage.setItem("voltbox_user", data.name || "");
+        localStorage.setItem("voltbox_role", data.role || "member");
+        localStorage.setItem("voltbox_auth_provider", data.authProvider || provider || "password");
+        closeRolePortalModal();
+        if (redirectUrl) {
+          window.location.href = redirectUrl;
+        } else {
+          loadMe();
+          triggerPerimeterSignalPulse();
+        }
+      }
+    })
+    .catch(function () {});
 }
 
 function paintHistoryCount(n) {
@@ -327,6 +474,8 @@ function forgetAndGoToLogin() {
   sessionStorage.setItem("voltbox_signed_out", "1");
   localStorage.removeItem("voltbox_token");
   localStorage.removeItem("voltbox_user");
+  localStorage.removeItem("voltbox_role");
+  localStorage.removeItem("voltbox_auth_provider");
   window.location.replace("login.html");
 }
 
@@ -788,17 +937,19 @@ function openSpecDrawer(productId) {
   specDrawerOverlayEl.setAttribute("aria-hidden", "false");
   document.body.classList.add("no-scroll");
 
-  // Fetch live product + inventory entity state from Spring Boot ProductController
-  fetch("/api/products/" + productId + "/inventory")
-    .then(function (res) {
-      if (!res.ok) return null;
-      return res.json();
-    })
-    .then(function (payload) {
-      if (!payload || !payload.product) return;
-      var liveProduct = normalizeProductEntity(payload.product);
-      if (payload.inventory) {
-        liveProduct.inventory = payload.inventory;
+  // Fetch individual product details by ID from Spring Boot ProductController (GET /api/products/{id})
+  Promise.all([
+    fetch("/api/products/" + productId).then(function (r) { return r.ok ? r.json() : null; }),
+    fetch("/api/products/" + productId + "/inventory").then(function (r) { return r.ok ? r.json() : null; })
+  ])
+    .then(function (results) {
+      var detailEntity = results[0];
+      var invPayload = results[1];
+      var rawProduct = detailEntity || (invPayload && invPayload.product);
+      if (!rawProduct) return;
+      var liveProduct = normalizeProductEntity(rawProduct);
+      if (invPayload && invPayload.inventory) {
+        liveProduct.inventory = invPayload.inventory;
       }
       for (var i = 0; i < products.length; i++) {
         if (products[i].id === liveProduct.id) {
@@ -869,15 +1020,19 @@ function populateSpecDrawer(p) {
     '<div class="spec-row"><span>Power / Thermal</span><span>' + esc(specs.powerDraw || "65W Nominal") + '</span></div>' +
     '<div class="spec-row"><span>Warranty</span><span>' + esc(specs.warranty || "3-Year Hardware") + '</span></div>';
 
+  var restockBtnHtml = canCurrentUserRestock()
+    ? '<button class="restock-btn" type="button" onclick="restockProduct(' + p.id + ')">' +
+        icon("refresh", 14) + ' <span>Restock +3</span>' +
+      '</button>'
+    : '';
+
   document.getElementById("spec-actions-bar").innerHTML =
     '<div class="spec-qty-control">' +
       '<button class="qty-btn" onclick="dec(' + p.id + ')" ' + (q <= 0 ? 'disabled' : '') + ' aria-label="Decrease quantity in drawer">−</button>' +
       '<span class="qty-value' + (q > 0 ? ' active' : '') + '">' + q + ' in cart</span>' +
       '<button class="qty-btn" onclick="inc(' + p.id + ')" aria-label="Increase quantity in drawer">+</button>' +
     '</div>' +
-    '<button class="restock-btn" type="button" onclick="restockProduct(' + p.id + ')">' +
-      icon("refresh", 14) + ' <span>Restock +3</span>' +
-    '</button>';
+    restockBtnHtml;
 
   var chartContainer = document.getElementById("drawer-chart-container");
   if (chartContainer && typeof window.renderVoltboxPriceChart === "function") {
@@ -1757,6 +1912,73 @@ function openOrderFromHistory(orderId) {
 
 function wireUpButtons() {
   logoutEl.addEventListener("click", signOut);
+
+  // User Login (Browse & Buy Only) vs Admin Login (Storefront + Admin Console) Portal & Banner Controls
+  var topbarRoleBadgeBtn  = document.getElementById("topbar-role-badge");
+  var profilePortalBtn    = document.getElementById("open-role-portal-from-profile");
+  var srbSwitchUserBtn    = document.getElementById("srb-switch-user-btn");
+  var srbSwitchAdmBtn     = document.getElementById("srb-switch-admin-btn");
+  var srbCompareBtn       = document.getElementById("srb-compare-btn");
+  var rolePortalOverlay   = document.getElementById("role-portal-overlay");
+  var rolePortalCloseBtn  = document.getElementById("role-portal-close");
+  var portalGoogleBtn     = document.getElementById("portal-google-login-btn");
+  var portalAppleBtn      = document.getElementById("portal-apple-login-btn");
+  var portalUserInstBtn   = document.getElementById("portal-user-instant-btn");
+  var portalAdminConsBtn  = document.getElementById("portal-admin-console-btn");
+  var portalAdminStoreBtn = document.getElementById("portal-admin-store-btn");
+
+  if (topbarRoleBadgeBtn) {
+    topbarRoleBadgeBtn.addEventListener("click", openRolePortalModal);
+  }
+  if (profilePortalBtn) {
+    profilePortalBtn.addEventListener("click", openRolePortalModal);
+  }
+  if (srbCompareBtn) {
+    srbCompareBtn.addEventListener("click", openRolePortalModal);
+  }
+  if (srbSwitchUserBtn) {
+    srbSwitchUserBtn.addEventListener("click", function () {
+      switchStorefrontSession("user", "password", null);
+    });
+  }
+  if (srbSwitchAdmBtn) {
+    srbSwitchAdmBtn.addEventListener("click", function () {
+      switchStorefrontSession("admin", "password", null);
+    });
+  }
+  if (rolePortalCloseBtn) {
+    rolePortalCloseBtn.addEventListener("click", closeRolePortalModal);
+  }
+  if (rolePortalOverlay) {
+    rolePortalOverlay.addEventListener("click", function (e) {
+      if (e.target === rolePortalOverlay) closeRolePortalModal();
+    });
+  }
+  if (portalGoogleBtn) {
+    portalGoogleBtn.addEventListener("click", function () {
+      switchStorefrontSession("user", "google", null);
+    });
+  }
+  if (portalAppleBtn) {
+    portalAppleBtn.addEventListener("click", function () {
+      switchStorefrontSession("user", "apple", null);
+    });
+  }
+  if (portalUserInstBtn) {
+    portalUserInstBtn.addEventListener("click", function () {
+      switchStorefrontSession("user", "password", null);
+    });
+  }
+  if (portalAdminConsBtn) {
+    portalAdminConsBtn.addEventListener("click", function () {
+      switchStorefrontSession("admin", "password", "/admin");
+    });
+  }
+  if (portalAdminStoreBtn) {
+    portalAdminStoreBtn.addEventListener("click", function () {
+      switchStorefrontSession("admin", "password", null);
+    });
+  }
 
   document.addEventListener("visibilitychange", function () {
     if (document.visibilityState === "hidden") flushCartSave();

@@ -72,6 +72,22 @@ function loadAllAdminData() {
       document.getElementById("admin-operator-name").textContent = me.name;
       document.getElementById("admin-operator-avatar").textContent = me.initial || me.name.charAt(0).toUpperCase();
       document.getElementById("admin-operator-role").textContent = (me.role || "moderator").toUpperCase() + " · Spring Boot";
+
+      var isAdmin = Boolean(me.isAdmin || me.role === "moderator" || me.role === "admin");
+      var guardEl = document.getElementById("admin-access-guard");
+      if (guardEl) {
+        if (!isAdmin) {
+          var guardName = document.getElementById("guard-user-name");
+          var guardEmail = document.getElementById("guard-user-email");
+          if (guardName) guardName.textContent = me.name;
+          if (guardEmail) guardEmail.textContent = me.email || "";
+          guardEl.hidden = false;
+          guardEl.setAttribute("aria-hidden", "false");
+        } else {
+          guardEl.hidden = true;
+          guardEl.setAttribute("aria-hidden", "true");
+        }
+      }
     }
 
     renderKpiStrip();
@@ -440,21 +456,34 @@ window.openEditProductModal = function (productId) {
   }
   if (!p) return;
 
-  document.getElementById("form-product-id").value = String(p.id);
-  document.getElementById("product-modal-title").textContent = "Edit Product #" + p.id + " (" + p.sku + ")";
-  document.getElementById("product-modal-submit").textContent = "Save Changes";
-  document.getElementById("form-product-title").value = p.title || p.name || "";
-  document.getElementById("form-product-category").value = p.category || "components";
-  document.getElementById("form-product-price").value = Number(p.price || 0).toFixed(2);
-  document.getElementById("form-product-stock").value = String(typeof p.stockQuantity === "number" ? p.stockQuantity : (p.quantity || 0));
-  document.getElementById("form-product-image").value = p.image || "";
-  document.getElementById("form-product-desc").value = p.description || "";
-  document.getElementById("form-product-official").checked = Boolean(p.official);
+  function applyProductToForm(prod) {
+    document.getElementById("form-product-id").value = String(prod.id);
+    document.getElementById("product-modal-title").textContent = "Edit Product #" + prod.id + " (" + prod.sku + ")";
+    document.getElementById("product-modal-submit").textContent = "Save Changes";
+    document.getElementById("form-product-title").value = prod.title || prod.name || "";
+    document.getElementById("form-product-category").value = prod.category || "components";
+    document.getElementById("form-product-price").value = Number(prod.price || 0).toFixed(2);
+    document.getElementById("form-product-stock").value = String(typeof prod.stockQuantity === "number" ? prod.stockQuantity : (prod.quantity || 0));
+    document.getElementById("form-product-image").value = prod.image || "";
+    document.getElementById("form-product-desc").value = prod.description || "";
+    document.getElementById("form-product-official").checked = Boolean(prod.official);
+  }
+
+  applyProductToForm(p);
   document.getElementById("form-error-msg").hidden = true;
 
   var backdrop = document.getElementById("product-modal-backdrop");
   backdrop.hidden = false;
   backdrop.setAttribute("aria-hidden", "false");
+
+  adminFetch("/api/products/" + productId)
+    .then(function (r) { return r.ok ? r.json() : null; })
+    .then(function (fresh) {
+      if (fresh && fresh.id === productId) {
+        applyProductToForm(fresh);
+      }
+    })
+    .catch(function () {});
 };
 
 function closeProductModal() {

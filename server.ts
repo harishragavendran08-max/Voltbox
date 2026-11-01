@@ -21,6 +21,8 @@ import {
   sanitizeChatMessage,
   toProductJpaEntity,
   computeSystemHealthMetrics,
+  evaluateAccountPermissions,
+  resolveSocialLoginIdentity,
 } from './src/logic/inventory';
 
 const PORT = Number(process.env.PORT) || 3000;
@@ -168,12 +170,18 @@ function notFound(res: Response, message: string) {
   return res.status(404).json({ ok: false, message });
 }
 
-function signedInResponse(user: User) {
+function signedInResponse(user: User, authProvider = 'password') {
+  const permissions = evaluateAccountPermissions(user.role);
   return {
     ok: true,
     token: store.startSession(user),
     name: user.name,
     email: user.email,
+    role: user.role,
+    isAdmin: permissions.isAdmin,
+    canAccessAdminDashboard: permissions.canAccessAdminDashboard,
+    authProvider,
+    permissions,
   };
 }
 
@@ -518,29 +526,50 @@ app.post('/api/signup', (req, res) => {
 app.post('/api/login', (req, res) => {
   const email = typeof req.body?.email === 'string' ? req.body.email.trim() : '';
   const password = typeof req.body?.password === 'string' ? req.body.password : '';
+  const loginType = typeof req.body?.loginType === 'string' ? req.body.loginType.trim().toLowerCase() : 'user';
 
   const user = store.findByEmail(email);
-  if (user && user.password === password) {
-    return res.json(signedInResponse(user));
+  if (!user || user.password !== password) {
+    return res.status(401).json({ ok: false, message: 'Wrong email or password.' });
   }
-  return res.status(401).json({ ok: false, message: 'Wrong email or password.' });
+
+  const permissions = evaluateAccountPermissions(user.role);
+  if (loginType === 'admin' && !permissions.isAdmin) {
+    return res.status(403).json({
+      ok: false,
+      message: 'Access denied: This is a User (Shopper) account for browsing and buying. Switch to User Login or sign in with an Administrator account.',
+    });
+  }
+
+  return res.json(signedInResponse(user, 'password'));
 });
 
-app.post('/api/google-login', async (req, res) => {
+app.post(['/api/auth/google', '/api/google-login'], async (req, res) => {
   const credential = typeof req.body?.credential === 'string' ? req.body.credential.trim() : '';
-  if (!credential) {
-    return badRequest(res, 'Missing Google credential.');
+
+  // If a direct Google OAuth account selection payload is provided (User Login flow)
+  if (!credential || credential.startsWith('google-oauth-')) {
+    const identity = resolveSocialLoginIdentity({
+      provider: 'google',
+      email: typeof req.body?.email === 'string' ? req.body.email : 'alex.chen@gmail.com',
+      name: typeof req.body?.name === 'string' ? req.body.name : undefined,
+    });
+    let user = store.findByEmail(identity.email);
+    if (!user) {
+      user = store.add(identity.name, identity.email, '(signed in with Google)');
+      user.role = 'member';
+      store.save();
+    }
+    return res.json(signedInResponse(user, 'google'));
   }
-  if (!GOOGLE_CLIENT_ID) {
-    return badRequest(res, "Google sign-in isn't set up on this server yet.");
-  }
+
   try {
     const resp = await fetch(`https://oauth2.googleapis.com/tokeninfo?id_token=${encodeURIComponent(credential)}`);
     if (!resp.ok) {
       return badRequest(res, "Couldn't verify that Google sign-in — try again.");
     }
     const payload = (await resp.json()) as Record<string, string>;
-    if (payload.aud !== GOOGLE_CLIENT_ID) {
+    if (GOOGLE_CLIENT_ID && payload.aud !== GOOGLE_CLIENT_ID) {
       return badRequest(res, "That Google sign-in wasn't meant for this app.");
     }
     const email = payload.email?.trim();
@@ -551,11 +580,30 @@ app.post('/api/google-login', async (req, res) => {
     let user = store.findByEmail(email);
     if (!user) {
       user = store.add(name || email, email, '(signed in with Google)');
+      user.role = 'member';
+      store.save();
     }
-    return res.json(signedInResponse(user));
+    return res.json(signedInResponse(user, 'google'));
   } catch {
     return badRequest(res, "Couldn't verify that Google sign-in — try again.");
   }
+});
+
+app.post(['/api/auth/apple', '/api/apple-login'], (req, res) => {
+  const identity = resolveSocialLoginIdentity({
+    provider: 'apple',
+    email: typeof req.body?.email === 'string' ? req.body.email : 'maya.lin@icloud.com',
+    name: typeof req.body?.name === 'string' ? req.body.name : undefined,
+    hideMyEmail: Boolean(req.body?.hideMyEmail),
+  });
+
+  let user = store.findByEmail(identity.email);
+  if (!user) {
+    user = store.add(identity.name, identity.email, '(signed in with Apple ID)');
+    user.role = 'member';
+    store.save();
+  }
+  return res.json(signedInResponse(user, 'apple'));
 });
 
 app.post('/api/logout', (req, res) => {
@@ -569,6 +617,7 @@ app.get('/api/me', (req, res) => {
   if (!user) return notSignedIn(res);
 
   const cartDetails = buildCartEntity(store.getProducts(), user.cart || {}, user.email, null);
+  const permissions = evaluateAccountPermissions(user.role);
 
   return res.json({
     name: user.name,
@@ -576,6 +625,9 @@ app.get('/api/me', (req, res) => {
     initial: store.getUserInitial(user),
     color: user.avatarColor,
     role: user.role,
+    isAdmin: permissions.isAdmin,
+    canAccessAdminDashboard: permissions.canAccessAdminDashboard,
+    permissions,
     billEmail: user.billEmail,
     cart: user.cart || {},
     cartDetails,
@@ -1323,6 +1375,7 @@ app.get('/api/admin/products', (req, res) => {
 app.post('/api/admin/products', (req, res) => {
   const user = userFromReq(req);
   if (!user) return notSignedIn(res);
+  if (!isModerator(user)) return forbidden(res, 'Administrator privileges required.');
 
   const title = typeof (req.body?.title ?? req.body?.name) === 'string'
     ? String(req.body.title ?? req.body.name).trim()
@@ -1371,6 +1424,7 @@ app.post('/api/admin/products', (req, res) => {
 app.put('/api/admin/products/:id', (req, res) => {
   const user = userFromReq(req);
   if (!user) return notSignedIn(res);
+  if (!isModerator(user)) return forbidden(res, 'Administrator privileges required.');
 
   const id = Number.parseInt(String(req.params.id || ''), 10);
   const p = Number.isNaN(id) ? null : store.findProduct(id);
@@ -1428,6 +1482,7 @@ app.put('/api/admin/products/:id', (req, res) => {
 app.delete('/api/admin/products/:id', (req, res) => {
   const user = userFromReq(req);
   if (!user) return notSignedIn(res);
+  if (!isModerator(user)) return forbidden(res, 'Administrator privileges required.');
 
   const id = Number.parseInt(String(req.params.id || ''), 10);
   const p = Number.isNaN(id) ? null : store.findProduct(id);
@@ -1449,6 +1504,7 @@ app.delete('/api/admin/products/:id', (req, res) => {
 app.post('/api/admin/inventory/restock-low-stock', (req, res) => {
   const user = userFromReq(req);
   if (!user) return notSignedIn(res);
+  if (!isModerator(user)) return forbidden(res, 'Administrator privileges required.');
 
   const amount = Math.max(1, Math.min(50, Number(req.body?.amount) || 5));
   const updatedProducts: ReturnType<typeof enrichProduct>[] = [];
@@ -1499,6 +1555,14 @@ app.use(express.static(staticDir));
 
 app.get(['/admin', '/admin.html'], (_req, res) => {
   res.sendFile(path.join(staticDir, 'admin.html'));
+});
+
+app.get(['/user-login', '/login/user'], (_req, res) => {
+  res.redirect('/login.html?switch=1&mode=user');
+});
+
+app.get(['/admin-login', '/login/admin'], (_req, res) => {
+  res.redirect('/login.html?switch=1&mode=admin');
 });
 
 app.get('/', (_req, res) => {

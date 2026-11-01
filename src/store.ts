@@ -404,9 +404,19 @@ export class Store {
         }
       }
 
-      // Ensure demo session token exists for seamless preview access
+      // Ensure demo session token and default User (Shopper) accounts exist
       if (!this.sessions['ed4a9555-540b-4bb9-a406-b353acded905']) {
         this.sessions['ed4a9555-540b-4bb9-a406-b353acded905'] = 'harish@voltbox.test';
+        updated = true;
+      }
+      if (!this.findByEmail('alex.chen@gmail.com')) {
+        const alex = this.add('Alex Chen', 'alex.chen@gmail.com', 'Shopper123');
+        alex.role = 'member';
+        updated = true;
+      }
+      if (!this.findByEmail('maya.lin@icloud.com')) {
+        const maya = this.add('Maya Lin', 'maya.lin@icloud.com', 'AppleId123');
+        maya.role = 'member';
         updated = true;
       }
       if (this.messages.length === 0) {
@@ -457,6 +467,13 @@ export class Store {
     const harish = this.add('Harish', 'harish@voltbox.test', 'Harish123');
     harish.role = 'moderator';
     this.sessions['ed4a9555-540b-4bb9-a406-b353acded905'] = harish.email;
+
+    const alex = this.add('Alex Chen', 'alex.chen@gmail.com', 'Shopper123');
+    alex.role = 'member';
+
+    const maya = this.add('Maya Lin', 'maya.lin@icloud.com', 'AppleId123');
+    maya.role = 'member';
+
     this.seedProducts();
     this.seedMessages();
     this.save();

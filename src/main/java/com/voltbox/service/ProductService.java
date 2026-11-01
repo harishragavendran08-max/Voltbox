@@ -102,10 +102,42 @@ public class ProductService {
         return Math.round(value * 100.0) / 100.0;
     }
 
+    public boolean isLowStock(int stockQuantity) {
+        return stockQuantity < LOW_STOCK_THRESHOLD;
+    }
+
+    public boolean isInStock(int stockQuantity) {
+        return stockQuantity > 0;
+    }
+
+    public double calculateLineSubtotal(double unitPrice, int quantity) {
+        if (unitPrice <= 0 || quantity <= 0) return 0.0;
+        return roundMoney(unitPrice * quantity);
+    }
+
+    public double calculateDiscountedPrice(double unitPrice, double discountPercent) {
+        if (unitPrice <= 0) return 0.0;
+        double clampedPct = Math.max(0.0, Math.min(100.0, discountPercent));
+        return roundMoney(unitPrice * (1.0 - (clampedPct / 100.0)));
+    }
+
+    public double calculateInventoryValuation(List<ProductEntity> products) {
+        if (products == null || products.isEmpty()) return 0.0;
+        double sum = products.stream()
+                .filter(p -> p != null && !p.isTakenDown())
+                .mapToDouble(p -> Math.max(0.0, p.getPrice()) * Math.max(0, p.getStockQuantity()))
+                .sum();
+        return roundMoney(sum);
+    }
+
     public int resolveQuantity(Product p) {
-        if (p.stockQuantity > 0 && p.stockQuantity != 10) return p.stockQuantity;
-        if (p.quantity > 0) return p.quantity;
-        if (p.stock > 0) return p.stock;
+        if (p == null) return 0;
+        if (p.lastRestockedAt > 0 || (p.lastUpdatedBy != null && !p.lastUpdatedBy.isBlank())) {
+            return Math.max(0, p.stockQuantity);
+        }
+        if (p.stockQuantity >= 0 && p.stockQuantity != 10) return p.stockQuantity;
+        if (p.quantity >= 0 && p.quantity != 10) return p.quantity;
+        if (p.stock >= 0 && p.stock != 10) return p.stock;
         return DEFAULT_QUANTITIES.getOrDefault(p.id, 10);
     }
 

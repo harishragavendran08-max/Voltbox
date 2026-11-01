@@ -60,7 +60,10 @@
           </div>
         </div>
         <a href="/" class="storefront-return-link">
-          <span>← Storefront Catalog</span>
+          <span>← Browse &amp; Buy Storefront</span>
+        </a>
+        <a href="/login.html?switch=1" class="storefront-return-link" style="margin-top:6px;">
+          <span>⇄ Switch User / Admin Login</span>
         </a>
       </div>
     </aside>
@@ -400,6 +403,31 @@
           <button type="submit" class="btn-primary" id="product-modal-submit">Save Product Entity</button>
         </div>
       </form>
+    </div>
+  </div>
+
+  <!-- Admin Access Guard Modal (Displayed when a regular Shopper/User visits /admin) -->
+  <div class="modal-backdrop" id="admin-access-guard" hidden aria-hidden="true">
+    <div class="modal-dialog" role="dialog" aria-modal="true" aria-labelledby="guard-modal-title">
+      <div class="modal-header">
+        <div>
+          <div class="section-kicker" style="color:#f59e0b;">ROLE-BASED ACCESS CONTROL // 403 RESTRICTED</div>
+          <h2 class="modal-title" id="guard-modal-title">Administrator Privileges Required</h2>
+        </div>
+      </div>
+      <div class="modal-form">
+        <p style="color:#94a3b8;font-size:14px;line-height:1.6;margin:0;">
+          You are currently signed in as <strong id="guard-user-name" style="color:#f8fafc;">Shopper</strong>
+          (<code id="guard-user-email" style="color:#38bdf8;">user@gmail.com</code> · <strong>User Login</strong>).
+        </p>
+        <p style="color:#94a3b8;font-size:13.5px;line-height:1.6;margin:0;">
+          <strong>User Login</strong> accounts are designed to browse the hardware catalog, compare 6-month prices, build PC rigs, and buy products. Only <strong>Admin Login</strong> accounts can access both the storefront and the <code>/admin</code> CRUD &amp; inventory console.
+        </p>
+        <div class="modal-footer" style="margin-top:8px;">
+          <a href="/" class="btn-secondary" style="text-decoration:none;">← Return to Storefront (Browse &amp; Buy)</a>
+          <a href="/login.html?switch=1&amp;mode=admin" class="btn-primary" style="text-decoration:none;">Switch to Admin Login →</a>
+        </div>
+      </div>
     </div>
   </div>
 

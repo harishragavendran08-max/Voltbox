@@ -25,6 +25,8 @@ import {
   buildCartEntity,
   toProductJpaEntity,
   computeSystemHealthMetrics,
+  evaluateAccountPermissions,
+  resolveSocialLoginIdentity,
 } from './inventory';
 
 test('LOW_STOCK_THRESHOLD is 5', () => {
@@ -360,6 +362,45 @@ test('computeSystemHealthMetrics aggregates catalog valuation, stock health, com
   assert.equal(health.commerce.totalRevenue, 560.5);
 });
 
+test('evaluateAccountPermissions separates User (browse & buy only) from Admin (storefront + admin dashboard)', () => {
+  const userPerm = evaluateAccountPermissions('member');
+  assert.equal(userPerm.isAdmin, false);
+  assert.equal(userPerm.canBrowseAndBuy, true);
+  assert.equal(userPerm.canAccessAdminDashboard, false);
+  assert.equal(userPerm.canManageInventory, false);
+  assert.equal(userPerm.roleBadge, 'USER · SHOPPER');
+  assert.deepEqual(userPerm.allowedLoginModes, ['user']);
 
+  const adminPerm = evaluateAccountPermissions('moderator');
+  assert.equal(adminPerm.isAdmin, true);
+  assert.equal(adminPerm.canBrowseAndBuy, true);
+  assert.equal(adminPerm.canAccessAdminDashboard, true);
+  assert.equal(adminPerm.canManageInventory, true);
+  assert.equal(adminPerm.roleBadge, 'ADMIN · FULL ACCESS');
+  assert.deepEqual(adminPerm.allowedLoginModes, ['user', 'admin']);
+});
 
+test('resolveSocialLoginIdentity normalizes Google Login and Apple Login (including Hide My Email relay) for User Login', () => {
+  const googleUser = resolveSocialLoginIdentity({
+    provider: 'google',
+    email: 'Alex.Chen@gmail.com',
+    name: 'Alex Chen',
+  });
+  assert.equal(googleUser.provider, 'google');
+  assert.equal(googleUser.email, 'alex.chen@gmail.com');
+  assert.equal(googleUser.name, 'Alex Chen');
+  assert.equal(googleUser.role, 'member');
+  assert.equal(googleUser.isPrivateRelay, false);
+
+  const applePrivateUser = resolveSocialLoginIdentity({
+    provider: 'apple',
+    email: 'maya.lin@icloud.com',
+    hideMyEmail: true,
+  });
+  assert.equal(applePrivateUser.provider, 'apple');
+  assert.equal(applePrivateUser.email, 'maya.lin.relay@privaterelay.appleid.com');
+  assert.equal(applePrivateUser.name, 'Maya Lin');
+  assert.equal(applePrivateUser.role, 'member');
+  assert.equal(applePrivateUser.isPrivateRelay, true);
+});
 

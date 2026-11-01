@@ -1,5 +1,5 @@
 {
-  "nextId": 6,
+  "nextId": 9,
   "nextProductId": 42,
   "nextApplicationId": 1,
   "nextReportId": 29,
@@ -13,13 +13,7 @@
       "avatarColor": "#ffd23f",
       "billEmail": "harshan.v.s2004@gmail.com",
       "role": "moderator",
-      "cart": {
-        "19": 2,
-        "20": 1,
-        "21": 1,
-        "22": 1,
-        "36": 2
-      },
+      "cart": {},
       "orders": [
         {
           "id": "VB-8B38",
@@ -530,6 +524,39 @@
           "amountPaid": 73.61
         }
       ]
+    },
+    {
+      "id": 6,
+      "name": "Alex Chen",
+      "email": "alex.chen@gmail.com",
+      "password": "Shopper123",
+      "avatarColor": "#ff922b",
+      "billEmail": null,
+      "role": "member",
+      "cart": {},
+      "orders": []
+    },
+    {
+      "id": 7,
+      "name": "Maya Lin",
+      "email": "maya.lin@icloud.com",
+      "password": "AppleId123",
+      "avatarColor": "#20c997",
+      "billEmail": null,
+      "role": "member",
+      "cart": {},
+      "orders": []
+    },
+    {
+      "id": 8,
+      "name": "Maya Lin",
+      "email": "maya.lin.relay@privaterelay.appleid.com",
+      "password": "(signed in with Apple ID)",
+      "avatarColor": "#f06595",
+      "billEmail": null,
+      "role": "member",
+      "cart": {},
+      "orders": []
     }
   ],
   "sessions": {
@@ -540,7 +567,17 @@
     "a8d8eb7a-f4de-422d-b216-350713cd0ffa": "harish@voltbox.test",
     "cd5e5b99-4aad-40d0-8305-11a740db36f8": "harish@voltbox.test",
     "eb79ed65-349b-4562-8d90-e0d770e3d2e5": "harish@voltbox.test",
-    "2a5f7981-2d6f-4080-9532-c984e0d3a2ee": "harish@voltbox.test"
+    "2a5f7981-2d6f-4080-9532-c984e0d3a2ee": "harish@voltbox.test",
+    "826cd285-33f4-4c4b-b52a-030aea04f831": "alex.chen@gmail.com",
+    "24284a3e-53c6-42c0-9616-4d5ce9044956": "alex.chen@gmail.com",
+    "f706004f-b089-4acf-aef9-ce458780f085": "maya.lin.relay@privaterelay.appleid.com",
+    "94ed4c2a-411e-43e1-a056-f4d39f116af6": "harish@voltbox.test",
+    "fce40509-1f8e-43e3-ad8b-90ea5be63bde": "harish@voltbox.test",
+    "e3c6dadc-b218-4a7c-9891-b395d03fff7b": "harish@voltbox.test",
+    "49762e74-3580-47c9-991b-003d771b9d54": "harish@voltbox.test",
+    "fe79171a-0d50-4e0a-b754-9261d1cd5891": "alex.chen@gmail.com",
+    "421777cb-2edc-4a9e-945c-8e9d74187167": "alex.chen@gmail.com",
+    "097b0276-873b-4ef4-80d1-1652b0259f9c": "harish@voltbox.test"
   },
   "products": [
     {
@@ -900,9 +937,9 @@
       "official": false,
       "createdAt": 1785214969269,
       "takenDown": false,
-      "quantity": 2,
-      "stock": 2,
-      "lowStock": true
+      "quantity": 7,
+      "stock": 7,
+      "lowStock": false
     },
     {
       "id": 20,
@@ -938,9 +975,9 @@
       "official": false,
       "createdAt": 1785215319352,
       "takenDown": false,
-      "quantity": 2,
-      "stock": 2,
-      "lowStock": true
+      "quantity": 7,
+      "stock": 7,
+      "lowStock": false
     },
     {
       "id": 22,
@@ -995,9 +1032,9 @@
       "official": false,
       "createdAt": 1785215577470,
       "takenDown": false,
-      "quantity": 4,
-      "stock": 4,
-      "lowStock": true
+      "quantity": 9,
+      "stock": 9,
+      "lowStock": false
     },
     {
       "id": 25,
@@ -1014,9 +1051,9 @@
       "official": false,
       "createdAt": 1785215654894,
       "takenDown": false,
-      "quantity": 1,
-      "stock": 1,
-      "lowStock": true
+      "quantity": 6,
+      "stock": 6,
+      "lowStock": false
     },
     {
       "id": 26,
@@ -1071,9 +1108,9 @@
       "official": true,
       "createdAt": 1793511806605,
       "takenDown": false,
-      "quantity": 3,
-      "stock": 3,
-      "lowStock": true
+      "quantity": 8,
+      "stock": 8,
+      "lowStock": false
     },
     {
       "id": 29,
@@ -1090,9 +1127,9 @@
       "official": true,
       "createdAt": 1793511806605,
       "takenDown": false,
-      "quantity": 2,
-      "stock": 2,
-      "lowStock": true
+      "quantity": 7,
+      "stock": 7,
+      "lowStock": false
     },
     {
       "id": 30,
@@ -1128,9 +1165,9 @@
       "official": true,
       "createdAt": 1793511806605,
       "takenDown": false,
-      "quantity": 4,
-      "stock": 4,
-      "lowStock": true
+      "quantity": 9,
+      "stock": 9,
+      "lowStock": false
     },
     {
       "id": 32,
@@ -1166,9 +1203,9 @@
       "official": true,
       "createdAt": 1793511806605,
       "takenDown": false,
-      "quantity": 3,
-      "stock": 3,
-      "lowStock": true
+      "quantity": 8,
+      "stock": 8,
+      "lowStock": false
     },
     {
       "id": 34,
@@ -1223,9 +1260,9 @@
       "official": true,
       "createdAt": 1793518459135,
       "takenDown": false,
-      "quantity": 4,
-      "stock": 4,
-      "lowStock": true
+      "quantity": 9,
+      "stock": 9,
+      "lowStock": false
     },
     {
       "id": 37,
@@ -1242,9 +1279,9 @@
       "official": true,
       "createdAt": 1793518459135,
       "takenDown": false,
-      "quantity": 2,
-      "stock": 2,
-      "lowStock": true
+      "quantity": 7,
+      "stock": 7,
+      "lowStock": false
     },
     {
       "id": 38,
@@ -1299,9 +1336,9 @@
       "official": true,
       "createdAt": 1793518459135,
       "takenDown": false,
-      "quantity": 3,
-      "stock": 3,
-      "lowStock": true
+      "quantity": 8,
+      "stock": 8,
+      "lowStock": false
     },
     {
       "id": 41,
@@ -1318,9 +1355,9 @@
       "official": true,
       "createdAt": 1793518459135,
       "takenDown": false,
-      "quantity": 2,
-      "stock": 2,
-      "lowStock": true
+      "quantity": 7,
+      "stock": 7,
+      "lowStock": false
     }
   ],
   "applications": [],

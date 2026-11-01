@@ -112,7 +112,14 @@
           <span class="pwa-btn-text">Install App</span>
         </button>
 
-        <!-- Dedicated /admin Console Link -->
+        <!-- Role Status Pill & Quick Login Portal Switcher -->
+        <button type="button" class="topbar-pill-btn role-status-pill" id="topbar-role-badge"
+                title="Open User Login (Browse & Buy Only) vs Admin Login (Storefront + /admin) Portal">
+          <span class="led-dot emerald" id="topbar-role-led"></span>
+          <span id="topbar-role-label">ADMIN · FULL ACCESS</span>
+        </button>
+
+        <!-- Dedicated /admin Console Link (Visible only for Administrators) -->
         <a href="/admin" class="topbar-pill-btn" id="admin-console-link"
            aria-label="Open Dedicated Admin Console" title="Open Spring Boot Admin Console (/admin)"
            style="text-decoration:none;">
@@ -195,10 +202,20 @@
               <div class="profile-who">
                 <div class="profile-name" id="profile-name">friend</div>
                 <div class="profile-email" id="profile-email"></div>
+                <div class="profile-role-pill" id="profile-role-pill">Shopper Account</div>
               </div>
             </div>
 
             <div class="sheet-divider"></div>
+
+            <!-- Admin Console Shortcut (shown only when signed in as Admin) -->
+            <div class="sheet-section tight" id="profile-admin-shortcut" hidden>
+              <a href="/admin" class="sheet-btn solid wide" style="display:flex;align-items:center;justify-content:center;gap:6px;text-decoration:none;">
+                <span data-icon="shield" data-icon-size="14"></span>
+                <span>Open Admin Dashboard (/admin)</span>
+              </a>
+              <div class="sheet-divider" style="margin-top:10px;"></div>
+            </div>
 
             <!-- where bills get emailed. "linking" is just saving an address. -->
             <div class="sheet-section">
@@ -228,12 +245,49 @@
 
             <div class="sheet-divider"></div>
 
-            <button class="sheet-btn ghost wide" id="logout-btn">Sign out</button>
+            <div class="profile-actions-stack">
+              <button type="button" class="sheet-btn solid wide" id="open-role-portal-from-profile" style="margin-bottom:8px;">
+                User Login vs Admin Login Portal
+              </button>
+              <a href="login.html?switch=1" class="sheet-btn ghost wide" id="switch-account-btn" style="display:block;text-align:center;text-decoration:none;margin-bottom:8px;">
+                Full Sign-In Page (Google / Apple / Admin)
+              </a>
+              <button class="sheet-btn ghost wide" id="logout-btn">Sign out</button>
+            </div>
           </div>
         </div>
 
       </div>
     </header>
+
+    <!-- Active Role & Login Capability Strip (User Login: Browse & Buy Only vs Admin Login: Storefront + Admin Console) -->
+    <section class="storefront-role-banner" id="storefront-role-banner" data-role="admin" aria-label="Active account login mode and capabilities">
+      <div class="srb-left">
+        <span class="rc-badge admin" id="srb-badge">ADMIN LOGIN</span>
+        <span class="srb-mode-sub" id="srb-mode-sub">Storefront + Admin Console</span>
+        <div class="srb-divider" aria-hidden="true"></div>
+        <div class="srb-perms-list" id="srb-perms-list">
+          <span class="srb-perm">✓ Full access to Storefront Catalog &amp; Checkout</span>
+          <span class="srb-perm">✓ Dedicated <code>/admin</code> CRUD Dashboard</span>
+          <span class="srb-perm">✓ Real-time Warehouse Stock &amp; Restock Controls</span>
+          <span class="srb-perm">✓ Spring Boot JPA &amp; JVM System Health Telemetry</span>
+        </div>
+      </div>
+      <div class="srb-actions">
+        <button type="button" class="srb-btn user-switch" id="srb-switch-user-btn" title="Switch to User Login (Shopper · Browse & Buy Only)">
+          <span>User Login (Browse &amp; Buy Only)</span>
+        </button>
+        <button type="button" class="srb-btn admin-switch" id="srb-switch-admin-btn" hidden title="Switch to Admin Login (Storefront + /admin Console)">
+          <span>Admin Login (Storefront + /admin)</span>
+        </button>
+        <a href="/admin" class="srb-btn admin-console-go" id="srb-open-admin-link">
+          <span>/admin Dashboard →</span>
+        </a>
+        <button type="button" class="srb-btn compare-trigger" id="srb-compare-btn">
+          <span>User vs Admin Info</span>
+        </button>
+      </div>
+    </section>
 
     <!-- Category Filter Bar, Sort Controls & Rig Builder Trigger -->
     <section class="catalog-toolbar" aria-label="Catalog filters and tools">
@@ -672,6 +726,89 @@
         <code>React 19 · Recharts</code>
         <code>HTML5 · CSS3 · JS</code>
         <code>JSON Store</code>
+      </div>
+    </div>
+  </div>
+
+  <!-- User Login (Browse & Buy Only) vs Admin Login (Storefront + Admin Console) Portal Modal -->
+  <div class="modal-overlay" id="role-portal-overlay" aria-hidden="true">
+    <div class="modal-card role-portal-modal-card" id="role-portal-card" role="dialog" aria-modal="true" aria-labelledby="role-portal-title">
+      <button type="button" class="modal-close" id="role-portal-close" aria-label="Close"><span data-icon="x" data-icon-size="18"></span></button>
+
+      <div class="role-portal-header">
+        <div class="drawer-kicker">SPRING BOOT RBAC // USER LOGIN VS ADMIN LOGIN</div>
+        <h2 class="modal-title" id="role-portal-title">Choose Access Mode: User Login vs Admin Login</h2>
+        <p class="modal-text small">
+          <strong>User Login</strong> is for shoppers (<strong>Browse &amp; Buy Only</strong> with Google or Apple ID). <strong>Admin Login</strong> unlocks both the Storefront Catalog &amp; Checkout and the dedicated <code>/admin</code> CRUD &amp; Warehouse Console.
+        </p>
+      </div>
+
+      <div class="role-comparison-grid portal-cards-grid">
+        <!-- USER LOGIN CARD -->
+        <div class="role-compare-card active" id="portal-card-user">
+          <div class="rc-head">
+            <span class="rc-badge user">USER LOGIN</span>
+            <span class="rc-sub">Shopper · Browse &amp; Buy</span>
+          </div>
+          <div class="rc-scope-tag user">Browse &amp; Buy Only</div>
+          <ul class="rc-list">
+            <li>✓ Sign in with <strong>Google</strong> or <strong>Apple ID</strong></li>
+            <li>✓ Browse 22+ PC parts, specs &amp; 6M price charts</li>
+            <li>✓ Build a 4-slot Rig &amp; checkout with thermal receipts</li>
+            <li class="rc-restricted">✕ No access to <code>/admin</code> CRUD or stock controls</li>
+          </ul>
+          <div class="rc-actions">
+            <div class="rc-social-row">
+              <button type="button" class="rc-action-btn social" id="portal-google-login-btn">
+                <svg width="14" height="14" viewBox="0 0 24 24" aria-hidden="true">
+                  <path fill="#EA4335" d="M12 5c1.6 0 3 .6 4.1 1.7l3.1-3.1C17.3 1.8 14.8 1 12 1 7.4 1 3.5 3.6 1.6 7.4l3.7 2.8C6.2 7.2 8.9 5 12 5z"/>
+                  <path fill="#4285F4" d="M23.5 12.3c0-.8-.1-1.6-.2-2.3H12v4.5h6.5c-.3 1.5-1.1 2.8-2.4 3.6l3.7 2.9c2.2-2 3.7-5 3.7-8.7z"/>
+                  <path fill="#FBBC05" d="M5.3 14.8c-.2-.8-.4-1.8-.4-2.8s.2-2 .4-2.8L1.6 6.4C.6 8.4 0 10.6 0 12s.6 3.6 1.6 5.6l3.7-2.8z"/>
+                  <path fill="#34A853" d="M12 23c3.2 0 6-1.1 8-3l-3.7-2.9c-1.1.7-2.5 1.2-4.3 1.2-3.1 0-5.8-2.1-6.7-5l-3.7 2.8C3.5 19.9 7.4 23 12 23z"/>
+                </svg>
+                <span>Google Login</span>
+              </button>
+              <button type="button" class="rc-action-btn social" id="portal-apple-login-btn">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+                  <path d="M17.05 20.28c-.98.95-2.05.8-3.08.35-1.09-.46-2.09-.48-3.24 0-1.44.62-2.2.44-3.06-.35C2.79 15.25 3.51 7.59 9.05 7.31c1.35.07 2.29.74 3.08.8 1.18-.24 2.31-.93 3.57-.84 1.51.12 2.65.72 3.4 1.8-3.12 1.87-2.38 5.98.48 7.13-.57 1.5-1.31 2.99-2.54 4.09zM12.03 7.25c-.15-2.23 1.66-4.07 3.74-4.25.29 2.58-2.34 4.5-3.74 4.25z"/>
+                </svg>
+                <span>Apple ID Login</span>
+              </button>
+            </div>
+            <button type="button" class="rc-action-btn primary-user" id="portal-user-instant-btn">
+              Switch to User Login (Browse &amp; Buy Only) →
+            </button>
+            <a href="login.html?switch=1&amp;mode=user" class="rc-action-btn link-btn">
+              Open Full User Sign-In Page
+            </a>
+          </div>
+        </div>
+
+        <!-- ADMIN LOGIN CARD -->
+        <div class="role-compare-card" id="portal-card-admin">
+          <div class="rc-head">
+            <span class="rc-badge admin">ADMIN LOGIN</span>
+            <span class="rc-sub">Storefront + Admin Console</span>
+          </div>
+          <div class="rc-scope-tag admin">Catalog + Admin Console</div>
+          <ul class="rc-list">
+            <li>✓ Full access to Storefront Catalog &amp; Checkout</li>
+            <li>✓ Dedicated <code>/admin</code> CRUD Dashboard</li>
+            <li>✓ Real-time Warehouse Stock &amp; Restock Controls</li>
+            <li>✓ Spring Boot JPA &amp; JVM System Health Telemetry</li>
+          </ul>
+          <div class="rc-actions">
+            <button type="button" class="rc-action-btn primary-admin" id="portal-admin-console-btn">
+              Admin Login → Dedicated <code>/admin</code> Dashboard
+            </button>
+            <button type="button" class="rc-action-btn secondary-admin" id="portal-admin-store-btn">
+              Admin Login → Storefront + Admin Controls
+            </button>
+            <a href="login.html?switch=1&amp;mode=admin" class="rc-action-btn link-btn">
+              Open Full Admin Sign-In Page
+            </a>
+          </div>
+        </div>
       </div>
     </div>
   </div>

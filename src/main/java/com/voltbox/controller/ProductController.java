@@ -14,7 +14,6 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
-import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -22,13 +21,14 @@ import java.util.Optional;
 import java.util.stream.Collectors;
 
 /**
- * Spring Boot REST Controller mapped to {@code /api} for handling GET and POST
- * requests for product retrieval, catalog filtering, and real-time inventory
- * updates backed by {@link ProductRepository}, {@link ProductService}, and
- * {@link InventoryService}.
+ * Spring Boot REST Controller mapped to {@code /api/products} for handling GET,
+ * POST, PUT, PATCH, and DELETE requests for retrieving all products, individual
+ * product details by ID or SKU, and real-time inventory updates backed by
+ * {@link ProductRepository}, {@link ProductService}, and {@link InventoryService}.
  */
 @RestController
-@RequestMapping("/api")
+@RequestMapping("/api/products")
+@CrossOrigin(origins = "*")
 public class ProductController {
     private final Store store;
     private final ProductRepository productRepository;
@@ -64,35 +64,75 @@ public class ProductController {
      * Retrieves all active products from the JPA repository / catalog with optional
      * category, component group, keyword search, and low-stock filtering.
      */
-    @GetMapping("/products")
-    public List<ProductEntity> getProducts(
+    @GetMapping
+    public ResponseEntity<List<ProductEntity>> getAllProducts(
             @RequestParam(value = "category", required = false) String category,
             @RequestParam(value = "group", required = false) String group,
             @RequestParam(value = "search", required = false) String search,
             @RequestParam(value = "lowStock", required = false) Boolean lowStock) {
-        return productService.listActiveProducts(category, group, search, lowStock);
+        boolean hasFilters = (category != null && !category.isBlank())
+                || (group != null && !group.isBlank())
+                || (search != null && !search.isBlank())
+                || Boolean.TRUE.equals(lowStock);
+
+        if (!hasFilters && productRepository != null && productRepository.count() > 0) {
+            List<ProductEntity> entities = productRepository.findByTakenDownFalseOrderByIdAsc()
+                    .stream()
+                    .map(productService::hydrateTransientTelemetry)
+                    .collect(Collectors.toList());
+            return ResponseEntity.ok(entities);
+        }
+
+        List<ProductEntity> products = productService.listActiveProducts(category, group, search, lowStock);
+        return ResponseEntity.ok(products);
+    }
+
+    /**
+     * GET /api/products/{id}
+     * Retrieves individual product details by ID via ProductRepository and ProductService.
+     */
+    @GetMapping("/{id}")
+    public ResponseEntity<?> getProductById(@PathVariable("id") Integer id) {
+        if (id == null || id <= 0) {
+            return ResponseEntity.badRequest()
+                    .body(Map.of("ok", false, "message", "Invalid product ID."));
+        }
+        if (productRepository != null) {
+            Optional<ProductEntity> repoHit = productRepository.findByIdAndTakenDownFalse(id);
+            if (repoHit.isPresent()) {
+                return ResponseEntity.ok(productService.hydrateTransientTelemetry(repoHit.get()));
+            }
+        }
+        ProductEntity product = productService.findEnrichedProduct(id);
+        if (product == null || product.isTakenDown()) {
+            return ResponseEntity.status(HttpStatus.NOT_FOUND)
+                    .body(Map.of("ok", false, "message", "Product not found."));
+        }
+        return ResponseEntity.ok(product);
     }
 
     /**
      * GET /api/products/low-stock
      * Queries the JPA repository for active products below the low-stock threshold (< 5 units).
      */
-    @GetMapping("/products/low-stock")
-    public List<ProductEntity> getLowStockProducts() {
+    @GetMapping("/low-stock")
+    public ResponseEntity<List<ProductEntity>> getLowStockProducts() {
         if (productRepository != null && productRepository.count() > 0) {
-            return productRepository.findByLowStockTrueAndTakenDownFalseOrderByStockQuantityAsc()
+            List<ProductEntity> lowStock = productRepository
+                    .findByLowStockTrueAndTakenDownFalseOrderByStockQuantityAsc()
                     .stream()
                     .map(productService::hydrateTransientTelemetry)
                     .collect(Collectors.toList());
+            return ResponseEntity.ok(lowStock);
         }
-        return productService.listActiveProducts(null, null, null, true);
+        return ResponseEntity.ok(productService.listActiveProducts(null, null, null, true));
     }
 
     /**
      * GET /api/products/sku/{sku}
      * Retrieves a single product by its unique hardware SKU via ProductRepository.
      */
-    @GetMapping("/products/sku/{sku}")
+    @GetMapping("/sku/{sku}")
     public ResponseEntity<?> getProductBySku(@PathVariable("sku") String sku) {
         if (productRepository != null && sku != null && !sku.isBlank()) {
             Optional<ProductEntity> repoHit = productRepository.findBySkuIgnoreCase(sku.trim());
@@ -109,31 +149,11 @@ public class ProductController {
     }
 
     /**
-     * GET /api/products/{id}
-     * Retrieves a single product by ID via ProductRepository.
-     */
-    @GetMapping("/products/{id}")
-    public ResponseEntity<?> getProductById(@PathVariable("id") int id) {
-        if (productRepository != null) {
-            Optional<ProductEntity> repoHit = productRepository.findById(id);
-            if (repoHit.isPresent() && !repoHit.get().isTakenDown()) {
-                return ResponseEntity.ok(productService.hydrateTransientTelemetry(repoHit.get()));
-            }
-        }
-        ProductEntity product = productService.findEnrichedProduct(id);
-        if (product == null) {
-            return ResponseEntity.status(HttpStatus.NOT_FOUND)
-                    .body(Map.of("ok", false, "message", "Product not found."));
-        }
-        return ResponseEntity.ok(product);
-    }
-
-    /**
      * GET /api/products/{id}/inventory
      * Retrieves the product entity alongside its warehouse inventory telemetry.
      */
-    @GetMapping("/products/{id}/inventory")
-    public ResponseEntity<?> getProductInventory(@PathVariable("id") int id) {
+    @GetMapping("/{id}/inventory")
+    public ResponseEntity<?> getProductInventory(@PathVariable("id") Integer id) {
         ProductEntity product = productService.findEnrichedProduct(id);
         InventoryItem inventory = inventoryService.getInventoryForProduct(id);
         if (product == null || inventory == null) {
@@ -152,7 +172,7 @@ public class ProductController {
      * Creates and persists a new ProductEntity in the JPA repository and Store,
      * then broadcasts the new listing over WebSocket.
      */
-    @PostMapping("/products")
+    @PostMapping
     public ResponseEntity<?> createProduct(
             @RequestHeader(value = "Authorization", required = false) String auth,
             @RequestBody Map<String, Object> body) {
@@ -199,10 +219,10 @@ public class ProductController {
      * absolute `stockQuantity`/`quantity` or applying a `delta`/`amount` change),
      * persists the updated entity to the JPA repository, and broadcasts the update.
      */
-    @PostMapping("/products/{id}/inventory")
+    @PostMapping("/{id}/inventory")
     public ResponseEntity<?> updateProductInventoryPost(
             @RequestHeader(value = "Authorization", required = false) String auth,
-            @PathVariable("id") int id,
+            @PathVariable("id") Integer id,
             @RequestBody(required = false) Map<String, Object> body) {
         User u = authUser(auth);
         if (u == null) {
@@ -267,10 +287,10 @@ public class ProductController {
      * Increments product stock quantity, syncs with ProductRepository, and broadcasts
      * a real-time restock event to connected clients.
      */
-    @PostMapping("/products/{id}/restock")
+    @PostMapping("/{id}/restock")
     public ResponseEntity<?> restockProduct(
             @RequestHeader(value = "Authorization", required = false) String auth,
-            @PathVariable("id") int id,
+            @PathVariable("id") Integer id,
             @RequestBody(required = false) Map<String, Object> body) {
         User u = authUser(auth);
         if (u == null) {
@@ -315,10 +335,10 @@ public class ProductController {
      * PUT /api/products/{id}
      * Updates product metadata and stock quantity, persisting changes to ProductRepository.
      */
-    @PutMapping("/products/{id}")
+    @PutMapping("/{id}")
     public ResponseEntity<?> updateProduct(
             @RequestHeader(value = "Authorization", required = false) String auth,
-            @PathVariable("id") int id,
+            @PathVariable("id") Integer id,
             @RequestBody Map<String, Object> body) {
         User u = authUser(auth);
         if (u == null) {
@@ -347,10 +367,10 @@ public class ProductController {
      * PATCH /api/products/{id}/stock
      * Updates stockQuantity directly and persists to ProductRepository.
      */
-    @PatchMapping("/products/{id}/stock")
+    @PatchMapping("/{id}/stock")
     public ResponseEntity<?> updateProductStock(
             @RequestHeader(value = "Authorization", required = false) String auth,
-            @PathVariable("id") int id,
+            @PathVariable("id") Integer id,
             @RequestBody Map<String, Object> body) {
         User u = authUser(auth);
         if (u == null) {
@@ -383,30 +403,14 @@ public class ProductController {
         return ResponseEntity.ok(updated);
     }
 
-    @GetMapping("/my-products")
-    public ResponseEntity<?> getMyProducts(
-            @RequestHeader(value = "Authorization", required = false) String auth) {
-        User u = authUser(auth);
-        if (u == null) {
-            return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(Map.of("ok", false));
-        }
-        if (!canContribute(u)) {
-            return ResponseEntity.status(HttpStatus.FORBIDDEN)
-                    .body(Map.of("ok", false, "message", "Only contributors have an upload history."));
-        }
-
-        List<ProductEntity> mine = store.getProducts().stream()
-                .filter(p -> p.addedByEmail != null && p.addedByEmail.equalsIgnoreCase(u.email))
-                .map(productService::enrich)
-                .collect(Collectors.toList());
-        Collections.reverse(mine);
-        return ResponseEntity.ok(mine);
-    }
-
-    @DeleteMapping("/products/{id}")
+    /**
+     * DELETE /api/products/{id}
+     * Soft-deletes (takes down) a product listing by ID.
+     */
+    @DeleteMapping("/{id}")
     public ResponseEntity<?> deleteProduct(
             @RequestHeader(value = "Authorization", required = false) String auth,
-            @PathVariable("id") int id) {
+            @PathVariable("id") Integer id) {
         User u = authUser(auth);
         if (u == null) {
             return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(Map.of("ok", false));

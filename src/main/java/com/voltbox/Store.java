@@ -69,8 +69,26 @@ public class Store {
             this.nextApplicationId = Math.max(d.nextApplicationId, 1);
             this.nextReportId = Math.max(d.nextReportId, 1);
             this.nextMessageId = Math.max(d.nextMessageId, 1);
+            ensureDefaultAccounts();
         } catch (Exception e) {
             throw new RuntimeException("Couldn't read voltbox-data.json", e);
+        }
+    }
+
+    private void ensureDefaultAccounts() {
+        boolean changed = false;
+        if (findByEmail("alex.chen@gmail.com") == null) {
+            User alex = add("Alex Chen", "alex.chen@gmail.com", "Shopper123");
+            alex.role = "member";
+            changed = true;
+        }
+        if (findByEmail("maya.lin@icloud.com") == null) {
+            User maya = add("Maya Lin", "maya.lin@icloud.com", "AppleId123");
+            maya.role = "member";
+            changed = true;
+        }
+        if (changed) {
+            save();
         }
     }
 
@@ -101,6 +119,13 @@ public class Store {
         User harish = add("Harish", "harish@voltbox.test", "Harish123");
         harish.role = "moderator";
         sessions.put("ed4a9555-540b-4bb9-a406-b353acded905", harish.email);
+
+        User alex = add("Alex Chen", "alex.chen@gmail.com", "Shopper123");
+        alex.role = "member";
+
+        User maya = add("Maya Lin", "maya.lin@icloud.com", "AppleId123");
+        maya.role = "member";
+
         try (InputStream in = getClass().getResourceAsStream("/seed-products.json")) {
             if (in != null) {
                 Product[] seeded = json.readValue(in, Product[].class);

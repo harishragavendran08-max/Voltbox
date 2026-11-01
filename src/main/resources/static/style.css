@@ -4791,6 +4791,708 @@ body[data-bg-mode="cyber"] .fx-dot {
   }
 }
 
+/* ============================================================================
+   User Login (Browse & Buy + Google/Apple OAuth) vs Admin Login Styles
+   ============================================================================ */
 
+.login-header-compact {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 12px;
+}
 
+.login-header-compact .login-badge {
+  margin: 0;
+  width: 44px;
+  height: 44px;
+  flex-shrink: 0;
+}
+
+.login-header-compact .login-logo {
+  margin: 0;
+  text-align: left;
+  font-size: 24px;
+}
+
+.login-header-compact .login-sub {
+  margin: 2px 0 0;
+  text-align: left;
+  font-size: 12.5px;
+}
+
+.auth-role-tabs {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px;
+  padding: 5px;
+  border-radius: 11px;
+  background: rgba(11, 13, 18, 0.9);
+  border: 1px solid #2b313e;
+  margin-bottom: 10px;
+}
+
+.auth-role-tab {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  padding: 9px 11px;
+  border-radius: 8px;
+  border: 1px solid transparent;
+  background: transparent;
+  color: #9aa1ad;
+  cursor: pointer;
+  text-align: left;
+  transition: all 0.18s ease;
+}
+
+.auth-role-tab:hover {
+  color: #f1f5f9;
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.auth-role-tab.active[data-role-mode="user"] {
+  background: rgba(45, 212, 191, 0.13);
+  border-color: rgba(45, 212, 191, 0.45);
+  color: #f8fafc;
+  box-shadow: 0 4px 14px rgba(45, 212, 191, 0.14);
+}
+
+.auth-role-tab.active[data-role-mode="admin"] {
+  background: rgba(255, 210, 63, 0.14);
+  border-color: rgba(255, 210, 63, 0.5);
+  color: #f8fafc;
+  box-shadow: 0 4px 14px rgba(255, 210, 63, 0.16);
+}
+
+.role-tab-title {
+  font-size: 12.5px;
+  font-weight: 800;
+  letter-spacing: 0.2px;
+}
+
+.role-tab-desc {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 10px;
+  opacity: 0.82;
+}
+
+.role-scope-banner {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 10px;
+  border-radius: 8px;
+  margin-bottom: 12px;
+  font-size: 11.5px;
+  background: rgba(45, 212, 191, 0.07);
+  border: 1px solid rgba(45, 212, 191, 0.24);
+  color: #cbd5e1;
+}
+
+.role-scope-banner[data-mode="admin"] {
+  background: rgba(255, 210, 63, 0.08);
+  border-color: rgba(255, 210, 63, 0.28);
+}
+
+.scope-pill {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 9.5px;
+  font-weight: 700;
+  padding: 2px 6px;
+  border-radius: 4px;
+  background: rgba(45, 212, 191, 0.2);
+  color: #2dd4bf;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.role-scope-banner[data-mode="admin"] .scope-pill {
+  background: rgba(255, 210, 63, 0.22);
+  color: #ffd23f;
+}
+
+.scope-text {
+  line-height: 1.35;
+}
+
+/* Google Login & Apple Login Buttons */
+.social-oauth-section {
+  margin-bottom: 10px;
+}
+
+.social-oauth-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+
+.oauth-provider-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 10px 12px;
+  border-radius: 9px;
+  font-family: inherit;
+  font-size: 12.5px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: transform 0.14s ease, border-color 0.16s ease, background 0.16s ease, box-shadow 0.16s ease;
+}
+
+.oauth-provider-btn.google {
+  background: #ffffff;
+  color: #111827;
+  border: 1px solid #e2e8f0;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.22);
+}
+
+.oauth-provider-btn.google:hover {
+  background: #f8fafc;
+  transform: translateY(-1px);
+  box-shadow: 0 5px 14px rgba(66, 133, 244, 0.28);
+}
+
+.oauth-provider-btn.apple {
+  background: #0b0d12;
+  color: #f8fafc;
+  border: 1px solid #334155;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.35);
+}
+
+.oauth-provider-btn.apple:hover {
+  background: #161a23;
+  border-color: #64748b;
+  transform: translateY(-1px);
+  box-shadow: 0 5px 14px rgba(255, 255, 255, 0.1);
+}
+
+.oauth-icon {
+  flex-shrink: 0;
+}
+
+/* Admin Destination Selector */
+.admin-dest-bar {
+  padding: 8px 11px;
+  border-radius: 9px;
+  background: rgba(15, 23, 42, 0.72);
+  border: 1px solid #2b313e;
+  margin-bottom: 10px;
+}
+
+.admin-dest-label {
+  display: block;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 10px;
+  font-weight: 700;
+  color: #94a3b8;
+  text-transform: uppercase;
+  margin-bottom: 6px;
+}
+
+.admin-dest-options {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
+.admin-dest-opt {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: #e2e8f0;
+  cursor: pointer;
+}
+
+.admin-dest-opt input[type="radio"] {
+  accent-color: #ffd23f;
+}
+
+/* Left Column Role Comparison Cards */
+.role-comparison-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+  margin: 4px 0;
+}
+
+.role-compare-card {
+  padding: 11px 13px;
+  border-radius: 11px;
+  background: rgba(19, 22, 29, 0.85);
+  border: 1px solid #2b313e;
+  transition: border-color 0.2s ease, box-shadow 0.2s ease;
+}
+
+.role-compare-card.active#compare-card-user {
+  border-color: rgba(45, 212, 191, 0.5);
+  box-shadow: 0 8px 24px rgba(45, 212, 191, 0.1);
+}
+
+.role-compare-card.active#compare-card-admin {
+  border-color: rgba(255, 210, 63, 0.55);
+  box-shadow: 0 8px 24px rgba(255, 210, 63, 0.12);
+}
+
+.rc-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  margin-bottom: 7px;
+}
+
+.rc-badge {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 10px;
+  font-weight: 700;
+  padding: 3px 8px;
+  border-radius: 4px;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.rc-badge.user {
+  background: rgba(45, 212, 191, 0.16);
+  color: #2dd4bf;
+  border: 1px solid rgba(45, 212, 191, 0.3);
+}
+
+.rc-badge.admin {
+  background: rgba(255, 210, 63, 0.18);
+  color: #ffd23f;
+  border: 1px solid rgba(255, 210, 63, 0.35);
+}
+
+.rc-sub {
+  font-size: 11px;
+  color: #cbd5e1;
+  font-weight: 700;
+}
+
+.rc-scope-tag {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 8px;
+  border-radius: 5px;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 10.5px;
+  font-weight: 700;
+  margin-bottom: 8px;
+}
+
+.rc-scope-tag.user {
+  background: rgba(45, 212, 191, 0.1);
+  color: #5eead4;
+  border: 1px solid rgba(45, 212, 191, 0.25);
+}
+
+.rc-scope-tag.admin {
+  background: rgba(255, 210, 63, 0.1);
+  color: #fde047;
+  border: 1px solid rgba(255, 210, 63, 0.25);
+}
+
+.rc-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  font-size: 11.5px;
+  color: #cbd5e1;
+}
+
+.rc-list li.rc-restricted {
+  color: #94a3b8;
+  opacity: 0.82;
+}
+
+.rc-actions {
+  margin-top: 10px;
+  padding-top: 9px;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.rc-social-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px;
+}
+
+.rc-action-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 7px 10px;
+  border-radius: 7px;
+  font-size: 11.5px;
+  font-weight: 700;
+  font-family: inherit;
+  cursor: pointer;
+  text-decoration: none;
+  border: 1px solid #2b313e;
+  background: rgba(15, 20, 28, 0.9);
+  color: #f1f5f9;
+  transition: border-color 0.16s ease, background 0.16s ease, transform 0.12s ease;
+}
+
+.rc-action-btn:hover {
+  transform: translateY(-1px);
+  border-color: #475569;
+}
+
+.rc-action-btn.social {
+  background: rgba(255, 255, 255, 0.05);
+  border-color: rgba(255, 255, 255, 0.14);
+}
+
+.rc-action-btn.social:hover {
+  border-color: #2dd4bf;
+  background: rgba(45, 212, 191, 0.12);
+}
+
+.rc-action-btn.primary-user {
+  background: linear-gradient(135deg, #2dd4bf 0%, #14b8a6 100%);
+  color: #0b1315;
+  border-color: transparent;
+}
+
+.rc-action-btn.primary-admin {
+  background: linear-gradient(135deg, #ffd23f 0%, #f59e0b 100%);
+  color: #14161b;
+  border-color: transparent;
+}
+
+.rc-action-btn.secondary-admin {
+  background: rgba(255, 210, 63, 0.12);
+  color: #ffd23f;
+  border-color: rgba(255, 210, 63, 0.35);
+}
+
+.rc-action-btn.link-btn {
+  background: transparent;
+  border-color: rgba(255, 255, 255, 0.1);
+  color: #94a3b8;
+  font-size: 11px;
+}
+
+/* Storefront Active Role & Capability Banner */
+.storefront-role-banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 14px;
+  margin: 4px 0 10px;
+  border-radius: 12px;
+  background: rgba(17, 21, 29, 0.86);
+  border: 1px solid rgba(45, 212, 191, 0.32);
+  backdrop-filter: blur(10px);
+  flex-wrap: wrap;
+}
+
+.storefront-role-banner[data-role="admin"] {
+  border-color: rgba(255, 210, 63, 0.35);
+  background: linear-gradient(90deg, rgba(255, 210, 63, 0.07) 0%, rgba(17, 21, 29, 0.88) 45%);
+}
+
+.storefront-role-banner[data-role="user"] {
+  border-color: rgba(45, 212, 191, 0.38);
+  background: linear-gradient(90deg, rgba(45, 212, 191, 0.08) 0%, rgba(17, 21, 29, 0.88) 45%);
+}
+
+.srb-left {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  flex-wrap: wrap;
+  flex: 1;
+  min-width: 260px;
+}
+
+.srb-mode-sub {
+  font-size: 12px;
+  font-weight: 700;
+  color: #f8fafc;
+  white-space: nowrap;
+}
+
+.srb-divider {
+  width: 1px;
+  height: 16px;
+  background: rgba(255, 255, 255, 0.14);
+}
+
+.srb-perms-list {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  font-size: 11.5px;
+  color: #cbd5e1;
+}
+
+.srb-perm {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.srb-perm.restricted {
+  color: #94a3b8;
+}
+
+.srb-actions {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  flex-wrap: wrap;
+}
+
+.srb-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 6px 11px;
+  border-radius: 7px;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 11px;
+  font-weight: 700;
+  cursor: pointer;
+  text-decoration: none;
+  border: 1px solid #2b313e;
+  background: rgba(15, 19, 27, 0.9);
+  color: #e2e8f0;
+  transition: border-color 0.15s ease, background 0.15s ease, transform 0.12s ease;
+}
+
+.srb-btn:hover {
+  transform: translateY(-1px);
+}
+
+.srb-btn.user-switch {
+  border-color: rgba(45, 212, 191, 0.4);
+  color: #2dd4bf;
+  background: rgba(45, 212, 191, 0.1);
+}
+
+.srb-btn.admin-switch,
+.srb-btn.admin-console-go {
+  border-color: rgba(255, 210, 63, 0.42);
+  color: #ffd23f;
+  background: rgba(255, 210, 63, 0.1);
+}
+
+.srb-btn.compare-trigger {
+  border-color: rgba(255, 255, 255, 0.18);
+  color: #cbd5e1;
+}
+
+/* Role Portal Modal Card on Storefront */
+.role-portal-modal-card {
+  max-width: 720px;
+  width: 94vw;
+}
+
+.role-portal-header {
+  margin-bottom: 14px;
+}
+
+.portal-cards-grid .role-compare-card {
+  padding: 14px;
+}
+
+/* Interactive OAuth Account Chooser Modal */
+.oauth-modal-card {
+  max-width: 440px;
+  width: 92vw;
+}
+
+.oauth-modal-header {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  margin-bottom: 14px;
+}
+
+.oauth-modal-logo {
+  width: 42px;
+  height: 42px;
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  display: grid;
+  place-items: center;
+  flex-shrink: 0;
+}
+
+.oauth-modal-kicker {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 10px;
+  font-weight: 700;
+  color: #2dd4bf;
+  letter-spacing: 0.6px;
+  margin-bottom: 2px;
+}
+
+.oauth-account-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.oauth-account-item {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: rgba(15, 18, 25, 0.9);
+  border: 1px solid #2b313e;
+  color: #f8fafc;
+  cursor: pointer;
+  text-align: left;
+  font-family: inherit;
+  transition: border-color 0.16s ease, background 0.16s ease, transform 0.12s ease;
+}
+
+.oauth-account-item:hover {
+  border-color: #2dd4bf;
+  background: rgba(45, 212, 191, 0.08);
+  transform: translateY(-1px);
+}
+
+.oauth-acc-avatar {
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  font-weight: 800;
+  font-size: 14px;
+  color: #fff;
+  flex-shrink: 0;
+}
+
+.oauth-acc-info {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.oauth-acc-info strong {
+  font-size: 13.5px;
+  color: #f8fafc;
+}
+
+.oauth-acc-info small {
+  font-size: 11.5px;
+  color: #94a3b8;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.oauth-acc-arrow {
+  font-family: 'JetBrains Mono', monospace;
+  font-weight: 700;
+  color: #2dd4bf;
+}
+
+.apple-relay-box {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  padding: 10px;
+  border-radius: 9px;
+  background: rgba(15, 23, 42, 0.65);
+  border: 1px solid #2b313e;
+  margin-bottom: 12px;
+}
+
+.apple-relay-option {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  cursor: pointer;
+  font-size: 12px;
+}
+
+.apple-relay-option input[type="radio"] {
+  margin-top: 3px;
+  accent-color: #2dd4bf;
+}
+
+.apple-relay-option strong {
+  display: block;
+  color: #f1f5f9;
+  font-size: 12.5px;
+}
+
+.apple-relay-option small {
+  color: #94a3b8;
+  font-size: 11px;
+}
+
+.auth-divider.compact {
+  margin: 10px 0;
+}
+
+/* Storefront Topbar Role Pill & Profile Role Pill */
+.role-status-pill {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.role-status-pill[data-role="user"] {
+  border-color: rgba(45, 212, 191, 0.4);
+  color: #2dd4bf;
+}
+
+.role-status-pill[data-role="admin"] {
+  border-color: rgba(255, 210, 63, 0.45);
+  color: #ffd23f;
+}
+
+.profile-role-pill {
+  display: inline-block;
+  margin-top: 4px;
+  padding: 2px 7px;
+  border-radius: 5px;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 10px;
+  font-weight: 700;
+}
+
+.profile-role-pill.user {
+  background: rgba(45, 212, 191, 0.14);
+  color: #2dd4bf;
+  border: 1px solid rgba(45, 212, 191, 0.3);
+}
+
+.profile-role-pill.admin {
+  background: rgba(255, 210, 63, 0.15);
+  color: #ffd23f;
+  border: 1px solid rgba(255, 210, 63, 0.35);
+}
+
+@media (max-width: 640px) {
+  .social-oauth-grid,
+  .role-comparison-grid {
+    grid-template-columns: 1fr;
+  }
+}
 
