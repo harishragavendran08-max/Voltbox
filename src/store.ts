@@ -40,6 +40,7 @@ export interface User {
   role: string;
   cart: Record<string, number>;
   orders: Order[];
+  wishlist?: number[];
 }
 
 export interface Product {
@@ -423,6 +424,12 @@ export class Store {
         this.seedMessages();
         updated = true;
       }
+      for (const u of this.users) {
+        if (!Array.isArray(u.wishlist)) {
+          u.wishlist = [];
+          updated = true;
+        }
+      }
       if (updated) {
         this.save();
       }
@@ -633,6 +640,7 @@ export class Store {
       role: 'member',
       cart: {},
       orders: [],
+      wishlist: [],
     };
     this.nextId++;
     this.users.push(user);

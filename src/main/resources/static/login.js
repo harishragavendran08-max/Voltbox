@@ -121,20 +121,6 @@ function setLoginMode(mode) {
     roleTabAdminEl.classList.toggle("active", isAdmin);
     roleTabAdminEl.setAttribute("aria-selected", isAdmin ? "true" : "false");
   }
-  if (compareCardUserEl) compareCardUserEl.classList.toggle("active", !isAdmin);
-  if (compareCardAdminEl) compareCardAdminEl.classList.toggle("active", isAdmin);
-
-  if (roleScopeBannerEl) {
-    roleScopeBannerEl.setAttribute("data-mode", activeLoginMode);
-  }
-  if (scopePillEl) {
-    scopePillEl.textContent = isAdmin ? "ADMIN PRIVILEGE" : "SHOPPER MODE";
-  }
-  if (scopeTextEl) {
-    scopeTextEl.textContent = isAdmin
-      ? "Full access to Storefront Catalog + /admin CRUD Dashboard & Inventory."
-      : "Browse products, compare 6M prices & buy (No /admin access).";
-  }
 
   // Show Google & Apple social buttons ONLY for User Login
   if (userSocialSection) {
@@ -146,45 +132,45 @@ function setLoginMode(mode) {
 
   if (loginSubEl) {
     loginSubEl.textContent = isAdmin
-      ? "Authenticate as Administrator for Storefront + /admin Console."
-      : "Browse products, build PC rigs, and buy.";
+      ? "Sign in with your Administrator credentials."
+      : "Sign in to your Voltbox account.";
   }
   if (terminalModeCodeEl) {
     terminalModeCodeEl.textContent = isAdmin
-      ? "SYS.AUTH // ADMIN CONSOLE PORTAL"
-      : "SYS.AUTH // USER SHOPPER PORTAL";
+      ? "SYS.AUTH // ADMIN LOGIN"
+      : "SYS.AUTH // USER LOGIN";
   }
   if (terminalFootRoleEl) {
     terminalFootRoleEl.textContent = isAdmin
-      ? "ROLE: ADMIN (CATALOG + /ADMIN CRUD)"
-      : "ROLE: SHOPPER (BROWSE & BUY)";
+      ? "ADMIN LOGIN"
+      : "USER LOGIN";
   }
   if (emailFieldLabelEl) {
-    emailFieldLabelEl.textContent = isAdmin ? "Administrator Email" : "Shopper Email";
+    emailFieldLabelEl.textContent = isAdmin ? "Admin Email" : "Email";
   }
   if (pwFieldLabelEl) {
-    pwFieldLabelEl.textContent = isAdmin ? "Admin Passkey" : "Password";
+    pwFieldLabelEl.textContent = "Password";
   }
   if (emailEl) {
     emailEl.placeholder = isAdmin ? "harish@voltbox.test" : "alex.chen@gmail.com";
   }
   if (demoBoltIconEl) {
-    demoBoltIconEl.textContent = isAdmin ? "🛡️" : "🛍️";
+    demoBoltIconEl.textContent = "⚡";
   }
   if (demoBtnTitleEl) {
     demoBtnTitleEl.textContent = isAdmin
-      ? "Instant Demo Admin Login (Catalog + /admin)"
-      : "Instant Demo User Login (Browse & Buy)";
+      ? "Instant Demo Admin Login"
+      : "Instant Demo User Login";
   }
   if (demoBtnSubEl) {
     demoBtnSubEl.textContent = isAdmin
-      ? "harish@voltbox.test · Full Storefront + /admin Dashboard"
-      : "alex.chen@gmail.com · Shopper Account (Browse & Buy Only)";
+      ? "harish@voltbox.test"
+      : "alex.chen@gmail.com";
   }
   if (btnLabelEl) {
     btnLabelEl.textContent = isAdmin
-      ? "Sign in as Administrator →"
-      : "Sign in to Browse & Buy →";
+      ? "Sign in as Admin →"
+      : "Sign in →";
   }
   if (authSwitchRowEl) {
     authSwitchRowEl.hidden = isAdmin;
@@ -201,74 +187,6 @@ if (roleTabUserEl) {
 if (roleTabAdminEl) {
   roleTabAdminEl.addEventListener("click", function () {
     setLoginMode("admin");
-  });
-}
-
-if (compareCardUserEl) {
-  compareCardUserEl.addEventListener("click", function (e) {
-    if (e.target.closest("button")) return;
-    setLoginMode("user");
-  });
-}
-if (compareCardAdminEl) {
-  compareCardAdminEl.addEventListener("click", function (e) {
-    if (e.target.closest("button")) return;
-    setLoginMode("admin");
-  });
-}
-
-var rcUserGoogleBtnEl   = document.getElementById("rc-user-google-btn");
-var rcUserAppleBtnEl    = document.getElementById("rc-user-apple-btn");
-var rcUserLoginBtnEl    = document.getElementById("rc-user-login-btn");
-var rcAdminConsoleBtnEl = document.getElementById("rc-admin-console-btn");
-var rcAdminStoreBtnEl   = document.getElementById("rc-admin-store-btn");
-
-if (rcUserGoogleBtnEl) {
-  rcUserGoogleBtnEl.addEventListener("click", function (e) {
-    e.stopPropagation();
-    setLoginMode("user");
-    openOAuthModal("google");
-  });
-}
-if (rcUserAppleBtnEl) {
-  rcUserAppleBtnEl.addEventListener("click", function (e) {
-    e.stopPropagation();
-    setLoginMode("user");
-    openOAuthModal("apple");
-  });
-}
-if (rcUserLoginBtnEl) {
-  rcUserLoginBtnEl.addEventListener("click", function (e) {
-    e.stopPropagation();
-    setLoginMode("user");
-    emailEl.value = USER_DEMO_EMAIL;
-    passEl.value = USER_DEMO_PASS;
-    updateTelemetry();
-    submitCredentials(USER_DEMO_EMAIL, USER_DEMO_PASS);
-  });
-}
-if (rcAdminConsoleBtnEl) {
-  rcAdminConsoleBtnEl.addEventListener("click", function (e) {
-    e.stopPropagation();
-    setLoginMode("admin");
-    var destAdminRadio = document.getElementById("dest-admin-console");
-    if (destAdminRadio) destAdminRadio.checked = true;
-    emailEl.value = ADMIN_DEMO_EMAIL;
-    passEl.value = ADMIN_DEMO_PASS;
-    updateTelemetry();
-    submitCredentials(ADMIN_DEMO_EMAIL, ADMIN_DEMO_PASS);
-  });
-}
-if (rcAdminStoreBtnEl) {
-  rcAdminStoreBtnEl.addEventListener("click", function (e) {
-    e.stopPropagation();
-    setLoginMode("admin");
-    var destStoreRadio = document.getElementById("dest-storefront");
-    if (destStoreRadio) destStoreRadio.checked = true;
-    emailEl.value = ADMIN_DEMO_EMAIL;
-    passEl.value = ADMIN_DEMO_PASS;
-    updateTelemetry();
-    submitCredentials(ADMIN_DEMO_EMAIL, ADMIN_DEMO_PASS);
   });
 }
 
@@ -656,8 +574,8 @@ function setBusy(busy) {
   if (googleLoginBtnEl) googleLoginBtnEl.disabled = busy;
   if (appleLoginBtnEl) appleLoginBtnEl.disabled = busy;
   var defaultLabel = activeLoginMode === "admin"
-    ? "Sign in as Administrator →"
-    : "Sign in to Browse & Buy →";
+    ? "Sign in as Admin →"
+    : "Sign in →";
   if (btnLabelEl) {
     btnLabelEl.textContent = busy ? "AUTHENTICATING TERMINAL…" : defaultLabel;
   } else {

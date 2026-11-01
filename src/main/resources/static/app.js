@@ -22,6 +22,7 @@ var STORE = {
 // ── state ──
 var cart = {};
 var products = [];
+var wishlist = [];
 var me = null;
 var shownOrder = null;
 var saveTimer = null;
@@ -231,10 +232,12 @@ function loadMe() {
     .then(function (data) {
       me = data;
       cart = data.cart || {};
+      wishlist = Array.isArray(data.wishlist) ? data.wishlist : [];
       if (data.cartDetails) {
         window.serverCartState = data.cartDetails;
       }
       paintProfile();
+      paintWishlist();
       fetchProducts();
       fetchCart();
       fetchInventorySummary();
@@ -327,20 +330,19 @@ function paintProfile() {
   var roleLabelEl = document.getElementById("topbar-role-label");
   var roleLedEl   = document.getElementById("topbar-role-led");
   if (roleLabelEl) {
-    roleLabelEl.textContent = isAdmin ? "ADMIN LOGIN · Storefront + /admin" : "USER LOGIN · Browse & Buy Only";
+    roleLabelEl.textContent = isAdmin ? "Admin Login" : "User Login";
   }
   if (roleLedEl) {
     roleLedEl.className = isAdmin ? "led-dot amber" : "led-dot emerald";
   }
   if (roleBadgeEl) {
+    roleBadgeEl.href = isAdmin ? "login.html?switch=1&mode=user" : "login.html?switch=1&mode=admin";
     roleBadgeEl.setAttribute("data-role", isAdmin ? "admin" : "user");
   }
 
   var profileRolePillEl = document.getElementById("profile-role-pill");
   if (profileRolePillEl) {
-    profileRolePillEl.textContent = isAdmin
-      ? "ADMIN LOGIN · Storefront + Admin Console"
-      : "USER LOGIN · Shopper · Browse & Buy Only";
+    profileRolePillEl.textContent = isAdmin ? "Admin" : "User";
     profileRolePillEl.className = isAdmin ? "profile-role-pill admin" : "profile-role-pill user";
   }
 
@@ -349,49 +351,9 @@ function paintProfile() {
     profileAdminShortcutEl.hidden = !isAdmin;
   }
 
-  // Update Storefront Role & Capability Strip
-  var srbBannerEl      = document.getElementById("storefront-role-banner");
-  var srbBadgeEl       = document.getElementById("srb-badge");
-  var srbModeSubEl     = document.getElementById("srb-mode-sub");
-  var srbPermsListEl   = document.getElementById("srb-perms-list");
-  var srbSwitchUserBtn = document.getElementById("srb-switch-user-btn");
-  var srbSwitchAdmBtn  = document.getElementById("srb-switch-admin-btn");
-  var srbOpenAdmLink   = document.getElementById("srb-open-admin-link");
-
-  if (srbBannerEl) {
-    srbBannerEl.setAttribute("data-role", isAdmin ? "admin" : "user");
-  }
-  if (srbBadgeEl) {
-    srbBadgeEl.textContent = isAdmin ? "ADMIN LOGIN" : "USER LOGIN";
-    srbBadgeEl.className = isAdmin ? "rc-badge admin" : "rc-badge user";
-  }
-  if (srbModeSubEl) {
-    srbModeSubEl.textContent = isAdmin
-      ? "Storefront + Admin Console"
-      : "Shopper · Browse & Buy (Browse & Buy Only)";
-  }
-  if (srbPermsListEl) {
-    srbPermsListEl.innerHTML = isAdmin
-      ? '<span class="srb-perm">✓ Full access to Storefront Catalog &amp; Checkout</span>' +
-        '<span class="srb-perm">✓ Dedicated <code>/admin</code> CRUD Dashboard</span>' +
-        '<span class="srb-perm">✓ Real-time Warehouse Stock &amp; Restock Controls</span>' +
-        '<span class="srb-perm">✓ Spring Boot JPA &amp; JVM System Health Telemetry</span>'
-      : '<span class="srb-perm">✓ Sign in with <strong>Google</strong> or <strong>Apple ID</strong></span>' +
-        '<span class="srb-perm">✓ Browse 22+ PC parts, specs &amp; 6M price charts</span>' +
-        '<span class="srb-perm">✓ Build a 4-slot Rig &amp; checkout with thermal receipts</span>' +
-        '<span class="srb-perm restricted">✕ No access to <code>/admin</code> CRUD or stock controls</span>';
-  }
-  if (srbSwitchUserBtn) srbSwitchUserBtn.hidden = !isAdmin;
-  if (srbSwitchAdmBtn)  srbSwitchAdmBtn.hidden  = isAdmin;
-  if (srbOpenAdmLink)   srbOpenAdmLink.hidden   = !isAdmin;
-
-  var portalCardUser  = document.getElementById("portal-card-user");
-  var portalCardAdmin = document.getElementById("portal-card-admin");
-  if (portalCardUser)  portalCardUser.classList.toggle("active", !isAdmin);
-  if (portalCardAdmin) portalCardAdmin.classList.toggle("active", isAdmin);
-
   billInputEl.value = me.billEmail || "";
   paintHistoryCount(me.orderCount);
+  paintWishlist();
 
   if (!me.mailReady) {
     billNoteEl.textContent =
@@ -400,68 +362,191 @@ function paintProfile() {
   }
 }
 
-function openRolePortalModal() {
-  var overlay = document.getElementById("role-portal-overlay");
-  if (!overlay) return;
-  closeAllSheets();
-  overlay.classList.add("open");
-  overlay.setAttribute("aria-hidden", "false");
-  document.body.classList.add("no-scroll");
-}
-
-function closeRolePortalModal() {
-  var overlay = document.getElementById("role-portal-overlay");
-  if (!overlay) return;
-  overlay.classList.remove("open");
-  overlay.setAttribute("aria-hidden", "true");
-  document.body.classList.remove("no-scroll");
-}
-
-function switchStorefrontSession(mode, provider, redirectUrl) {
-  var endpoint = "/api/login";
-  var payload;
-  if (provider === "google") {
-    endpoint = "/api/auth/google";
-    payload = { email: "alex.chen@gmail.com", name: "Alex Chen" };
-  } else if (provider === "apple") {
-    endpoint = "/api/auth/apple";
-    payload = { email: "maya.lin@icloud.com", name: "Maya Lin", hideMyEmail: false };
-  } else if (mode === "admin") {
-    endpoint = "/api/login";
-    payload = { email: "harish@voltbox.test", password: "Harish123", loginType: "admin" };
-  } else {
-    endpoint = "/api/login";
-    payload = { email: "alex.chen@gmail.com", password: "Shopper123", loginType: "user" };
-  }
-
-  fetch(endpoint, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(payload)
-  })
-    .then(function (r) { return r.json(); })
-    .then(function (data) {
-      if (data && data.token) {
-        sessionStorage.removeItem("voltbox_signed_out");
-        localStorage.setItem("voltbox_token", data.token);
-        localStorage.setItem("voltbox_user", data.name || "");
-        localStorage.setItem("voltbox_role", data.role || "member");
-        localStorage.setItem("voltbox_auth_provider", data.authProvider || provider || "password");
-        closeRolePortalModal();
-        if (redirectUrl) {
-          window.location.href = redirectUrl;
-        } else {
-          loadMe();
-          triggerPerimeterSignalPulse();
-        }
-      }
-    })
-    .catch(function () {});
-}
-
 function paintHistoryCount(n) {
   historyCountEl.textContent = n + (n === 1 ? " bill" : " bills");
 }
+
+function isProductInWishlist(productId) {
+  var id = Number(productId);
+  return wishlist.indexOf(id) !== -1;
+}
+
+function updateWishlistCardButtons(productId, isIn) {
+  var cardBtn = document.getElementById("wishlist-btn-" + productId);
+  if (cardBtn) {
+    cardBtn.classList.toggle("active", isIn);
+    cardBtn.setAttribute("aria-label", isIn ? "Remove from wishlist" : "Add to wishlist");
+    cardBtn.setAttribute("title", isIn ? "Remove from wishlist" : "Save to wishlist");
+    var svg = cardBtn.querySelector("svg");
+    if (svg) {
+      svg.style.fill = isIn ? "#f43f5e" : "none";
+    }
+  }
+  var drawerBtn = document.getElementById("spec-wishlist-btn");
+  if (drawerBtn && activeSpecProductId === productId) {
+    drawerBtn.classList.toggle("active", isIn);
+    drawerBtn.innerHTML = icon("heart", 15) + " <span>" + (isIn ? "Saved to Wishlist" : "Add to Wishlist") + "</span>";
+    var dSvg = drawerBtn.querySelector("svg");
+    if (dSvg) {
+      dSvg.style.fill = isIn ? "#f43f5e" : "none";
+    }
+  }
+}
+
+function toggleWishlist(e, productId) {
+  if (e) {
+    if (e.stopPropagation) e.stopPropagation();
+    if (e.preventDefault) e.preventDefault();
+  }
+  var id = Number(productId);
+  var prod = findProductById(id);
+  var wasIn = isProductInWishlist(id);
+
+  return api("/api/wishlist/toggle", {
+    method: "POST",
+    body: JSON.stringify({ productId: id })
+  })
+    .then(function (res) { return res.json(); })
+    .then(function (data) {
+      if (data && Array.isArray(data.wishlist)) {
+        wishlist = data.wishlist;
+      } else {
+        if (wasIn) {
+          wishlist = wishlist.filter(function (x) { return x !== id; });
+        } else {
+          wishlist.push(id);
+        }
+      }
+      var nowIn = isProductInWishlist(id);
+      updateWishlistCardButtons(id, nowIn);
+      paintWishlist();
+      updateFilterTabCounts();
+      if (activeCategoryFilter === "wishlist") {
+        applyFiltersAndSearch();
+      }
+      var title = prod ? prod.title : ("Part #" + id);
+      showActivityToast(nowIn ? ("Saved to Wishlist: " + title) : ("Removed from Wishlist: " + title));
+      return data;
+    })
+    .catch(function (err) {
+      console.error("couldn't toggle wishlist:", err);
+    });
+}
+
+function paintWishlist() {
+  var countEl = document.getElementById("profile-wishlist-count");
+  var filterCountEl = document.getElementById("wishlist-filter-count");
+  var listEl = document.getElementById("profile-wishlist-list");
+  var actionsEl = document.getElementById("profile-wishlist-actions");
+
+  var count = wishlist.length;
+  if (countEl) {
+    countEl.textContent = count + " saved";
+  }
+  if (filterCountEl) {
+    filterCountEl.textContent = String(count);
+  }
+
+  if (!listEl) return;
+
+  if (count === 0) {
+    listEl.innerHTML =
+      '<p class="sheet-empty">Your personal wishlist is empty.<br/><small>Click the heart icon on any hardware part to save it here.</small></p>';
+    if (actionsEl) actionsEl.hidden = true;
+    return;
+  }
+
+  if (actionsEl) actionsEl.hidden = false;
+  var html = "";
+  for (var i = 0; i < wishlist.length; i++) {
+    var p = findProductById(wishlist[i]);
+    if (!p) continue;
+    var stock = getEffectiveStock(p);
+    var low = isLowStockItem(p);
+    var img = (p.image && (p.image.indexOf("http") === 0 || p.image.indexOf("/") === 0)) ? p.image : tileFor(p.category);
+    html +=
+      '<div class="wishlist-item" data-product-id="' + p.id + '">' +
+        '<img class="wishlist-thumb" src="' + esc(img) + '" alt="" onerror="this.onerror=null;this.src=NO_IMAGE" />' +
+        '<div class="wishlist-item-main" onclick="openSpecDrawer(' + p.id + ')">' +
+          '<strong class="wishlist-item-title">' + esc(p.title) + '</strong>' +
+          '<div class="wishlist-item-meta">' +
+            '<span class="wishlist-item-price">$' + p.price.toFixed(2) + '</span>' +
+            '<span class="wishlist-item-stock ' + (low ? 'low' : '') + '">' + (stock > 0 ? (stock + ' in stock') : 'Out of stock') + '</span>' +
+          '</div>' +
+        '</div>' +
+        '<div class="wishlist-item-actions">' +
+          '<button type="button" class="wishlist-cart-btn" onclick="inc(' + p.id + '); showActivityToast(\'Added ' + esc(p.title).replace(/'/g, "\\'") + ' to cart\');" title="Add to cart" aria-label="Add to cart">' +
+            icon("cart", 13) +
+          '</button>' +
+          '<button type="button" class="wishlist-remove-btn" onclick="toggleWishlist(event, ' + p.id + ')" title="Remove from wishlist" aria-label="Remove ' + esc(p.title) + ' from wishlist">&times;</button>' +
+        '</div>' +
+      '</div>';
+  }
+  listEl.innerHTML = html;
+}
+
+function toggleWishlistPanel() {
+  var panel = document.getElementById("profile-wishlist-panel");
+  var toggle = document.getElementById("wishlist-toggle");
+  var chev = document.getElementById("wishlist-chevron");
+  if (!panel || !toggle) return;
+  var opening = panel.hidden;
+  panel.hidden = !opening;
+  toggle.setAttribute("aria-expanded", opening ? "true" : "false");
+  if (chev) chev.classList.toggle("up", opening);
+}
+
+function addAllWishlistToCart() {
+  if (wishlist.length === 0) return;
+  var addAllBtn = document.getElementById("wishlist-add-all-btn");
+  if (addAllBtn) addAllBtn.disabled = true;
+
+  api("/api/wishlist/add-all-to-cart", { method: "POST" })
+    .then(function (res) { return res.json(); })
+    .then(function (data) {
+      if (addAllBtn) addAllBtn.disabled = false;
+      if (data && data.cart) {
+        window.serverCartState = data.cart;
+        cart = data.cart.rawCart || data.cart.rawMap || cart;
+      }
+      for (var i = 0; i < products.length; i++) {
+        refreshCard(products[i].id);
+      }
+      recalc(true);
+      showActivityToast("Added " + (data.addedCount || wishlist.length) + " wishlist items to your cart!");
+    })
+    .catch(function () {
+      if (addAllBtn) addAllBtn.disabled = false;
+      showActivityToast("Couldn't add all items to cart.");
+    });
+}
+
+function clearWishlist() {
+  if (wishlist.length === 0) return;
+  var clearBtn = document.getElementById("wishlist-clear-btn");
+  if (clearBtn) clearBtn.disabled = true;
+
+  api("/api/wishlist/clear", { method: "POST" })
+    .then(function (res) { return res.json(); })
+    .then(function () {
+      if (clearBtn) clearBtn.disabled = false;
+      var prevIds = wishlist.slice();
+      wishlist = [];
+      for (var i = 0; i < prevIds.length; i++) {
+        updateWishlistCardButtons(prevIds[i], false);
+      }
+      paintWishlist();
+      updateFilterTabCounts();
+      if (activeCategoryFilter === "wishlist") {
+        applyFiltersAndSearch();
+      }
+      showActivityToast("Personal wishlist cleared.");
+    })
+    .catch(function () {
+      if (clearBtn) clearBtn.disabled = false;
+    });
+}
+
 
 function signOut() {
   sessionStorage.setItem("voltbox_signed_out", "1");
@@ -634,6 +719,14 @@ function normalizeProductEntity(p) {
   return p;
 }
 
+function findProductById(id) {
+  var numId = Number(id);
+  for (var i = 0; i < products.length; i++) {
+    if (products[i].id === numId) return products[i];
+  }
+  return null;
+}
+
 
 function upgradeCardPhotos() {
   var imgs = gridEl.querySelectorAll(".card-img[data-photo]");
@@ -790,6 +883,17 @@ function renderAllCards() {
       ? '<span class="card-stock low" id="stock-note-' + p.id + '">' + stockQty + ' left in stock</span>'
       : '<span class="card-stock" id="stock-note-' + p.id + '">' + stockQty + ' in stock</span>';
 
+    var isWish = isProductInWishlist(p.id);
+    var wishBtn =
+      '<button class="card-wishlist-btn' + (isWish ? ' active' : '') + '" ' +
+      '        id="wishlist-btn-' + p.id + '" ' +
+      '        type="button" ' +
+      '        onclick="event.stopPropagation(); toggleWishlist(event, ' + p.id + ')" ' +
+      '        title="' + (isWish ? 'Remove from wishlist' : 'Save to wishlist') + '" ' +
+      '        aria-label="' + (isWish ? 'Remove from wishlist' : 'Save to wishlist') + '">' +
+        icon("heart", 15) +
+      '</button>';
+
     var flag =
       '<button class="card-flag" onclick="reportProduct(' + p.id + ')" ' +
       '        title="Report this listing" aria-label="Report ' + esc(p.title) + '">' +
@@ -805,6 +909,7 @@ function renderAllCards() {
         '     alt="' + esc(p.title) + '"' +
         '     onerror="this.onerror=null;this.src=NO_IMAGE" />' +
         lowStockBadge +
+        wishBtn +
         flag +
       '</div>' +
       '<div class="card-meta-row">' +
@@ -1020,6 +1125,14 @@ function populateSpecDrawer(p) {
     '<div class="spec-row"><span>Power / Thermal</span><span>' + esc(specs.powerDraw || "65W Nominal") + '</span></div>' +
     '<div class="spec-row"><span>Warranty</span><span>' + esc(specs.warranty || "3-Year Hardware") + '</span></div>';
 
+  var isSaved = isProductInWishlist(p.id);
+  var wishBtnHtml =
+    '<button class="spec-wishlist-btn' + (isSaved ? ' active' : '') + '" id="spec-wishlist-btn" ' +
+    '        type="button" onclick="toggleWishlist(event, ' + p.id + ')" ' +
+    '        aria-label="' + (isSaved ? 'Remove from wishlist' : 'Save to wishlist') + '">' +
+      icon("heart", 15) + ' <span>' + (isSaved ? 'Saved to Wishlist' : 'Add to Wishlist') + '</span>' +
+    '</button>';
+
   var restockBtnHtml = canCurrentUserRestock()
     ? '<button class="restock-btn" type="button" onclick="restockProduct(' + p.id + ')">' +
         icon("refresh", 14) + ' <span>Restock +3</span>' +
@@ -1032,6 +1145,7 @@ function populateSpecDrawer(p) {
       '<span class="qty-value' + (q > 0 ? ' active' : '') + '">' + q + ' in cart</span>' +
       '<button class="qty-btn" onclick="inc(' + p.id + ')" aria-label="Increase quantity in drawer">+</button>' +
     '</div>' +
+    wishBtnHtml +
     restockBtnHtml;
 
   var chartContainer = document.getElementById("drawer-chart-container");
@@ -1137,6 +1251,8 @@ function applyFiltersAndSearch(explicitQuery) {
     var catMatch = true;
     if (activeCategoryFilter === "low-stock") {
       catMatch = isLowStockItem(p);
+    } else if (activeCategoryFilter === "wishlist") {
+      catMatch = isProductInWishlist(p.id);
     } else if (activeCategoryFilter !== "all") {
       catMatch = (group === activeCategoryFilter);
     }
@@ -1158,9 +1274,13 @@ function applyFiltersAndSearch(explicitQuery) {
     gridEl.appendChild(noResultsEl);
   }
   if (shown === 0) {
-    noResultsEl.textContent = query
-      ? ('No parts match "' + query + '" in this view.')
-      : "No parts in this category right now.";
+    if (activeCategoryFilter === "wishlist") {
+      noResultsEl.textContent = "Your wishlist is empty. Click the heart icon on any hardware part to save items here.";
+    } else {
+      noResultsEl.textContent = query
+        ? ('No parts match "' + query + '" in this view.')
+        : "No parts in this category right now.";
+    }
     noResultsEl.style.display = "";
   } else {
     noResultsEl.style.display = "none";
@@ -1457,6 +1577,10 @@ function updateFilterTabCounts() {
   var tabs = filterBarEl.querySelectorAll(".filter-tab");
   for (var t = 0; t < tabs.length; t++) {
     var key = tabs[t].getAttribute("data-filter") || "all";
+    if (key === "wishlist") {
+      tabs[t].innerHTML = icon("heart", 12) + ' Wishlist (<span id="wishlist-filter-count">' + wishlist.length + '</span>)';
+      continue;
+    }
     var baseLabel = labels[key] || key;
     var c = counts[key] !== undefined ? counts[key] : 0;
     tabs[t].innerHTML = esc(baseLabel) + ' <span class="filter-count">' + c + '</span>';
@@ -1913,73 +2037,6 @@ function openOrderFromHistory(orderId) {
 function wireUpButtons() {
   logoutEl.addEventListener("click", signOut);
 
-  // User Login (Browse & Buy Only) vs Admin Login (Storefront + Admin Console) Portal & Banner Controls
-  var topbarRoleBadgeBtn  = document.getElementById("topbar-role-badge");
-  var profilePortalBtn    = document.getElementById("open-role-portal-from-profile");
-  var srbSwitchUserBtn    = document.getElementById("srb-switch-user-btn");
-  var srbSwitchAdmBtn     = document.getElementById("srb-switch-admin-btn");
-  var srbCompareBtn       = document.getElementById("srb-compare-btn");
-  var rolePortalOverlay   = document.getElementById("role-portal-overlay");
-  var rolePortalCloseBtn  = document.getElementById("role-portal-close");
-  var portalGoogleBtn     = document.getElementById("portal-google-login-btn");
-  var portalAppleBtn      = document.getElementById("portal-apple-login-btn");
-  var portalUserInstBtn   = document.getElementById("portal-user-instant-btn");
-  var portalAdminConsBtn  = document.getElementById("portal-admin-console-btn");
-  var portalAdminStoreBtn = document.getElementById("portal-admin-store-btn");
-
-  if (topbarRoleBadgeBtn) {
-    topbarRoleBadgeBtn.addEventListener("click", openRolePortalModal);
-  }
-  if (profilePortalBtn) {
-    profilePortalBtn.addEventListener("click", openRolePortalModal);
-  }
-  if (srbCompareBtn) {
-    srbCompareBtn.addEventListener("click", openRolePortalModal);
-  }
-  if (srbSwitchUserBtn) {
-    srbSwitchUserBtn.addEventListener("click", function () {
-      switchStorefrontSession("user", "password", null);
-    });
-  }
-  if (srbSwitchAdmBtn) {
-    srbSwitchAdmBtn.addEventListener("click", function () {
-      switchStorefrontSession("admin", "password", null);
-    });
-  }
-  if (rolePortalCloseBtn) {
-    rolePortalCloseBtn.addEventListener("click", closeRolePortalModal);
-  }
-  if (rolePortalOverlay) {
-    rolePortalOverlay.addEventListener("click", function (e) {
-      if (e.target === rolePortalOverlay) closeRolePortalModal();
-    });
-  }
-  if (portalGoogleBtn) {
-    portalGoogleBtn.addEventListener("click", function () {
-      switchStorefrontSession("user", "google", null);
-    });
-  }
-  if (portalAppleBtn) {
-    portalAppleBtn.addEventListener("click", function () {
-      switchStorefrontSession("user", "apple", null);
-    });
-  }
-  if (portalUserInstBtn) {
-    portalUserInstBtn.addEventListener("click", function () {
-      switchStorefrontSession("user", "password", null);
-    });
-  }
-  if (portalAdminConsBtn) {
-    portalAdminConsBtn.addEventListener("click", function () {
-      switchStorefrontSession("admin", "password", "/admin");
-    });
-  }
-  if (portalAdminStoreBtn) {
-    portalAdminStoreBtn.addEventListener("click", function () {
-      switchStorefrontSession("admin", "password", null);
-    });
-  }
-
   document.addEventListener("visibilitychange", function () {
     if (document.visibilityState === "hidden") flushCartSave();
   });
@@ -2065,6 +2122,19 @@ function wireUpButtons() {
 
   billSaveEl.addEventListener("click", saveBillEmail);
   historyToggleEl.addEventListener("click", toggleHistory);
+
+  var wishToggleEl = document.getElementById("wishlist-toggle");
+  if (wishToggleEl) {
+    wishToggleEl.addEventListener("click", toggleWishlistPanel);
+  }
+  var wishAddAllBtnEl = document.getElementById("wishlist-add-all-btn");
+  if (wishAddAllBtnEl) {
+    wishAddAllBtnEl.addEventListener("click", addAllWishlistToCart);
+  }
+  var wishClearBtnEl = document.getElementById("wishlist-clear-btn");
+  if (wishClearBtnEl) {
+    wishClearBtnEl.addEventListener("click", clearWishlist);
+  }
 
   checkoutEl.addEventListener("click", openCheckoutModal);
   cartSheetGoEl.addEventListener("click", openCheckoutModal);

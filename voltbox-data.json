@@ -13,7 +13,9 @@
       "avatarColor": "#ffd23f",
       "billEmail": "harshan.v.s2004@gmail.com",
       "role": "moderator",
-      "cart": {},
+      "cart": {
+        "19": 4
+      },
       "orders": [
         {
           "id": "VB-8B38",
@@ -317,6 +319,9 @@
           "status": "Pending",
           "amountPaid": 1158.28
         }
+      ],
+      "wishlist": [
+        19
       ]
     },
     {
@@ -328,7 +333,9 @@
       "billEmail": null,
       "role": "member",
       "cart": {
-        "21": 1
+        "19": 1,
+        "21": 1,
+        "41": 1
       },
       "orders": [
         {
@@ -394,7 +401,8 @@
           "paymentMethod": "Fake Pay",
           "amountPaid": 129.9
         }
-      ]
+      ],
+      "wishlist": []
     },
     {
       "id": 3,
@@ -448,7 +456,8 @@
           "paymentMethod": "Fake Pay",
           "amountPaid": 162.38
         }
-      ]
+      ],
+      "wishlist": []
     },
     {
       "id": 4,
@@ -459,7 +468,8 @@
       "billEmail": null,
       "role": "member",
       "cart": {},
-      "orders": []
+      "orders": [],
+      "wishlist": []
     },
     {
       "id": 5,
@@ -523,7 +533,8 @@
           "status": "Pending",
           "amountPaid": 73.61
         }
-      ]
+      ],
+      "wishlist": []
     },
     {
       "id": 6,
@@ -534,7 +545,8 @@
       "billEmail": null,
       "role": "member",
       "cart": {},
-      "orders": []
+      "orders": [],
+      "wishlist": []
     },
     {
       "id": 7,
@@ -545,7 +557,8 @@
       "billEmail": null,
       "role": "member",
       "cart": {},
-      "orders": []
+      "orders": [],
+      "wishlist": []
     },
     {
       "id": 8,
@@ -556,7 +569,8 @@
       "billEmail": null,
       "role": "member",
       "cart": {},
-      "orders": []
+      "orders": [],
+      "wishlist": []
     }
   ],
   "sessions": {
@@ -577,7 +591,10 @@
     "49762e74-3580-47c9-991b-003d771b9d54": "harish@voltbox.test",
     "fe79171a-0d50-4e0a-b754-9261d1cd5891": "alex.chen@gmail.com",
     "421777cb-2edc-4a9e-945c-8e9d74187167": "alex.chen@gmail.com",
-    "097b0276-873b-4ef4-80d1-1652b0259f9c": "harish@voltbox.test"
+    "097b0276-873b-4ef4-80d1-1652b0259f9c": "harish@voltbox.test",
+    "9da38076-36d1-4d3e-911e-6c5a0546596f": "harishragavendran08@gmail.com",
+    "13deede6-16d5-4dbe-877b-05903f1dcd98": "harish@voltbox.test",
+    "18d48402-0534-4c03-8539-edbc30d05c9e": "alex.chen@gmail.com"
   },
   "products": [
     {

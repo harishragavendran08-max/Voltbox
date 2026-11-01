@@ -27,6 +27,8 @@ import {
   computeSystemHealthMetrics,
   evaluateAccountPermissions,
   resolveSocialLoginIdentity,
+  toggleWishlistItem,
+  buildWishlistSummary,
 } from './inventory';
 
 test('LOW_STOCK_THRESHOLD is 5', () => {
@@ -403,4 +405,39 @@ test('resolveSocialLoginIdentity normalizes Google Login and Apple Login (includ
   assert.equal(applePrivateUser.role, 'member');
   assert.equal(applePrivateUser.isPrivateRelay, true);
 });
+
+test('toggleWishlistItem adds unlisted items and removes already saved items cleanly', () => {
+  const initial: number[] = [19, 20];
+  const step1 = toggleWishlistItem(initial, 28);
+  assert.equal(step1.added, true);
+  assert.equal(step1.productId, 28);
+  assert.deepEqual(step1.wishlist, [19, 20, 28]);
+
+  const step2 = toggleWishlistItem(step1.wishlist, 20);
+  assert.equal(step2.added, false);
+  assert.equal(step2.productId, 20);
+  assert.deepEqual(step2.wishlist, [19, 28]);
+
+  // Handles undefined/empty input
+  const step3 = toggleWishlistItem(undefined, 36);
+  assert.equal(step3.added, true);
+  assert.deepEqual(step3.wishlist, [36]);
+});
+
+test('buildWishlistSummary compiles saved products with SKU, stock status and valuation', () => {
+  const mockProducts = [
+    { id: 19, title: 'Nvidia RTX 5090', price: 200, category: 'gpus', quantity: 2, takenDown: false },
+    { id: 28, title: 'Corsair Vengeance 32GB', price: 115, category: 'memory', quantity: 5, takenDown: false },
+    { id: 99, title: 'Discontinued Card', price: 80, category: 'gpus', quantity: 0, takenDown: true },
+  ];
+
+  const summary = buildWishlistSummary([19, 28, 99], mockProducts);
+  assert.equal(summary.count, 2);
+  assert.deepEqual(summary.productIds, [19, 28]);
+  assert.equal(summary.totalValue, 315);
+  assert.equal(summary.items[0].sku, 'VB-GPU-019');
+  assert.equal(summary.items[0].inStock, true);
+  assert.equal(summary.items[1].sku, 'VB-MBD-028');
+});
+
 

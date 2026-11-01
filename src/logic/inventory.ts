@@ -1471,3 +1471,84 @@ export function resolveSocialLoginIdentity(input: {
     isPrivateRelay,
   };
 }
+
+export interface WishlistItem {
+  productId: number;
+  id: number;
+  title: string;
+  price: number;
+  image: string;
+  category: string;
+  componentGroup: string;
+  sku: string;
+  inStock: boolean;
+  quantity: number;
+}
+
+export interface WishlistSummary {
+  count: number;
+  productIds: number[];
+  items: WishlistItem[];
+  totalValue: number;
+}
+
+export function toggleWishlistItem(currentWishlist: number[] | undefined, productId: number): {
+  wishlist: number[];
+  added: boolean;
+  productId: number;
+} {
+  const cleanId = Math.floor(Number(productId));
+  const list = Array.isArray(currentWishlist) ? currentWishlist.map(Number).filter((n) => !Number.isNaN(n) && n > 0) : [];
+  const idx = list.indexOf(cleanId);
+  if (idx >= 0) {
+    list.splice(idx, 1);
+    return { wishlist: list, added: false, productId: cleanId };
+  } else {
+    list.push(cleanId);
+    return { wishlist: list, added: true, productId: cleanId };
+  }
+}
+
+export function buildWishlistSummary(
+  productIds: number[] | undefined,
+  products: Array<{
+    id: number;
+    title?: string;
+    price: number;
+    image?: string;
+    category?: string;
+    quantity?: number;
+    stock?: number;
+    takenDown?: boolean;
+    sku?: string;
+  }>
+): WishlistSummary {
+  const idSet = new Set(Array.isArray(productIds) ? productIds.map(Number) : []);
+  const validProducts = products.filter((p) => !p.takenDown && idSet.has(p.id));
+
+  const items: WishlistItem[] = validProducts.map((p) => {
+    const qty = getProductQuantity(p);
+    return {
+      productId: p.id,
+      id: p.id,
+      title: p.title || 'Component',
+      price: roundMoney(Number(p.price) || 0),
+      image: p.image || '',
+      category: p.category || 'components',
+      componentGroup: classifyComponentGroup(p),
+      sku: getProductSku(p),
+      inStock: qty > 0,
+      quantity: qty,
+    };
+  });
+
+  const totalValue = roundMoney(items.reduce((acc, item) => acc + item.price, 0));
+
+  return {
+    count: items.length,
+    productIds: items.map((i) => i.productId),
+    items,
+    totalValue,
+  };
+}
+

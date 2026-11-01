@@ -104,6 +104,7 @@ public class AccountController {
         res.put("donateImages", Collections.emptyList());
         res.put("cart", u.cart);
         res.put("cartDetails", cartService.buildCartEntity(u, null));
+        res.put("wishlist", u.wishlist != null ? u.wishlist : Collections.emptyList());
         res.put("orderCount", u.orders.size());
         return ResponseEntity.ok(res);
     }

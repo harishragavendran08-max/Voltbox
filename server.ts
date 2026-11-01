@@ -23,6 +23,8 @@ import {
   computeSystemHealthMetrics,
   evaluateAccountPermissions,
   resolveSocialLoginIdentity,
+  buildWishlistSummary,
+  toggleWishlistItem,
 } from './src/logic/inventory';
 
 const PORT = Number(process.env.PORT) || 3000;
@@ -618,6 +620,7 @@ app.get('/api/me', (req, res) => {
 
   const cartDetails = buildCartEntity(store.getProducts(), user.cart || {}, user.email, null);
   const permissions = evaluateAccountPermissions(user.role);
+  const wishlistSummary = buildWishlistSummary(user.wishlist, store.getProducts());
 
   return res.json({
     name: user.name,
@@ -631,6 +634,8 @@ app.get('/api/me', (req, res) => {
     billEmail: user.billEmail,
     cart: user.cart || {},
     cartDetails,
+    wishlist: user.wishlist || [],
+    wishlistSummary,
     orderCount: (user.orders || []).length,
     mailReady: MAIL_READY,
     donateUrl: DONATE_URL,
@@ -765,6 +770,144 @@ app.post('/api/cart/promo', (req, res) => {
     ok: valid,
     appliedPromo: cartEntity.appliedPromo || '',
     cart: cartEntity,
+  });
+});
+
+// ── Wishlist Controller (Personal list accessed through profile) ──
+app.get('/api/wishlist', (req, res) => {
+  const user = userFromReq(req);
+  if (!user) return notSignedIn(res);
+
+  const summary = buildWishlistSummary(user.wishlist, store.getProducts());
+  return res.json({
+    ok: true,
+    count: summary.count,
+    totalValue: summary.totalValue,
+    productIds: summary.productIds,
+    items: summary.items,
+  });
+});
+
+app.post('/api/wishlist/toggle', (req, res) => {
+  const user = userFromReq(req);
+  if (!user) return notSignedIn(res);
+
+  const productId = Number.parseInt(String(req.body?.productId ?? '0'), 10);
+  if (Number.isNaN(productId) || productId <= 0) {
+    return badRequest(res, 'Valid product ID required.');
+  }
+
+  const product = store.findProduct(productId);
+  if (!product || product.takenDown) return notFound(res, 'Product not found.');
+
+  const result = toggleWishlistItem(user.wishlist, productId);
+  user.wishlist = result.wishlist;
+  store.save();
+
+  const summary = buildWishlistSummary(user.wishlist, store.getProducts());
+  return res.json({
+    ok: true,
+    added: result.added,
+    productId,
+    count: summary.count,
+    totalValue: summary.totalValue,
+    productIds: summary.productIds,
+    items: summary.items,
+    message: result.added ? `Saved "${product.title}" to your personal wishlist.` : `Removed "${product.title}" from your wishlist.`,
+  });
+});
+
+app.post('/api/wishlist/items', (req, res) => {
+  const user = userFromReq(req);
+  if (!user) return notSignedIn(res);
+
+  const productId = Number.parseInt(String(req.body?.productId ?? '0'), 10);
+  if (Number.isNaN(productId) || productId <= 0) {
+    return badRequest(res, 'Valid product ID required.');
+  }
+
+  const product = store.findProduct(productId);
+  if (!product || product.takenDown) return notFound(res, 'Product not found.');
+
+  if (!Array.isArray(user.wishlist)) user.wishlist = [];
+  if (!user.wishlist.includes(productId)) {
+    user.wishlist.push(productId);
+    store.save();
+  }
+
+  const summary = buildWishlistSummary(user.wishlist, store.getProducts());
+  return res.json({
+    ok: true,
+    added: true,
+    productId,
+    count: summary.count,
+    totalValue: summary.totalValue,
+    productIds: summary.productIds,
+    items: summary.items,
+  });
+});
+
+app.delete('/api/wishlist/items/:productId', (req, res) => {
+  const user = userFromReq(req);
+  if (!user) return notSignedIn(res);
+
+  const productId = Number.parseInt(String(req.params.productId || '0'), 10);
+  if (!Number.isNaN(productId) && Array.isArray(user.wishlist)) {
+    user.wishlist = user.wishlist.filter((id) => id !== productId);
+    store.save();
+  }
+
+  const summary = buildWishlistSummary(user.wishlist, store.getProducts());
+  return res.json({
+    ok: true,
+    removedId: productId,
+    count: summary.count,
+    totalValue: summary.totalValue,
+    productIds: summary.productIds,
+    items: summary.items,
+  });
+});
+
+app.post('/api/wishlist/clear', (req, res) => {
+  const user = userFromReq(req);
+  if (!user) return notSignedIn(res);
+
+  user.wishlist = [];
+  store.save();
+  return res.json({
+    ok: true,
+    count: 0,
+    totalValue: 0,
+    productIds: [],
+    items: [],
+  });
+});
+
+app.post('/api/wishlist/add-all-to-cart', (req, res) => {
+  const user = userFromReq(req);
+  if (!user) return notSignedIn(res);
+
+  if (!user.cart) user.cart = {};
+  let addedCount = 0;
+
+  for (const pid of user.wishlist || []) {
+    const p = store.findProduct(pid);
+    if (p && !p.takenDown && getProductQuantity(p) > 0) {
+      const key = String(pid);
+      user.cart[key] = (Number(user.cart[key]) || 0) + 1;
+      addedCount++;
+    }
+  }
+
+  store.save();
+  const cartEntity = buildCartEntity(store.getProducts(), user.cart, user.email, null);
+  const summary = buildWishlistSummary(user.wishlist, store.getProducts());
+
+  return res.json({
+    ok: true,
+    addedCount,
+    cart: cartEntity,
+    wishlist: summary,
   });
 });
 
