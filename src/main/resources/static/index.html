@@ -30,6 +30,31 @@
 </head>
 <body>
 
+  <!-- Global Industrial PCB Blueprint, Cursor Voltage Spotlight, Signal Pulse Traces & Film Grain -->
+  <div class="bg-canvas" id="bg-canvas" aria-hidden="true">
+    <div class="bg-pcb-grid"></div>
+    <div class="bg-crosshairs"></div>
+    <div class="voltage-spotlight" id="voltage-spotlight"></div>
+    <svg class="signal-traces-svg" viewBox="0 0 1440 900" preserveAspectRatio="none">
+      <!-- Left & Top PCB Copper + Signal Traces -->
+      <path class="pcb-trace-base" d="M 0 110 H 110 L 145 145 V 340 L 115 370 V 680 L 150 715 V 900" />
+      <path class="pcb-trace-pulse amber" d="M 0 110 H 110 L 145 145 V 340 L 115 370 V 680 L 150 715 V 900" />
+      <path class="pcb-trace-base" d="M 180 0 V 65 L 210 95 H 520 L 550 65 H 890 L 920 95 H 1230 L 1260 65 V 0" />
+      <path class="pcb-trace-pulse cyan" d="M 180 0 V 65 L 210 95 H 520 L 550 65 H 890 L 920 95 H 1230 L 1260 65 V 0" />
+      <!-- Right Perimeter PCB Copper + Signal Traces -->
+      <path class="pcb-trace-base" d="M 1440 160 H 1335 L 1300 195 V 460 L 1330 490 V 760 L 1295 795 V 900" />
+      <path class="pcb-trace-pulse cyan-alt" d="M 1440 160 H 1335 L 1300 195 V 460 L 1330 490 V 760 L 1295 795 V 900" />
+      <!-- Circuit Via Pads -->
+      <circle class="pcb-via" cx="145" cy="145" r="3.5" />
+      <circle class="pcb-via" cx="115" cy="370" r="3.5" />
+      <circle class="pcb-via" cx="210" cy="95" r="3.5" />
+      <circle class="pcb-via" cx="1230" cy="95" r="3.5" />
+      <circle class="pcb-via" cx="1300" cy="195" r="3.5" />
+      <circle class="pcb-via" cx="1330" cy="490" r="3.5" />
+    </svg>
+    <div class="bg-vignette-grain"></div>
+  </div>
+
   <div class="app">
 
     <!-- the top bar — logo (and donate) on the left, cart + avatar on the

@@ -4,12 +4,11 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Sign in — Voltbox</title>
-  <meta name="description" content="Sign in to Voltbox." />
+  <meta name="description" content="Sign in to Voltbox Hardware Bench & Electronics Catalog." />
 
-  <!-- inter font — same one the shop uses, so the two pages feel related -->
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800&display=swap" rel="stylesheet" />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800&family=JetBrains+Mono:wght@400;600;700&display=swap" rel="stylesheet" />
 
   <link rel="stylesheet" href="style.css" />
 
@@ -21,52 +20,239 @@
 </head>
 <body class="login-body">
 
-  <main class="login-card">
+  <!-- Global Industrial PCB Blueprint, Cursor Voltage Spotlight, Signal Pulse Traces & Film Grain -->
+  <div class="bg-canvas" id="bg-canvas" aria-hidden="true">
+    <div class="bg-pcb-grid"></div>
+    <div class="bg-crosshairs"></div>
+    <div class="voltage-spotlight" id="voltage-spotlight"></div>
+    <svg class="signal-traces-svg" viewBox="0 0 1440 900" preserveAspectRatio="none">
+      <path class="pcb-trace-base" d="M 0 110 H 110 L 145 145 V 340 L 115 370 V 680 L 150 715 V 900" />
+      <path class="pcb-trace-pulse amber" d="M 0 110 H 110 L 145 145 V 340 L 115 370 V 680 L 150 715 V 900" />
+      <path class="pcb-trace-base" d="M 180 0 V 65 L 210 95 H 520 L 550 65 H 890 L 920 95 H 1230 L 1260 65 V 0" />
+      <path class="pcb-trace-pulse cyan" d="M 180 0 V 65 L 210 95 H 520 L 550 65 H 890 L 920 95 H 1230 L 1260 65 V 0" />
+      <path class="pcb-trace-base" d="M 1440 160 H 1335 L 1300 195 V 460 L 1330 490 V 760 L 1295 795 V 900" />
+      <path class="pcb-trace-pulse cyan-alt" d="M 1440 160 H 1335 L 1300 195 V 460 L 1330 490 V 760 L 1295 795 V 900" />
+      <circle class="pcb-via" cx="145" cy="145" r="3.5" />
+      <circle class="pcb-via" cx="115" cy="370" r="3.5" />
+      <circle class="pcb-via" cx="210" cy="95" r="3.5" />
+      <circle class="pcb-via" cx="1230" cy="95" r="3.5" />
+      <circle class="pcb-via" cx="1300" cy="195" r="3.5" />
+      <circle class="pcb-via" cx="1330" cy="490" r="3.5" />
+    </svg>
+    <div class="bg-vignette-grain"></div>
+  </div>
 
-    <!-- the little glowing logo up top -->
-    <div class="login-badge"><svg width="32" height="32" viewBox="0 0 24 24" aria-hidden="true"><path fill="#1a1d23" d="M13 2 3 14h7l-1 8 10-12h-7z"/></svg></div>
-    <h1 class="login-logo">voltbox</h1>
-    <p class="login-sub">Sign in to start your order.</p>
+  <div class="auth-shell">
 
-    <!-- the actual form. app is handled in login.js -->
-    <form id="login-form" class="login-form" autocomplete="off" novalidate>
+    <!-- LEFT COLUMN: Hardware Bench Visual Showcase + 3D Floating Cards + Live Ticker -->
+    <section class="auth-showcase" aria-label="Voltbox Hardware Showcase">
+      <div class="showcase-top-callout">
+        <span class="callout-coord">42 CIRCUIT LANE · SILICON BAY · TERMINAL #04</span>
+        <span class="callout-live"><span class="led-dot emerald"></span> CATALOG ONLINE</span>
+      </div>
 
-      <label class="field">
-        <span class="field-label">Email</span>
-        <input id="email" name="email" type="email"
-               autocapitalize="off" spellcheck="false" required />
-      </label>
+      <div class="showcase-hero">
+        <div class="showcase-kicker">COMMUNITY VERIFIED ELECTRONICS &amp; PC RIG BENCH</div>
+        <h2 class="showcase-title">Precision Hardware.<br/><span>Live Stock &amp; Price Telemetry.</span></h2>
+        <p class="showcase-desc">
+          Track 6-month component price curves, assemble compatible PC rigs with automatic bundle discounts, and generate scannable Code-39 &amp; QR thermal receipts.
+        </p>
+      </div>
 
-      <label class="field">
-        <span class="field-label">Password</span>
-        <span class="field-pw">
-          <input id="password" name="password" type="password"
-                 autocomplete="current-password" required />
-          <!-- the eyeball toggles the password between hidden and visible -->
-          <button type="button" id="toggle-pw" class="pw-toggle"
-                  aria-label="Show password">show</button>
+      <!-- Floating 3D-Tilted Hardware Cards with Parallax -->
+      <div class="showcase-cards-stage" id="showcase-cards-stage">
+        <article class="floating-hw-card card-primary">
+          <div class="fhw-top">
+            <span class="fhw-badge low">LOW STOCK · 2 LEFT</span>
+            <span class="fhw-sku">VB-GPU-019</span>
+          </div>
+          <div class="fhw-body">
+            <img class="fhw-img" src="https://www.nvidia.com/content/dam/en-zz/Solutions/geforce/graphic-cards/50-series/rtx-5090/geforce-rtx-5090-learn-more-og-1200x630.jpg" alt="Nvidia RTX 5090" />
+            <div class="fhw-info">
+              <div class="fhw-name">Nvidia RTX 5090</div>
+              <div class="fhw-spec">32GB GDDR7 · Blackwell PCIe 5.0</div>
+              <div class="fhw-price-row">
+                <span class="fhw-price">$200.00</span>
+                <svg class="fhw-barcode" viewBox="0 0 72 14" aria-hidden="true">
+                  <rect x="0" y="0" width="1.5" height="14" fill="#ffd23f"/>
+                  <rect x="3" y="0" width="1" height="14" fill="#ffd23f"/>
+                  <rect x="6" y="0" width="2.5" height="11" fill="#c8d0dc"/>
+                  <rect x="10" y="0" width="1.2" height="11" fill="#c8d0dc"/>
+                  <rect x="13" y="0" width="3" height="11" fill="#c8d0dc"/>
+                  <rect x="18" y="0" width="1.5" height="11" fill="#c8d0dc"/>
+                  <rect x="21" y="0" width="2" height="11" fill="#c8d0dc"/>
+                  <rect x="25" y="0" width="1" height="11" fill="#c8d0dc"/>
+                  <rect x="28" y="0" width="2.8" height="11" fill="#c8d0dc"/>
+                  <rect x="33" y="0" width="1.2" height="14" fill="#2dd4bf"/>
+                  <rect x="36" y="0" width="1.2" height="14" fill="#2dd4bf"/>
+                  <rect x="39" y="0" width="2.5" height="11" fill="#c8d0dc"/>
+                  <rect x="43" y="0" width="1.5" height="11" fill="#c8d0dc"/>
+                  <rect x="46" y="0" width="3" height="11" fill="#c8d0dc"/>
+                  <rect x="51" y="0" width="1.2" height="11" fill="#c8d0dc"/>
+                  <rect x="54" y="0" width="2.2" height="11" fill="#c8d0dc"/>
+                  <rect x="58" y="0" width="1.5" height="11" fill="#c8d0dc"/>
+                  <rect x="62" y="0" width="2.5" height="11" fill="#c8d0dc"/>
+                  <rect x="67" y="0" width="1.2" height="14" fill="#ffd23f"/>
+                  <rect x="70" y="0" width="1.8" height="14" fill="#ffd23f"/>
+                </svg>
+              </div>
+            </div>
+          </div>
+        </article>
+
+        <article class="floating-hw-card card-secondary">
+          <div class="fhw-top">
+            <span class="fhw-badge ok">IN STOCK · 12 UNITS</span>
+            <span class="fhw-sku">VB-CPU-020</span>
+          </div>
+          <div class="fhw-body">
+            <img class="fhw-img" src="https://images.unsplash.com/photo-1591799264318-7e6ef8ddb7ea?auto=format&fit=crop&w=600&q=80" alt="AMD RYZEN 9" />
+            <div class="fhw-info">
+              <div class="fhw-name">AMD RYZEN 9</div>
+              <div class="fhw-spec">16-Core Zen 5 · 5.7 GHz AM5</div>
+              <div class="fhw-price-row">
+                <span class="fhw-price">$180.00</span>
+                <span class="fhw-tag">-12% vs 6mo high</span>
+              </div>
+            </div>
+          </div>
+        </article>
+
+        <article class="floating-hw-card card-tertiary">
+          <div class="fhw-top">
+            <span class="fhw-badge low">LOW STOCK · 3 LEFT</span>
+            <span class="fhw-sku">VB-DIS-029</span>
+          </div>
+          <div class="fhw-body">
+            <img class="fhw-img" src="/src/assets/images/product_oled_gaming_monitor_1793511152023.jpg" alt="ASUS ROG Swift 27 OLED" />
+            <div class="fhw-info">
+              <div class="fhw-name">ROG Swift 27" QD-OLED</div>
+              <div class="fhw-spec">240Hz · 0.03ms · DisplayPort 2.1</div>
+              <div class="fhw-price-row">
+                <span class="fhw-price">$295.00</span>
+                <span class="fhw-tag">BENCH VERIFIED</span>
+              </div>
+            </div>
+          </div>
+        </article>
+      </div>
+
+      <!-- Interactive Rig Bundle Preview Badge -->
+      <div class="showcase-rig-badge">
+        <div class="srb-icon" aria-hidden="true">⚡</div>
+        <div class="srb-copy">
+          <div class="srb-title">RIG BUILDER BUNDLE ACTIVE · <span>INSTANT 5% OFF</span></div>
+          <div class="srb-sub">Select any 3+ core PC parts (CPU · GPU · Motherboard · Storage) + stack code <code>VOLT10</code></div>
+        </div>
+      </div>
+
+      <!-- Live Hardware Stock Ticker -->
+      <div class="showcase-ticker-wrap" aria-label="Live component stock ticker">
+        <span class="ticker-prefix">LIVE FEED</span>
+        <div class="showcase-ticker">
+          <div class="ticker-track">
+            <span class="ticker-item"><i class="led-dot amber"></i> RTX 5090 <b>$200.00</b> [VB-GPU-019 · 2 LEFT]</span>
+            <span class="ticker-item"><i class="led-dot emerald"></i> RYZEN 9 9950X <b>$180.00</b> [VB-CPU-020 · 12 IN STOCK]</span>
+            <span class="ticker-item"><i class="led-dot amber"></i> MSI B570 WIFI <b>$150.00</b> [VB-MBD-021 · 3 LEFT]</span>
+            <span class="ticker-item"><i class="led-dot amber"></i> QD-OLED 240HZ <b>$295.00</b> [VB-DIS-029 · 3 LEFT]</span>
+            <span class="ticker-item"><i class="led-dot emerald"></i> CORSAIR 64GB DDR5 <b>$165.00</b> [VB-MEM-028 · 6 IN STOCK]</span>
+            <span class="ticker-item"><i class="led-dot amber"></i> RTX 5090 <b>$200.00</b> [VB-GPU-019 · 2 LEFT]</span>
+            <span class="ticker-item"><i class="led-dot emerald"></i> RYZEN 9 9950X <b>$180.00</b> [VB-CPU-020 · 12 IN STOCK]</span>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- RIGHT COLUMN: Tactile Hardware Passkey / Auth Terminal -->
+    <main class="login-card terminal-card" id="login-card">
+      <span class="corner-mark tl" aria-hidden="true"></span>
+      <span class="corner-mark tr" aria-hidden="true"></span>
+      <span class="corner-mark bl" aria-hidden="true"></span>
+      <span class="corner-mark br" aria-hidden="true"></span>
+
+      <!-- Top Technical Status Strip -->
+      <div class="terminal-status-strip">
+        <span class="terminal-status-left">
+          <span class="led-dot emerald"></span>
+          <span>SYS.AUTH // TERMINAL ONLINE</span>
         </span>
-      </label>
+        <span class="terminal-node-id">NODE-VB04</span>
+      </div>
 
-      <!-- red error line — hidden until a login actually fails -->
-      <p id="login-error" class="login-error" role="alert" hidden></p>
+      <div class="login-badge">
+        <svg width="32" height="32" viewBox="0 0 24 24" aria-hidden="true">
+          <path fill="#1a1d23" d="M13 2 3 14h7l-1 8 10-12h-7z"/>
+        </svg>
+      </div>
+      <h1 class="login-logo">voltbox</h1>
+      <p class="login-sub">Authenticate your hardware bench session.</p>
 
-      <button type="submit" id="login-btn" class="login-btn">Sign in</button>
-    </form>
+      <!-- One-Click Demo Account Quick-Fill & Instant Login Bar -->
+      <div class="demo-account-bar" data-testid="demo-account-bar">
+        <button type="button" id="demo-login-btn" class="demo-oneclick-btn">
+          <span class="demo-bolt" aria-hidden="true">⚡</span>
+          <span class="demo-btn-text">
+            <strong>Use Demo Buyer Account</strong>
+            <small>harish@voltbox.test · Instant 1-Click Sign In</small>
+          </span>
+        </button>
+        <button type="button" id="demo-fill-btn" class="demo-fill-btn" title="Populate demo credentials into form fields">
+          Quick Fill
+        </button>
+      </div>
 
+      <form id="login-form" class="login-form" autocomplete="off" novalidate>
 
-    <div id="google-divider" class="auth-divider" hidden><span>or</span></div>
-    <div id="google-signin-button" class="google-btn-wrap" hidden></div>
+        <label class="field">
+          <span class="field-head">
+            <span class="field-label">Operator Email</span>
+            <span class="field-telemetry" id="email-telemetry">ID_STATE: IDLE</span>
+          </span>
+          <span class="field-input-wrap">
+            <input id="email" name="email" type="email"
+                   placeholder="harish@voltbox.test"
+                   autocapitalize="off" spellcheck="false" required />
+            <span class="input-scanline" aria-hidden="true"></span>
+          </span>
+        </label>
 
-    <!-- a gentle hint, since this is a demo shop for a friend to poke at -->
+        <label class="field">
+          <span class="field-head">
+            <span class="field-label">Passkey</span>
+            <span class="field-telemetry" id="pw-telemetry">KEY_LEN: 00</span>
+          </span>
+          <span class="field-pw field-input-wrap">
+            <input id="password" name="password" type="password"
+                   placeholder="•••••••••"
+                   autocomplete="current-password" required />
+            <button type="button" id="toggle-pw" class="pw-toggle"
+                    aria-label="Show password">show</button>
+            <span class="input-scanline" aria-hidden="true"></span>
+          </span>
+        </label>
 
-    <!-- new visitors go make their own account instead of using the demo one -->
-    <p class="auth-switch">
-      New here? <a href="signup.html">Create an account</a>
-    </p>
+        <p id="login-error" class="login-error" role="alert" hidden></p>
 
-  </main>
-  <script src="https://accounts.google.com/gsi/client" async defer></script>
+        <button type="submit" id="login-btn" class="login-btn voltage-btn">
+          <span class="voltage-btn-label" id="login-btn-label">Sign in to Bench →</span>
+        </button>
+      </form>
+
+      <div id="google-divider" class="auth-divider" hidden><span>or</span></div>
+      <div id="google-signin-button" class="google-btn-wrap" hidden></div>
+
+      <p class="auth-switch">
+        New operator? <a href="signup.html">Create an account</a>
+      </p>
+
+      <div class="terminal-foot-meta">
+        <span>ENC: TLS-1.3 // SHA-256</span>
+        <span>REV 4.2</span>
+      </div>
+    </main>
+
+  </div>
+
   <script src="login.js"></script>
 </body>
 </html>

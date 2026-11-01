@@ -4,15 +4,13 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Create account — Voltbox</title>
-  <meta name="description" content="Create a Voltbox account." />
+  <meta name="description" content="Create a Voltbox Hardware Bench account." />
 
-  <!-- inter font — same one the rest of the site uses -->
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800&display=swap" rel="stylesheet" />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800&family=JetBrains+Mono:wght@400;600;700&display=swap" rel="stylesheet" />
 
   <link rel="stylesheet" href="style.css" />
-
 
   <script>
     if (localStorage.getItem("voltbox_token")) {
@@ -22,53 +20,181 @@
 </head>
 <body class="login-body">
 
-  <main class="login-card">
+  <!-- Global Industrial PCB Blueprint, Cursor Voltage Spotlight, Signal Pulse Traces & Film Grain -->
+  <div class="bg-canvas" id="bg-canvas" aria-hidden="true">
+    <div class="bg-pcb-grid"></div>
+    <div class="bg-crosshairs"></div>
+    <div class="voltage-spotlight" id="voltage-spotlight"></div>
+    <svg class="signal-traces-svg" viewBox="0 0 1440 900" preserveAspectRatio="none">
+      <path class="pcb-trace-base" d="M 0 110 H 110 L 145 145 V 340 L 115 370 V 680 L 150 715 V 900" />
+      <path class="pcb-trace-pulse amber" d="M 0 110 H 110 L 145 145 V 340 L 115 370 V 680 L 150 715 V 900" />
+      <path class="pcb-trace-base" d="M 180 0 V 65 L 210 95 H 520 L 550 65 H 890 L 920 95 H 1230 L 1260 65 V 0" />
+      <path class="pcb-trace-pulse cyan" d="M 180 0 V 65 L 210 95 H 520 L 550 65 H 890 L 920 95 H 1230 L 1260 65 V 0" />
+      <path class="pcb-trace-base" d="M 1440 160 H 1335 L 1300 195 V 460 L 1330 490 V 760 L 1295 795 V 900" />
+      <path class="pcb-trace-pulse cyan-alt" d="M 1440 160 H 1335 L 1300 195 V 460 L 1330 490 V 760 L 1295 795 V 900" />
+      <circle class="pcb-via" cx="145" cy="145" r="3.5" />
+      <circle class="pcb-via" cx="115" cy="370" r="3.5" />
+      <circle class="pcb-via" cx="210" cy="95" r="3.5" />
+      <circle class="pcb-via" cx="1230" cy="95" r="3.5" />
+      <circle class="pcb-via" cx="1300" cy="195" r="3.5" />
+      <circle class="pcb-via" cx="1330" cy="490" r="3.5" />
+    </svg>
+    <div class="bg-vignette-grain"></div>
+  </div>
 
-    <!-- same little glowing logo as the login page -->
-    <div class="login-badge"><svg width="32" height="32" viewBox="0 0 24 24" aria-hidden="true"><path fill="#1a1d23" d="M13 2 3 14h7l-1 8 10-12h-7z"/></svg></div>
-    <h1 class="login-logo">voltbox</h1>
-    <p class="login-sub">Create an account to start ordering.</p>
+  <div class="auth-shell">
 
-    <!-- the actual form. handled in signup.js -->
-    <form id="signup-form" class="login-form" autocomplete="off" novalidate>
+    <!-- LEFT COLUMN: Hardware Bench Visual Showcase -->
+    <section class="auth-showcase" aria-label="Voltbox Hardware Showcase">
+      <div class="showcase-top-callout">
+        <span class="callout-coord">42 CIRCUIT LANE · SILICON BAY · TERMINAL #04</span>
+        <span class="callout-live"><span class="led-dot emerald"></span> CATALOG ONLINE</span>
+      </div>
 
-      <label class="field">
-        <span class="field-label">Name</span>
-        <input id="name" name="name" type="text"
-               placeholder="Harish" autocomplete="name"
-               spellcheck="false" required />
-      </label>
+      <div class="showcase-hero">
+        <div class="showcase-kicker">NEW OPERATOR PROVISIONING // COMMUNITY BENCH</div>
+        <h2 class="showcase-title">Join the Hardware Bench.<br/><span>Build, Track &amp; Contribute.</span></h2>
+        <p class="showcase-desc">
+          Create your operator account to save custom PC rig builds, track component price history, and apply to become a verified catalog contributor.
+        </p>
+      </div>
 
-      <label class="field">
-        <span class="field-label">Email</span>
-        <input id="email" name="email" type="email"
-               placeholder="harish@voltbox.test" autocomplete="email"
-               autocapitalize="off" spellcheck="false" required />
-      </label>
+      <div class="showcase-cards-stage" id="showcase-cards-stage">
+        <article class="floating-hw-card card-primary">
+          <div class="fhw-top">
+            <span class="fhw-badge low">LOW STOCK · 2 LEFT</span>
+            <span class="fhw-sku">VB-GPU-019</span>
+          </div>
+          <div class="fhw-body">
+            <img class="fhw-img" src="https://www.nvidia.com/content/dam/en-zz/Solutions/geforce/graphic-cards/50-series/rtx-5090/geforce-rtx-5090-learn-more-og-1200x630.jpg" alt="Nvidia RTX 5090" />
+            <div class="fhw-info">
+              <div class="fhw-name">Nvidia RTX 5090</div>
+              <div class="fhw-spec">32GB GDDR7 · Blackwell PCIe 5.0</div>
+              <div class="fhw-price-row">
+                <span class="fhw-price">$200.00</span>
+                <span class="fhw-tag">BENCH VERIFIED</span>
+              </div>
+            </div>
+          </div>
+        </article>
 
-      <label class="field">
-        <span class="field-label">Password</span>
-        <span class="field-pw">
-          <input id="password" name="password" type="password"
-                 placeholder="at least 4 characters" autocomplete="new-password" required />
-          <!-- the eyeball toggles the password between hidden and visible -->
-          <button type="button" id="toggle-pw" class="pw-toggle"
-                  aria-label="Show password">show</button>
+        <article class="floating-hw-card card-secondary">
+          <div class="fhw-top">
+            <span class="fhw-badge ok">IN STOCK · 12 UNITS</span>
+            <span class="fhw-sku">VB-CPU-020</span>
+          </div>
+          <div class="fhw-body">
+            <img class="fhw-img" src="https://images.unsplash.com/photo-1591799264318-7e6ef8ddb7ea?auto=format&fit=crop&w=600&q=80" alt="AMD RYZEN 9" />
+            <div class="fhw-info">
+              <div class="fhw-name">AMD RYZEN 9</div>
+              <div class="fhw-spec">16-Core Zen 5 · 5.7 GHz AM5</div>
+              <div class="fhw-price-row">
+                <span class="fhw-price">$180.00</span>
+                <span class="fhw-tag">-12% vs 6mo high</span>
+              </div>
+            </div>
+          </div>
+        </article>
+      </div>
+
+      <div class="showcase-rig-badge">
+        <div class="srb-icon" aria-hidden="true">⚡</div>
+        <div class="srb-copy">
+          <div class="srb-title">RIG BUILDER BUNDLE ACTIVE · <span>INSTANT 5% OFF</span></div>
+          <div class="srb-sub">Select any 3+ core PC parts (CPU · GPU · Motherboard · Storage) + stack code <code>VOLT10</code></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- RIGHT COLUMN: Signup Terminal Card -->
+    <main class="login-card terminal-card" id="signup-card">
+      <span class="corner-mark tl" aria-hidden="true"></span>
+      <span class="corner-mark tr" aria-hidden="true"></span>
+      <span class="corner-mark bl" aria-hidden="true"></span>
+      <span class="corner-mark br" aria-hidden="true"></span>
+
+      <div class="terminal-status-strip">
+        <span class="terminal-status-left">
+          <span class="led-dot emerald"></span>
+          <span>SYS.REG // NEW OPERATOR</span>
         </span>
-      </label>
+        <span class="terminal-node-id">NODE-VB04</span>
+      </div>
 
-      <!-- red error line — hidden until a signup actually fails -->
-      <p id="signup-error" class="login-error" role="alert" hidden></p>
+      <div class="login-badge">
+        <svg width="32" height="32" viewBox="0 0 24 24" aria-hidden="true">
+          <path fill="#1a1d23" d="M13 2 3 14h7l-1 8 10-12h-7z"/>
+        </svg>
+      </div>
+      <h1 class="login-logo">voltbox</h1>
+      <p class="login-sub">Provision a new operator account.</p>
 
-      <button type="submit" id="signup-btn" class="login-btn">Create account</button>
-    </form>
+      <form id="signup-form" class="login-form" autocomplete="off" novalidate>
 
-    <!-- already have an account? back to the sign-in page -->
-    <p class="auth-switch">
-      Already have an account? <a href="login.html">Sign in</a>
-    </p>
+        <label class="field">
+          <span class="field-head">
+            <span class="field-label">Operator Name</span>
+            <span class="field-telemetry" id="name-telemetry">HANDLE: IDLE</span>
+          </span>
+          <span class="field-input-wrap">
+            <input id="name" name="name" type="text"
+                   placeholder="Harish" autocomplete="name"
+                   spellcheck="false" required />
+            <span class="input-scanline" aria-hidden="true"></span>
+          </span>
+        </label>
 
-  </main>
+        <label class="field">
+          <span class="field-head">
+            <span class="field-label">Operator Email</span>
+            <span class="field-telemetry" id="email-telemetry">ID_STATE: IDLE</span>
+          </span>
+          <span class="field-input-wrap">
+            <input id="email" name="email" type="email"
+                   placeholder="harish@voltbox.test" autocomplete="email"
+                   autocapitalize="off" spellcheck="false" required />
+            <span class="input-scanline" aria-hidden="true"></span>
+          </span>
+        </label>
+
+        <label class="field">
+          <span class="field-head">
+            <span class="field-label">Passkey</span>
+            <span class="field-telemetry" id="pw-telemetry">KEY_LEN: 00 · IDLE</span>
+          </span>
+          <span class="field-pw field-input-wrap">
+            <input id="password" name="password" type="password"
+                   placeholder="at least 4 characters" autocomplete="new-password" required />
+            <button type="button" id="toggle-pw" class="pw-toggle"
+                    aria-label="Show password">show</button>
+            <span class="input-scanline" aria-hidden="true"></span>
+          </span>
+          <span class="pw-strength-meter" id="pw-strength-meter" aria-hidden="true">
+            <i class="pw-bar"></i>
+            <i class="pw-bar"></i>
+            <i class="pw-bar"></i>
+            <i class="pw-bar"></i>
+          </span>
+        </label>
+
+        <p id="signup-error" class="login-error" role="alert" hidden></p>
+
+        <button type="submit" id="signup-btn" class="login-btn voltage-btn">
+          <span class="voltage-btn-label" id="signup-btn-label">Provision Account →</span>
+        </button>
+      </form>
+
+      <p class="auth-switch">
+        Already registered? <a href="login.html">Sign in to terminal</a>
+      </p>
+
+      <div class="terminal-foot-meta">
+        <span>ENC: TLS-1.3 // SHA-256</span>
+        <span>REV 4.2</span>
+      </div>
+    </main>
+
+  </div>
 
   <script src="signup.js"></script>
 </body>

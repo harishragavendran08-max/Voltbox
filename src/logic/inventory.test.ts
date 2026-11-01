@@ -9,9 +9,15 @@ import {
   makeOrderId,
   classifyComponentGroup,
   getProductSku,
+  generateSkuBarcodeBars,
+  encodeReceiptCode39Bars,
+  generateReceiptQrMatrix,
   generatePriceHistory,
   getProductSpecs,
   computeRigBundleStatus,
+  computeOdometerColumns,
+  computeAuthKeyTelemetry,
+  computeCardParallaxTilt,
 } from './inventory';
 
 test('LOW_STOCK_THRESHOLD is 5', () => {
@@ -49,6 +55,19 @@ test('classifyComponentGroup and getProductSku classify PC parts accurately', ()
   assert.equal(classifyComponentGroup({ title: 'Samsung 1TB SSD', category: 'storage' }), 'storage');
   assert.equal(getProductSku({ id: 19, title: 'Nvidia RTX 5090' }), 'VB-GPU-019');
   assert.equal(getProductSku({ id: 20, title: 'AMD RYZEN 9' }), 'VB-CPU-020');
+});
+
+test('generateSkuBarcodeBars produces deterministic non-overlapping industrial barcode bars for each SKU', () => {
+  const gpuBars = generateSkuBarcodeBars('VB-GPU-019');
+  const cpuBars = generateSkuBarcodeBars('VB-CPU-020');
+  assert.ok(gpuBars.length >= 20);
+  assert.deepEqual(gpuBars, generateSkuBarcodeBars('VB-GPU-019'));
+  assert.notDeepEqual(gpuBars, cpuBars);
+  assert.equal(gpuBars[0].isGuard, true);
+  assert.equal(gpuBars[gpuBars.length - 1].isGuard, true);
+  for (let i = 1; i < gpuBars.length; i++) {
+    assert.ok(gpuBars[i].x >= gpuBars[i - 1].x + gpuBars[i - 1].width, 'bars must not overlap');
+  }
 });
 
 test('generatePriceHistory and getProductSpecs return 6 months of deterministic price data', () => {
@@ -104,4 +123,96 @@ test('computeCartTotals calculates count, subtotal, rig bundle discount, promo c
 
 test('makeOrderId formats 4-character hex order ID', () => {
   assert.match(makeOrderId(1785215975277), /^VB-[0-9A-F]{4}$/);
+});
+
+test('encodeReceiptCode39Bars encodes receipt ID in standard Code-39 with start/stop asterisks and 5 bars per character', () => {
+  const b1 = encodeReceiptCode39Bars('VB-885D');
+  const b2 = encodeReceiptCode39Bars('VB-995F');
+  assert.equal(b1.encodedValue, '*VB-885D*');
+  // 9 characters in *VB-885D*, each character has 5 black bars = 45 bars
+  assert.equal(b1.bars.length, 45);
+  assert.deepEqual(b1, encodeReceiptCode39Bars('VB-885D'));
+  assert.notDeepEqual(b1.bars, b2.bars);
+});
+
+test('generateReceiptQrMatrix builds a 21x21 QR matrix with finder patterns and distinct payload per receipt ID', () => {
+  const qr1 = generateReceiptQrMatrix('VB-885D');
+  const qr2 = generateReceiptQrMatrix('VB-995F');
+  assert.equal(qr1.length, 21);
+  assert.equal(qr1[0].length, 21);
+  // Top-left, top-right, and bottom-left finder corners are dark
+  assert.equal(qr1[0][0], true);
+  assert.equal(qr1[0][20], true);
+  assert.equal(qr1[20][0], true);
+  assert.deepEqual(qr1, generateReceiptQrMatrix('VB-885D'));
+  assert.notDeepEqual(qr1, qr2);
+});
+
+test('computeOdometerColumns calculates vertical CSS transform offsets, right-aligned positions, and roll direction', () => {
+  const upRoll = computeOdometerColumns('0.00', '380.00');
+  assert.equal(upRoll.direction, 'up');
+  assert.equal(upRoll.columns.length, 6);
+  // First column '3' (hundreds place, posFromRight=5) translates by -30%
+  assert.equal(upRoll.columns[0].char, '3');
+  assert.equal(upRoll.columns[0].posFromRight, 5);
+  assert.equal(upRoll.columns[0].translateYPercent, -30);
+  assert.equal(upRoll.columns[0].changed, true);
+  // Second column '8' (tens place, posFromRight=4) translates by -80%
+  assert.equal(upRoll.columns[1].char, '8');
+  assert.equal(upRoll.columns[1].translateYPercent, -80);
+  // Decimal point separator (posFromRight=2)
+  assert.equal(upRoll.columns[3].type, 'sep');
+  assert.equal(upRoll.columns[3].char, '.');
+
+  const downRoll = computeOdometerColumns('380.00', '180.00');
+  assert.equal(downRoll.direction, 'down');
+  assert.equal(downRoll.columns[0].digit, 1);
+  assert.equal(downRoll.columns[0].prevDigit, 3);
+  assert.equal(downRoll.columns[0].changed, true);
+  assert.equal(downRoll.columns[0].translateYPercent, -10);
+  // '8' in tens place did not change between 380.00 and 180.00
+  assert.equal(downRoll.columns[1].changed, false);
+});
+
+test('computeAuthKeyTelemetry formats KEY_LEN and calculates password strength and email status', () => {
+  const idle = computeAuthKeyTelemetry('', '');
+  assert.equal(idle.keyLengthFormatted, 'KEY_LEN: 00');
+  assert.equal(idle.strengthScore, 0);
+  assert.equal(idle.strengthLabel, 'IDLE');
+  assert.equal(idle.emailStatus, 'IDLE');
+
+  const demo = computeAuthKeyTelemetry('Harish123', 'harish@voltbox.test');
+  assert.equal(demo.keyLengthFormatted, 'KEY_LEN: 09');
+  assert.equal(demo.strengthScore, 4);
+  assert.equal(demo.strengthLabel, 'STRONG');
+  assert.equal(demo.emailStatus, 'VALID');
+});
+
+test('computeCardParallaxTilt calculates 3D tilt angles and parallax shifts towards the cursor', () => {
+  // Dead center of a 240x360 card -> zero tilt and 50%/50% glare
+  const center = computeCardParallaxTilt(120, 180, 240, 360, 6, 4.5);
+  assert.equal(center.rotateXDeg, 0);
+  assert.equal(center.rotateYDeg, 0);
+  assert.equal(center.shiftXPx, 0);
+  assert.equal(center.shiftYPx, 0);
+  assert.equal(center.glareXPercent, 50);
+  assert.equal(center.glareYPercent, 50);
+
+  // Top-right corner (240, 0) -> tilts +X (up) and +Y (right), shifts content +X and -Y
+  const topRight = computeCardParallaxTilt(240, 0, 240, 360, 6, 4.5);
+  assert.equal(topRight.rotateXDeg, 6);
+  assert.equal(topRight.rotateYDeg, 6);
+  assert.equal(topRight.shiftXPx, 4.5);
+  assert.equal(topRight.shiftYPx, -4.5);
+  assert.equal(topRight.glareXPercent, 100);
+  assert.equal(topRight.glareYPercent, 0);
+
+  // Bottom-left corner (0, 360) -> tilts -X (down) and -Y (left), shifts content -X and +Y
+  const bottomLeft = computeCardParallaxTilt(0, 360, 240, 360, 6, 4.5);
+  assert.equal(bottomLeft.rotateXDeg, -6);
+  assert.equal(bottomLeft.rotateYDeg, -6);
+  assert.equal(bottomLeft.shiftXPx, -4.5);
+  assert.equal(bottomLeft.shiftYPx, 4.5);
+  assert.equal(bottomLeft.glareXPercent, 0);
+  assert.equal(bottomLeft.glareYPercent, 100);
 });

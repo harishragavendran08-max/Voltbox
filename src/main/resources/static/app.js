@@ -125,8 +125,39 @@ var checkoutPayEl     = document.getElementById("checkout-pay");
 document.addEventListener("DOMContentLoaded", function () {
   wireUpButtons();
   watchScroll();
+  watchCursorSpotlight();
   loadMe();
 });
+
+var signalBurstTimer = null;
+function triggerPerimeterSignalPulse() {
+  if (!document.body) return;
+  document.body.classList.remove("signal-burst");
+  void document.body.offsetWidth;
+  document.body.classList.add("signal-burst");
+  clearTimeout(signalBurstTimer);
+  signalBurstTimer = setTimeout(function () {
+    document.body.classList.remove("signal-burst");
+  }, 950);
+}
+
+function watchCursorSpotlight() {
+  var rafPending = false;
+  var lastX = window.innerWidth * 0.5;
+  var lastY = window.innerHeight * 0.35;
+  window.addEventListener("mousemove", function (e) {
+    lastX = e.clientX;
+    lastY = e.clientY;
+    if (!rafPending) {
+      rafPending = true;
+      window.requestAnimationFrame(function () {
+        document.documentElement.style.setProperty("--mouse-x", lastX + "px");
+        document.documentElement.style.setProperty("--mouse-y", lastY + "px");
+        rafPending = false;
+      });
+    }
+  }, { passive: true });
+}
 
 
 function myToken() {
@@ -226,6 +257,56 @@ function getSkuFor(p) {
   var num = String(p.id || 0);
   while (num.length < 3) num = "0" + num;
   return "VB-" + prefix + "-" + num;
+}
+
+function renderSkuBarcodeGraphic(sku) {
+  var clean = String(sku || "VB-PRT-000").trim().toUpperCase();
+  var rects = [
+    '<rect class="bc-guard" x="0" y="0" width="1.5" height="18" rx="0.3" />',
+    '<rect class="bc-guard" x="2.8" y="0" width="1.0" height="18" rx="0.3" />'
+  ];
+  var cursor = 5.8;
+  var maxRight = 113.5;
+  var idx = 0;
+  var hasMidGuard = false;
+  var widths = [1.0, 1.5, 2.2, 3.0];
+  var gaps = [1.3, 1.7, 2.1, 2.5];
+
+  while (cursor < maxRight) {
+    var ch = clean.charCodeAt(idx % clean.length) || 65;
+    var mix = (ch * 13 + idx * 7) % 16;
+
+    if (!hasMidGuard && cursor >= 56 && cursor <= 60) {
+      rects.push('<rect class="bc-guard" x="' + cursor.toFixed(1) + '" y="0" width="1.1" height="17.5" rx="0.3" />');
+      rects.push('<rect class="bc-guard" x="' + (cursor + 2.3).toFixed(1) + '" y="0" width="1.1" height="17.5" rx="0.3" />');
+      cursor += 5.2;
+      hasMidGuard = true;
+      idx++;
+      continue;
+    }
+
+    var w = widths[mix % widths.length];
+    var gap = gaps[Math.floor(mix / 4) % gaps.length];
+    if (cursor + w > maxRight) break;
+    rects.push('<rect class="bc-bar" x="' + cursor.toFixed(1) + '" y="0" width="' + w.toFixed(1) + '" height="14" rx="0.25" />');
+    cursor += w + gap;
+    idx++;
+  }
+
+  rects.push('<rect class="bc-guard" x="115.8" y="0" width="1.0" height="18" rx="0.3" />');
+  rects.push('<rect class="bc-guard" x="118.2" y="0" width="1.5" height="18" rx="0.3" />');
+
+  return (
+    '<div class="card-sku-barcode" data-testid="card-sku-barcode" title="Hardware SKU: ' + esc(clean) + '">' +
+      '<svg class="card-barcode-svg" viewBox="0 0 120 18" preserveAspectRatio="none" aria-hidden="true">' +
+        rects.join("") +
+      '</svg>' +
+      '<div class="card-barcode-caption">' +
+        '<span class="card-barcode-prefix">SKU</span>' +
+        '<span class="card-sku">' + esc(clean) + '</span>' +
+      '</div>' +
+    '</div>'
+  );
 }
 
 function getPriceHistoryFor(p) {
@@ -356,6 +437,41 @@ function getSortedProductsList() {
   return copy;
 }
 
+function computeCardParallaxTilt(offsetX, offsetY, width, height, maxTiltDeg, maxShiftPx) {
+  var maxTilt = typeof maxTiltDeg === "number" ? maxTiltDeg : 6;
+  var maxShift = typeof maxShiftPx === "number" ? maxShiftPx : 4.5;
+  if (!(width > 0) || !(height > 0)) {
+    return {
+      rotateXDeg: 0,
+      rotateYDeg: 0,
+      shiftXPx: 0,
+      shiftYPx: 0,
+      glareXPercent: 50,
+      glareYPercent: 50
+    };
+  }
+  var halfW = width / 2;
+  var halfH = height / 2;
+  var nx = Math.max(-1, Math.min(1, (offsetX - halfW) / halfW));
+  var ny = Math.max(-1, Math.min(1, (offsetY - halfH) / halfH));
+
+  var rx = Math.round(-ny * maxTilt * 100) / 100;
+  var ry = Math.round(nx * maxTilt * 100) / 100;
+  var sx = Math.round(nx * maxShift * 100) / 100;
+  var sy = Math.round(ny * maxShift * 100) / 100;
+  var gx = Math.round(Math.max(0, Math.min(100, (offsetX / width) * 100)) * 100) / 100;
+  var gy = Math.round(Math.max(0, Math.min(100, (offsetY / height) * 100)) * 100) / 100;
+
+  return {
+    rotateXDeg: rx === 0 ? 0 : rx,
+    rotateYDeg: ry === 0 ? 0 : ry,
+    shiftXPx: sx === 0 ? 0 : sx,
+    shiftYPx: sy === 0 ? 0 : sy,
+    glareXPercent: gx === 0 ? 0 : gx,
+    glareYPercent: gy === 0 ? 0 : gy
+  };
+}
+
 
 // ── build the card HTML for every product and drop it in the grid ──
 
@@ -423,13 +539,12 @@ function renderAllCards() {
         lowStockBadge +
         flag +
       '</div>' +
-      '<div class="card-sku-row">' +
-        '<span class="card-sku">' + esc(sku) + '</span>' +
-        stockNote +
-      '</div>' +
       '<div class="card-meta-row">' +
         tag +
-        '<button class="card-specs-link" type="button" onclick="openSpecDrawer(' + p.id + ')" aria-label="Specs for ' + esc(p.title) + '">Specs &rarr;</button>' +
+        '<div class="card-meta-right">' +
+          stockNote +
+          '<button class="card-specs-link" type="button" onclick="openSpecDrawer(' + p.id + ')" aria-label="Specs for ' + esc(p.title) + '">Specs &rarr;</button>' +
+        '</div>' +
       '</div>' +
       '<h3 class="card-title"><button type="button" class="card-title-btn" onclick="openSpecDrawer(' + p.id + ')">' + esc(p.title) + '</button></h3>' +
       (p.description ? '<p class="card-desc">' + esc(p.description) + '</p>' : '') +
@@ -444,6 +559,7 @@ function renderAllCards() {
           icon("chart", 13) + ' <span>Price History</span>' +
         '</button>' +
       '</div>' +
+      renderSkuBarcodeGraphic(sku) +
       '<div class="card-chart-drawer' + (isChartOpen ? ' open' : '') + '" id="card-chart-panel-' + p.id + '"' + (isChartOpen ? '' : ' hidden') + '>' +
         '<div class="card-chart-meta">' +
           '<span>6M Low: <b>$' + minPrice.toFixed(0) + '</b></span>' +
@@ -463,11 +579,40 @@ function renderAllCards() {
         '        aria-label="Increase quantity for ' + esc(p.title) + '">+</button>' +
       '</div>';
 
-    // Cursor radial spotlight tracking on tactile card surface
+    // Release stagger-in class once entrance finishes so 3D hover transform is unrestricted
+    card.addEventListener("animationend", function (ev) {
+      if (ev.animationName === "cardStaggerIn") {
+        this.classList.remove("stagger-in");
+      }
+    });
+
+    // Cursor radial spotlight + 3D parallax tilt tracking on tactile card surface
     card.addEventListener("mousemove", function (ev) {
       var rect = this.getBoundingClientRect();
-      this.style.setProperty("--mouse-x", (ev.clientX - rect.left) + "px");
-      this.style.setProperty("--mouse-y", (ev.clientY - rect.top) + "px");
+      var ox = ev.clientX - rect.left;
+      var oy = ev.clientY - rect.top;
+      var tilt = computeCardParallaxTilt(ox, oy, rect.width, rect.height, 6, 4.5);
+
+      this.classList.remove("stagger-in");
+      this.classList.add("is-tilting");
+      this.style.setProperty("--mouse-x", ox.toFixed(1) + "px");
+      this.style.setProperty("--mouse-y", oy.toFixed(1) + "px");
+      this.style.setProperty("--card-rx", tilt.rotateXDeg + "deg");
+      this.style.setProperty("--card-ry", tilt.rotateYDeg + "deg");
+      this.style.setProperty("--parallax-x", tilt.shiftXPx + "px");
+      this.style.setProperty("--parallax-y", tilt.shiftYPx + "px");
+      this.style.setProperty("--glare-x", tilt.glareXPercent + "%");
+      this.style.setProperty("--glare-y", tilt.glareYPercent + "%");
+    });
+
+    card.addEventListener("mouseleave", function () {
+      this.classList.remove("is-tilting");
+      this.style.setProperty("--card-rx", "0deg");
+      this.style.setProperty("--card-ry", "0deg");
+      this.style.setProperty("--parallax-x", "0px");
+      this.style.setProperty("--parallax-y", "0px");
+      this.style.setProperty("--glare-x", "50%");
+      this.style.setProperty("--glare-y", "50%");
     });
 
     gridEl.appendChild(card);
@@ -859,6 +1004,7 @@ function inc(id) {
   cart[id] = prev + 1;
   refreshCard(id);
   recalc(prev === 0);
+  triggerPerimeterSignalPulse();
   queueCartSave();
   if (activeSpecProductId === id) {
     var p = findProductById(id);
@@ -990,27 +1136,209 @@ function updateFilterTabCounts() {
 
 // ── Odometer Digit Roll & Totals Calculation ──
 
-function setOdometerText(el, nextText) {
-  if (!el) return;
-  var prevText = el.getAttribute("data-val") || el.textContent || "";
-  if (prevText === nextText) return;
-  el.setAttribute("data-val", nextText);
+function computeOdometerPlan(prevText, nextText) {
+  var cleanPrev = String(prevText || "0.00").trim();
+  var cleanNext = String(nextText || "0.00").trim();
+  var prevNum = parseFloat(cleanPrev.replace(/[^0-9.-]/g, "")) || 0;
+  var nextNum = parseFloat(cleanNext.replace(/[^0-9.-]/g, "")) || 0;
+  var direction = nextNum > prevNum ? "up" : (nextNum < prevNum ? "down" : "none");
 
-  var html = "";
-  var padPrev = prevText;
-  while (padPrev.length < nextText.length) padPrev = " " + padPrev;
+  var columns = [];
+  var nextLen = cleanNext.length;
+  var prevLen = cleanPrev.length;
+  var rollingIndex = 0;
 
-  for (var i = 0; i < nextText.length; i++) {
-    var ch = nextText.charAt(i);
-    var oldCh = padPrev.charAt(i);
-    var changed = (ch !== oldCh && ch !== ".");
-    if (changed) {
-      html += '<span class="odo-digit roll" style="--digit-idx:' + i + '">' + esc(ch) + '</span>';
+  for (var i = 0; i < nextLen; i++) {
+    var posFromRight = nextLen - 1 - i;
+    var ch = cleanNext.charAt(i);
+    var prevIdx = prevLen - 1 - posFromRight;
+    var prevCh = (prevIdx >= 0 && prevIdx < prevLen) ? cleanPrev.charAt(prevIdx) : "0";
+
+    if (ch >= "0" && ch <= "9") {
+      var digit = ch.charCodeAt(0) - 48;
+      var prevDigit = (prevCh >= "0" && prevCh <= "9") ? (prevCh.charCodeAt(0) - 48) : 0;
+      var changed = (digit !== prevDigit) || (prevIdx < 0);
+      var delayMs = changed ? (rollingIndex * 22) : 0;
+      if (changed) rollingIndex++;
+      columns.push({
+        posFromRight: posFromRight,
+        type: "digit",
+        char: ch,
+        digit: digit,
+        prevDigit: prevDigit,
+        changed: changed,
+        translateYPercent: -(digit * 10),
+        delayMs: delayMs
+      });
     } else {
-      html += '<span class="odo-digit">' + esc(ch) + '</span>';
+      columns.push({
+        posFromRight: posFromRight,
+        type: "sep",
+        char: ch,
+        digit: -1,
+        prevDigit: -1,
+        changed: false,
+        translateYPercent: 0,
+        delayMs: 0
+      });
     }
   }
-  el.innerHTML = html;
+
+  return {
+    prevText: cleanPrev,
+    nextText: cleanNext,
+    direction: direction,
+    columns: columns
+  };
+}
+
+function createOdometerDigitCol(posFromRight, initialDigit) {
+  var col = document.createElement("span");
+  col.className = "odo-col";
+  col.setAttribute("data-pos", String(posFromRight));
+  col.setAttribute("data-digit", String(initialDigit));
+
+  var track = document.createElement("span");
+  track.className = "odo-track";
+  track.style.setProperty("--digit", String(initialDigit));
+  track.style.setProperty("--col-delay", "0ms");
+  track.style.transform = "translate3d(0, " + (-(initialDigit * 10)) + "%, 0)";
+
+  var cellsHtml = "";
+  for (var d = 0; d <= 9; d++) {
+    cellsHtml +=
+      '<span class="odo-cell' + (d === initialDigit ? ' active' : '') + '" data-n="' + d + '" aria-hidden="true">' +
+        d +
+      '</span>';
+  }
+  track.innerHTML = cellsHtml;
+  col.appendChild(track);
+  return col;
+}
+
+function createOdometerSepCol(posFromRight, ch) {
+  var sep = document.createElement("span");
+  sep.className = "odo-sep";
+  sep.setAttribute("data-pos", String(posFromRight));
+  sep.textContent = ch;
+  return sep;
+}
+
+function setOdometerText(el, nextText) {
+  if (!el) return;
+  var isReady = el.getAttribute("data-odo-ready") === "1";
+  var prevText = el.getAttribute("data-val") || el.textContent || "0.00";
+  if (isReady && prevText === nextText) return;
+
+  var plan = computeOdometerPlan(prevText, nextText);
+  el.setAttribute("data-val", nextText);
+  el.setAttribute("aria-label", nextText);
+
+  if (!isReady) {
+    el.innerHTML = "";
+    el.setAttribute("data-odo-ready", "1");
+  }
+
+  // Index existing column elements by right-aligned position so DOM nodes stay mounted
+  var existingByPos = {};
+  var children = Array.prototype.slice.call(el.children);
+  for (var c = 0; c < children.length; c++) {
+    var posAttr = children[c].getAttribute("data-pos");
+    if (posAttr !== null) {
+      existingByPos[posAttr] = children[c];
+    } else {
+      el.removeChild(children[c]);
+    }
+  }
+
+  var desiredPosSet = {};
+  var orderedNodes = [];
+  for (var i = 0; i < plan.columns.length; i++) {
+    var spec = plan.columns[i];
+    var key = String(spec.posFromRight);
+    desiredPosSet[key] = true;
+    var existing = existingByPos[key];
+
+    if (spec.type === "sep") {
+      if (existing && existing.classList.contains("odo-sep")) {
+        existing.textContent = spec.char;
+        orderedNodes.push({ node: existing, spec: spec, isNew: false });
+      } else {
+        if (existing && existing.parentNode === el) el.removeChild(existing);
+        var sepNode = createOdometerSepCol(spec.posFromRight, spec.char);
+        orderedNodes.push({ node: sepNode, spec: spec, isNew: true });
+      }
+    } else {
+      if (existing && existing.classList.contains("odo-col")) {
+        orderedNodes.push({ node: existing, spec: spec, isNew: false });
+      } else {
+        if (existing && existing.parentNode === el) el.removeChild(existing);
+        var startDigit = isReady ? 0 : spec.digit;
+        var colNode = createOdometerDigitCol(spec.posFromRight, startDigit);
+        orderedNodes.push({ node: colNode, spec: spec, isNew: true });
+      }
+    }
+  }
+
+  // Remove columns that are no longer needed (e.g. hundreds digit when total drops below 100)
+  for (var posKey in existingByPos) {
+    if (Object.prototype.hasOwnProperty.call(existingByPos, posKey) && !desiredPosSet[posKey]) {
+      var staleNode = existingByPos[posKey];
+      if (staleNode && staleNode.parentNode === el) {
+        el.removeChild(staleNode);
+      }
+    }
+  }
+
+  // Ensure nodes are in left-to-right order without detaching already mounted columns
+  for (var idx = 0; idx < orderedNodes.length; idx++) {
+    var item = orderedNodes[idx];
+    var currentAtIdx = el.children[idx] || null;
+    if (item.node !== currentAtIdx) {
+      el.insertBefore(item.node, currentAtIdx);
+    }
+  }
+
+  // Force layout read so any newly inserted leading digit columns establish their 0% baseline
+  void el.offsetHeight;
+
+  // Apply CSS transform translate3d(0, -N0%, 0) to roll each digit ribbon vertically
+  for (var k = 0; k < orderedNodes.length; k++) {
+    var entry = orderedNodes[k];
+    var colSpec = entry.spec;
+    if (colSpec.type !== "digit") continue;
+    var colEl = entry.node;
+    var trackEl = colEl.querySelector(".odo-track");
+    colEl.setAttribute("data-digit", String(colSpec.digit));
+    colEl.setAttribute("data-prev-digit", String(colSpec.prevDigit));
+    colEl.classList.toggle("changed", isReady && colSpec.changed);
+
+    if (trackEl) {
+      trackEl.style.setProperty("--col-delay", (isReady ? colSpec.delayMs : 0) + "ms");
+      trackEl.style.setProperty("--digit", String(colSpec.digit));
+      trackEl.style.transform = "translate3d(0, " + colSpec.translateYPercent + "%, 0)";
+
+      var cells = trackEl.querySelectorAll(".odo-cell");
+      for (var cellIdx = 0; cellIdx < cells.length; cellIdx++) {
+        cells[cellIdx].classList.toggle("active", cellIdx === colSpec.digit);
+      }
+    }
+  }
+
+  if (isReady && plan.direction !== "none") {
+    el.setAttribute("data-direction", plan.direction);
+    el.classList.remove("roll-up", "roll-down");
+    void el.offsetWidth;
+    el.classList.add(plan.direction === "up" ? "roll-up" : "roll-down");
+    if (el._odoTimer) clearTimeout(el._odoTimer);
+    el._odoTimer = setTimeout(function () {
+      el.classList.remove("roll-up", "roll-down");
+      var changedCols = el.querySelectorAll(".odo-col.changed");
+      for (var m = 0; m < changedCols.length; m++) {
+        changedCols[m].classList.remove("changed");
+      }
+    }, 460);
+  }
 }
 
 function recalc(isNewItemAdded) {
@@ -1612,10 +1940,25 @@ function downloadReceiptPng() {
   ctx.textAlign = "right";
   ctx.fillText("$" + order.total.toFixed(2), 600, y);
 
-  y += 44;
+  y += 38;
   ctx.textAlign = "center";
-  ctx.font = "13px JetBrains Mono, monospace";
+  ctx.font = "bold 13px JetBrains Mono, monospace";
   ctx.fillText("*** THANK YOU FOR SUPPORTING VOLTBOX ***", 320, y);
+
+  // Draw encoded Code-39 barcode for order.id onto the PNG canvas
+  var code39 = encodeReceiptCode39(order.id);
+  var bcScale = Math.min(2.2, 460 / code39.totalWidth);
+  var bcDrawWidth = code39.totalWidth * bcScale;
+  var bcStartX = Math.round((640 - bcDrawWidth) / 2);
+  y += 18;
+  ctx.fillStyle = "#1c1a17";
+  for (var b = 0; b < code39.bars.length; b++) {
+    var bar = code39.bars[b];
+    ctx.fillRect(bcStartX + bar.x * bcScale, y, Math.max(1, bar.width * bcScale), bar.height);
+  }
+  y += 56;
+  ctx.font = "bold 12px JetBrains Mono, monospace";
+  ctx.fillText(code39.encodedValue + "  ·  RECEIPT ID: " + order.id, 320, y);
 
   var link = document.createElement("a");
   link.download = "voltbox-receipt-" + order.id + ".png";
@@ -1694,29 +2037,198 @@ function buildReceiptHTML(order) {
 
     '<div class="r-rule dashed"></div>' +
 
-    '<div class="r-foot">' +
+    '<div class="r-foot" data-testid="receipt-printed-footer" data-receipt-id="' + esc(order.id) + '">' +
       '<div class="r-thanks">*** THANK YOU ***</div>' +
       '<div class="r-meta">Verified Community Hardware Receipt</div>' +
-      '<div class="r-barcode">' + barcode(order.id) + '</div>' +
-      '<div class="r-meta">' + esc(order.id) + ' · SCAN TO VERIFY</div>' +
+      '<div class="r-scan-panel" data-testid="receipt-scan-panel">' +
+        '<div class="r-qr-wrap" data-testid="receipt-qr-code">' +
+          receiptQrSvg(order.id) +
+        '</div>' +
+        '<div class="r-barcode-col">' +
+          '<div class="r-barcode" data-testid="receipt-barcode">' + barcode(order.id) + '</div>' +
+          '<div class="r-barcode-code" data-testid="receipt-encoded-id">*' + esc(order.id) + '*</div>' +
+          '<div class="r-meta r-scan-caption">CODE-39 &amp; QR · SCAN TO VERIFY</div>' +
+        '</div>' +
+      '</div>' +
     '</div>';
 }
 
 
-// ── receipt helpers ──
+// ── receipt helpers (ISO Code-39 1D Barcode + 21x21 QR Code Matrix encoding order.id) ──
+
+var CODE39_MAP = {
+  "*": "nwnnwnwnn",
+  "-": "nwnnnnwnw",
+  "0": "nnnwwnwnn",
+  "1": "wnnwnnnnw",
+  "2": "nnwwnnnnw",
+  "3": "wnwwnnnnn",
+  "4": "nnnwwnnnw",
+  "5": "wnnwwnnnn",
+  "6": "nnwwwnnnn",
+  "7": "nnnwnnwnw",
+  "8": "wnnwnnwnn",
+  "9": "nnwwnnwnn",
+  "A": "wnnnnwnnw",
+  "B": "nnwnnwnnw",
+  "C": "wnwnnwnnn",
+  "D": "nnnnwwnnw",
+  "E": "wnnnwwnnn",
+  "F": "nnwnwwnnn",
+  "G": "nnnnnwwnw",
+  "H": "wnnnnwwnn",
+  "I": "nnwnnwwnn",
+  "J": "nnnnwwwnn",
+  "K": "wnnnnnnww",
+  "L": "nnwnnnnww",
+  "M": "wnwnnnnwn",
+  "N": "nnnnwnnww",
+  "O": "wnnnwnnwn",
+  "P": "nnwnwnnwn",
+  "Q": "nnnnnnwww",
+  "R": "wnnnnnwwn",
+  "S": "nnwnnnwwn",
+  "T": "nnnnwnwwn",
+  "U": "wwnnnnnnw",
+  "V": "nwwnnnnnw",
+  "W": "wwwnnnnnn",
+  "X": "nwnnwnnnw",
+  "Y": "wwnnwnnnn",
+  "Z": "nwwnwnnnn"
+};
+
+function encodeReceiptCode39(receiptId) {
+  var sanitized = String(receiptId || "VB-0000").toUpperCase().replace(/[^0-9A-Z-]/g, "") || "VB-0000";
+  var payload = "*" + sanitized + "*";
+  var narrow = 2;
+  var wide = 5;
+  var quietZone = 8;
+  var cursor = quietZone;
+  var bars = [];
+
+  for (var c = 0; c < payload.length; c++) {
+    var ch = payload.charAt(c);
+    var pattern = CODE39_MAP[ch] || CODE39_MAP["-"];
+    var isGuard = (c === 0 || c === payload.length - 1);
+    for (var i = 0; i < pattern.length; i++) {
+      var w = pattern.charAt(i) === "w" ? wide : narrow;
+      if (i % 2 === 0) {
+        bars.push({
+          x: cursor,
+          width: w,
+          height: isGuard ? 42 : 38
+        });
+      }
+      cursor += w;
+    }
+    if (c < payload.length - 1) {
+      cursor += narrow;
+    }
+  }
+
+  return {
+    sanitized: sanitized,
+    encodedValue: payload,
+    totalWidth: cursor + quietZone,
+    bars: bars
+  };
+}
 
 function barcode(seedStr) {
-  var widths = [2,1,3,1,2,4,1,2,1,3,2,1,4,1,2,1,3,1,2,2,1,3,1,4,1,2,1,2,3,1,2,1,3,2,1,2,4,1,2,1];
-  var x = 0, bars = "";
-  for (var i = 0; i < widths.length; i++) {
-    var w = widths[i] * 3;
-    if (i % 2 === 0) {
-      bars += '<rect x="' + x + '" y="0" width="' + w + '" height="44" />';
-    }
-    x += w;
+  var encoded = encodeReceiptCode39(seedStr);
+  var rects = "";
+  for (var i = 0; i < encoded.bars.length; i++) {
+    var b = encoded.bars[i];
+    rects += '<rect x="' + b.x + '" y="0" width="' + b.width + '" height="' + b.height + '" />';
   }
-  return '<svg class="barcode-svg" viewBox="0 0 ' + x + ' 44" width="100%" height="44" ' +
-         'preserveAspectRatio="none" aria-label="Receipt barcode ' + esc(seedStr || "") + '"><g fill="#1c1a17">' + bars + '</g></svg>';
+  return '<svg class="barcode-svg" data-encoded-receipt="' + esc(encoded.sanitized) + '" ' +
+         'viewBox="0 0 ' + encoded.totalWidth + ' 42" width="100%" height="42" ' +
+         'preserveAspectRatio="none" role="img" aria-label="Scannable Code-39 barcode for receipt ' + esc(encoded.sanitized) + '">' +
+         '<g fill="#1c1a17">' + rects + '</g></svg>';
+}
+
+function receiptQrSvg(receiptId) {
+  var size = 21;
+  var matrix = [];
+  var reserved = [];
+  for (var r = 0; r < size; r++) {
+    matrix[r] = [];
+    reserved[r] = [];
+    for (var c = 0; c < size; c++) {
+      matrix[r][c] = false;
+      reserved[r][c] = false;
+    }
+  }
+
+  function placeFinder(rOff, cOff) {
+    for (var dr = -1; dr <= 7; dr++) {
+      for (var dc = -1; dc <= 7; dc++) {
+        var rr = rOff + dr;
+        var cc = cOff + dc;
+        if (rr < 0 || rr >= size || cc < 0 || cc >= size) continue;
+        reserved[rr][cc] = true;
+        if (dr >= 0 && dr <= 6 && dc >= 0 && dc <= 6) {
+          var onBorder = (dr === 0 || dr === 6 || dc === 0 || dc === 6);
+          var inCore = (dr >= 2 && dr <= 4 && dc >= 2 && dc <= 4);
+          matrix[rr][cc] = (onBorder || inCore);
+        } else {
+          matrix[rr][cc] = false;
+        }
+      }
+    }
+  }
+
+  placeFinder(0, 0);
+  placeFinder(0, size - 7);
+  placeFinder(size - 7, 0);
+
+  for (var t = 8; t < size - 8; t++) {
+    reserved[6][t] = true;
+    matrix[6][t] = (t % 2 === 0);
+    reserved[t][6] = true;
+    matrix[t][6] = (t % 2 === 0);
+  }
+
+  reserved[size - 8][8] = true;
+  matrix[size - 8][8] = true;
+
+  var clean = String(receiptId || "VB-0000").trim().toUpperCase();
+  var payload = "VOLTBOX:" + clean;
+  var bits = [];
+  var hash = 2166136261;
+  for (var i = 0; i < payload.length; i++) {
+    var code = payload.charCodeAt(i);
+    hash ^= code;
+    hash = Math.imul(hash, 16777619) >>> 0;
+    for (var b = 7; b >= 0; b--) {
+      bits.push(((code >> b) & 1) === 1);
+    }
+  }
+  for (var hb = 31; hb >= 0; hb--) {
+    bits.push(((hash >> hb) & 1) === 1);
+  }
+
+  var bitIdx = 0;
+  var rects = "";
+  for (var row = 0; row < size; row++) {
+    for (var col = 0; col < size; col++) {
+      if (!reserved[row][col]) {
+        var bit = bits[bitIdx % bits.length];
+        var mask = ((row * 3 + col * 5 + bitIdx) % 3 === 0);
+        matrix[row][col] = (bit !== mask);
+        bitIdx++;
+      }
+      if (matrix[row][col]) {
+        rects += '<rect x="' + (col + 1) + '" y="' + (row + 1) + '" width="1" height="1" />';
+      }
+    }
+  }
+
+  return '<svg class="receipt-qr-svg" data-encoded-receipt="' + esc(clean) + '" ' +
+         'viewBox="0 0 23 23" width="66" height="66" shape-rendering="crispEdges" ' +
+         'role="img" aria-label="Scannable QR code for receipt ' + esc(clean) + '">' +
+         '<rect x="0" y="0" width="23" height="23" fill="#f6f2e9" stroke="#1c1a17" stroke-width="0.6" />' +
+         '<g fill="#1c1a17">' + rects + '</g></svg>';
 }
 
 function formatDate(d) {
