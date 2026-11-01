@@ -14,6 +14,7 @@ import {
   isLowStock,
   makeOrderId,
   roundMoney,
+  sanitizeChatMessage,
 } from './src/logic/inventory';
 
 const PORT = Number(process.env.PORT) || 3000;
@@ -58,9 +59,11 @@ wss.on('connection', (ws: AuthenticatedSocket, req) => {
   ws.userEmail = user.email;
   ws.userRole = user.role;
   wsClients.add(ws);
+  broadcastToAll({ type: 'presence-update', onlineCount: Math.max(1, wsClients.size) });
 
   ws.on('close', () => {
     wsClients.delete(ws);
+    broadcastToAll({ type: 'presence-update', onlineCount: Math.max(1, wsClients.size) });
   });
   ws.on('error', () => {
     wsClients.delete(ws);
@@ -765,6 +768,65 @@ app.post('/api/reports/:id/resolve', (req, res) => {
   }
   store.save();
   return res.json({ ok: true, status: r.status });
+});
+
+// ── Real-Time Bench Messenger Controller (/api/messages) ──
+app.get('/api/messages', (req, res) => {
+  const user = userFromReq(req);
+  if (!user) return notSignedIn(res);
+
+  const channel = typeof req.query.channel === 'string' ? req.query.channel.trim() : 'all';
+  return res.json({
+    ok: true,
+    onlineCount: Math.max(1, wsClients.size),
+    messages: store.getMessages(channel),
+  });
+});
+
+app.post('/api/messages', (req, res) => {
+  const user = userFromReq(req);
+  if (!user) return notSignedIn(res);
+
+  const check = sanitizeChatMessage({
+    text: req.body?.text,
+    channel: req.body?.channel,
+    productId: req.body?.productId,
+  });
+
+  if (!check.valid) {
+    return badRequest(res, check.error || 'Message cannot be empty.');
+  }
+
+  const linkedProduct = check.productId ? store.findProduct(check.productId) : null;
+  const finalText =
+    check.text ||
+    (linkedProduct ? `Shared hardware component: ${linkedProduct.title}` : '');
+
+  const created = store.addMessage({
+    channel: check.channel,
+    senderName: user.name,
+    senderEmail: user.email,
+    senderRole: user.role,
+    senderColor: user.avatarColor,
+    text: finalText,
+    productId: linkedProduct ? linkedProduct.id : null,
+    productTitle: linkedProduct ? linkedProduct.title : null,
+    productPrice: linkedProduct ? linkedProduct.price : null,
+    productSku: linkedProduct ? getProductSku(linkedProduct) : null,
+    productImage: linkedProduct ? linkedProduct.image : null,
+  });
+
+  broadcastToAll({
+    type: 'chat-message',
+    message: created,
+    onlineCount: Math.max(1, wsClients.size),
+  });
+
+  return res.json({
+    ok: true,
+    message: created,
+    onlineCount: Math.max(1, wsClients.size),
+  });
 });
 
 // ── Dynamic Category SVG Tile Endpoint (prevents 404s on /images/categories/*.svg) ──

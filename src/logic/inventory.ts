@@ -106,19 +106,19 @@ export function classifyComponentGroup(product: { title?: string; category?: str
   if (hay.includes('rtx') || hay.includes('gtx') || hay.includes('radeon') || hay.includes('gpu') || hay.includes('graphics')) {
     return 'gpus';
   }
-  if (hay.includes('ryzen') || hay.includes('intel') || hay.includes('core i') || hay.includes('cpu') || hay.includes('processor') || hay.includes('noctua') || hay.includes('cooler')) {
+  if (hay.includes('ryzen') || hay.includes('intel') || hay.includes('core ultra') || hay.includes('core i') || hay.includes('cpu') || hay.includes('processor') || hay.includes('noctua') || hay.includes('cooler')) {
     return 'cpus';
   }
-  if (hay.includes('motherboard') || hay.includes('b550') || hay.includes('b570') || hay.includes('x670') || hay.includes('z790') || hay.includes('tomahawk') || hay.includes('ddr5') || hay.includes('vengeance') || hay.includes('raspberry')) {
+  if (hay.includes('motherboard') || hay.includes('b550') || hay.includes('b570') || hay.includes('x670') || hay.includes('x870') || hay.includes('crosshair') || hay.includes('z790') || hay.includes('tomahawk') || hay.includes('ddr5') || hay.includes('vengeance') || hay.includes('raspberry')) {
     return 'motherboards';
   }
-  if (hay.includes('ssd') || hay.includes('nvme') || hay.includes('harddisk') || hay.includes('hard disk') || hay.includes('hdd') || hay.includes('storage')) {
+  if (hay.includes('ssd') || hay.includes('nvme') || hay.includes('mp700') || hay.includes('sn850') || hay.includes('harddisk') || hay.includes('hard disk') || hay.includes('hdd') || hay.includes('storage')) {
     return 'storage';
   }
-  if (hay.includes('airpods') || hay.includes('headphone') || hay.includes('xm5') || hay.includes('earbud') || hay.includes('audio') || hay.includes('speaker') || hay.includes('mic') || hay.includes('webcam') || hay.includes('facecam')) {
+  if (hay.includes('airpods') || hay.includes('headphone') || hay.includes('xm5') || hay.includes('earbud') || hay.includes('audio') || hay.includes('speaker') || hay.includes('mic') || hay.includes('shure') || hay.includes('sm7') || hay.includes('broadcast') || hay.includes('webcam') || hay.includes('facecam')) {
     return 'audio';
   }
-  if (hay.includes('playstation') || hay.includes('ps5') || hay.includes('xbox') || hay.includes('controller') || hay.includes('console') || hay.includes('gaming') || hay.includes('alienware') || hay.includes('oled') || hay.includes('monitor') || hay.includes('keychron') || hay.includes('keyboard')) {
+  if (hay.includes('playstation') || hay.includes('ps5') || hay.includes('xbox') || hay.includes('controller') || hay.includes('console') || hay.includes('handheld') || hay.includes('aethel') || hay.includes('steam deck') || hay.includes('mouse') || hay.includes('viper') || hay.includes('apex pro') || hay.includes('gaming') || hay.includes('alienware') || hay.includes('oled') || hay.includes('monitor') || hay.includes('keychron') || hay.includes('keyboard')) {
     return 'gaming';
   }
   return 'other';
@@ -720,5 +720,83 @@ export function computeCardParallaxTilt(
     shiftYPx: sy === 0 ? 0 : sy,
     glareXPercent: gx === 0 ? 0 : gx,
     glareYPercent: gy === 0 ? 0 : gy,
+  };
+}
+
+export type MessengerChannel = 'general' | 'rig-builds' | 'price-drops';
+
+export interface SanitizedChatPayload {
+  valid: boolean;
+  channel: MessengerChannel;
+  text: string;
+  productId: number | null;
+  error?: string;
+}
+
+export function sanitizeChatMessage(input: {
+  text?: unknown;
+  channel?: unknown;
+  productId?: unknown;
+}): SanitizedChatPayload {
+  const rawChannel = typeof input.channel === 'string' ? input.channel.trim().toLowerCase() : 'general';
+  const channel: MessengerChannel =
+    rawChannel === 'rig-builds' || rawChannel === 'price-drops' ? rawChannel : 'general';
+
+  const rawText = typeof input.text === 'string' ? input.text.replace(/\s+/g, ' ').trim() : '';
+  const pid =
+    typeof input.productId === 'number' && Number.isFinite(input.productId) && input.productId > 0
+      ? Math.floor(input.productId)
+      : typeof input.productId === 'string' && Number.parseInt(input.productId, 10) > 0
+      ? Number.parseInt(input.productId, 10)
+      : null;
+
+  if (!rawText && !pid) {
+    return {
+      valid: false,
+      channel,
+      text: '',
+      productId: null,
+      error: 'Please enter a message or attach a hardware component.',
+    };
+  }
+
+  return {
+    valid: true,
+    channel,
+    text: rawText.slice(0, 420),
+    productId: pid,
+  };
+}
+
+export interface DeviceViewportProfile {
+  deviceTier: 'mobile' | 'ipad-tablet' | 'desktop';
+  columnsSuggested: number;
+  showBottomAppDock: boolean;
+  compactOrderBarByDefault: boolean;
+}
+
+export function classifyDeviceViewport(width: number, _height = 800): DeviceViewportProfile {
+  const w = Number.isFinite(width) && width > 0 ? width : 1280;
+  if (w <= 680) {
+    return {
+      deviceTier: 'mobile',
+      columnsSuggested: 2,
+      showBottomAppDock: true,
+      compactOrderBarByDefault: true,
+    };
+  }
+  if (w <= 1040) {
+    return {
+      deviceTier: 'ipad-tablet',
+      columnsSuggested: 3,
+      showBottomAppDock: true,
+      compactOrderBarByDefault: false,
+    };
+  }
+  return {
+    deviceTier: 'desktop',
+    columnsSuggested: 4,
+    showBottomAppDock: false,
+    compactOrderBarByDefault: false,
   };
 }

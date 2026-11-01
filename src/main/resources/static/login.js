@@ -60,6 +60,40 @@ window.addEventListener("load", function () {
       });
     }
   }, { passive: true });
+
+  var canvas = document.getElementById("quantum-bg-canvas");
+  if (canvas && canvas.getContext) {
+    var ctx = canvas.getContext("2d");
+    var w = window.innerWidth, h = window.innerHeight;
+    canvas.width = w; canvas.height = h;
+    window.addEventListener("resize", function () {
+      w = window.innerWidth; h = window.innerHeight;
+      canvas.width = w; canvas.height = h;
+    }, { passive: true });
+    var pts = [];
+    for (var i = 0; i < 26; i++) {
+      pts.push({ x: Math.random() * w, y: Math.random() * h, vx: (Math.random() - 0.5) * 0.38, vy: (Math.random() - 0.5) * 0.38 });
+    }
+    (function loop() {
+      ctx.clearRect(0, 0, w, h);
+      for (var i = 0; i < pts.length; i++) {
+        var p = pts[i];
+        p.x = (p.x + p.vx + w) % w;
+        p.y = (p.y + p.vy + h) % h;
+        ctx.fillStyle = "rgba(45, 212, 191, 0.55)";
+        ctx.fillRect(p.x - 1, p.y - 1, 2.2, 2.2);
+        for (var j = i + 1; j < pts.length; j++) {
+          var q = pts[j];
+          var d = Math.hypot(p.x - q.x, p.y - q.y);
+          if (d < 150) {
+            ctx.strokeStyle = "rgba(45, 212, 191, " + ((1 - d / 150) * 0.16).toFixed(3) + ")";
+            ctx.beginPath(); ctx.moveTo(p.x, p.y); ctx.lineTo(q.x, q.y); ctx.stroke();
+          }
+        }
+      }
+      window.requestAnimationFrame(loop);
+    })();
+  }
 })();
 
 function pulseSignalTraces() {

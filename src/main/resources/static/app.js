@@ -120,12 +120,51 @@ var checkoutMsgEl     = document.getElementById("checkout-msg");
 var checkoutPayEl     = document.getElementById("checkout-pay");
 
 
+// Bench Messenger, Quantum FX, PWA & Mobile Dock elements
+var bgFxBtnEl            = document.getElementById("bg-fx-btn");
+var bgFxLabelEl          = document.getElementById("bg-fx-label");
+var pwaInstallBtnEl      = document.getElementById("pwa-install-btn");
+var pwaInstallOverlayEl  = document.getElementById("pwa-install-overlay");
+var pwaInstallCloseEl    = document.getElementById("pwa-install-close");
+var pwaNativeTriggerEl   = document.getElementById("pwa-native-install-btn") || document.getElementById("pwa-native-trigger");
+var offlineBannerEl      = document.getElementById("offline-banner");
+
+var messengerBtnEl       = document.getElementById("messenger-btn");
+var messengerBadgeEl     = document.getElementById("messenger-badge");
+var messengerOverlayEl   = document.getElementById("messenger-overlay");
+var messengerCloseEl     = document.getElementById("messenger-close");
+var messengerChannelsEl  = document.getElementById("messenger-channels");
+var messengerChipsEl     = document.getElementById("messenger-quick-chips");
+var messengerFeedEl      = document.getElementById("messenger-feed");
+var messengerOnlineEl    = document.getElementById("messenger-online-pill") || document.getElementById("messenger-online-label");
+var messengerFormEl      = document.getElementById("messenger-form");
+var chatProductSelectEl  = document.getElementById("chat-product-select");
+var chatMessageInputEl   = document.getElementById("chat-input") || document.getElementById("chat-message-input");
+var chatSendBtnEl        = document.getElementById("chat-send-btn");
+
+var orderExpandToggleEl  = document.getElementById("order-expand-toggle");
+var mobileAppNavEl       = document.getElementById("mobile-app-nav");
+var mnavRigCountEl       = document.getElementById("mnav-rig-count");
+var mnavMsgBadgeEl       = document.getElementById("mnav-msg-badge");
+var mnavCartBadgeEl      = document.getElementById("mnav-cart-badge");
+
+var chatMessages = [];
+var activeChatChannel = "general";
+var unreadChatCount = 0;
+var isMessengerOpen = false;
+var bgModes = ["quantum", "overclock", "cyber"];
+var bgModeLabels = { quantum: "FX: Quantum", overclock: "FX: Overclock", cyber: "FX: Cyber" };
+var currentBgModeIdx = 0;
+var deferredPwaPrompt = null;
+
 // ── kick things off ──
 
 document.addEventListener("DOMContentLoaded", function () {
   wireUpButtons();
   watchScroll();
   watchCursorSpotlight();
+  initQuantumCanvasBg();
+  initPwaExperience();
   loadMe();
 });
 
@@ -135,6 +174,9 @@ function triggerPerimeterSignalPulse() {
   document.body.classList.remove("signal-burst");
   void document.body.offsetWidth;
   document.body.classList.add("signal-burst");
+  if (typeof window.triggerVoltboxShockwave === "function") {
+    window.triggerVoltboxShockwave();
+  }
   clearTimeout(signalBurstTimer);
   signalBurstTimer = setTimeout(function () {
     document.body.classList.remove("signal-burst");
@@ -242,11 +284,11 @@ function getComponentGroup(p) {
   if (p.componentGroup) return p.componentGroup;
   var hay = ((p.title || "") + " " + (p.category || "")).toLowerCase();
   if (hay.indexOf("rtx") !== -1 || hay.indexOf("gtx") !== -1 || hay.indexOf("radeon") !== -1 || hay.indexOf("gpu") !== -1) return "gpus";
-  if (hay.indexOf("ryzen") !== -1 || hay.indexOf("intel") !== -1 || hay.indexOf("cpu") !== -1 || hay.indexOf("processor") !== -1) return "cpus";
-  if (hay.indexOf("motherboard") !== -1 || hay.indexOf("b550") !== -1 || hay.indexOf("b570") !== -1 || hay.indexOf("tomahawk") !== -1) return "motherboards";
-  if (hay.indexOf("ssd") !== -1 || hay.indexOf("nvme") !== -1 || hay.indexOf("harddisk") !== -1 || hay.indexOf("storage") !== -1) return "storage";
-  if (hay.indexOf("airpods") !== -1 || hay.indexOf("headphone") !== -1 || hay.indexOf("audio") !== -1) return "audio";
-  if (hay.indexOf("playstation") !== -1 || hay.indexOf("ps5") !== -1 || hay.indexOf("controller") !== -1 || hay.indexOf("gaming") !== -1) return "gaming";
+  if (hay.indexOf("ryzen") !== -1 || hay.indexOf("intel") !== -1 || hay.indexOf("ultra") !== -1 || hay.indexOf("cpu") !== -1 || hay.indexOf("processor") !== -1) return "cpus";
+  if (hay.indexOf("motherboard") !== -1 || hay.indexOf("b550") !== -1 || hay.indexOf("b570") !== -1 || hay.indexOf("x870") !== -1 || hay.indexOf("z790") !== -1 || hay.indexOf("tomahawk") !== -1) return "motherboards";
+  if (hay.indexOf("ssd") !== -1 || hay.indexOf("nvme") !== -1 || hay.indexOf("harddisk") !== -1 || hay.indexOf("mp700") !== -1 || hay.indexOf("storage") !== -1) return "storage";
+  if (hay.indexOf("airpods") !== -1 || hay.indexOf("headphone") !== -1 || hay.indexOf("mic") !== -1 || hay.indexOf("shure") !== -1 || hay.indexOf("audio") !== -1) return "audio";
+  if (hay.indexOf("playstation") !== -1 || hay.indexOf("ps5") !== -1 || hay.indexOf("controller") !== -1 || hay.indexOf("mouse") !== -1 || hay.indexOf("handheld") !== -1 || hay.indexOf("console") !== -1 || hay.indexOf("gaming") !== -1) return "gaming";
   return "other";
 }
 
@@ -624,6 +666,7 @@ function renderAllCards() {
 
   upgradeCardPhotos();
   applyFiltersAndSearch();
+  populateMessengerProductSelect();
 }
 
 function mountCardRecharts(p) {
@@ -914,6 +957,9 @@ function renderRigDrawer() {
 
   if (rigBuilderCountEl) {
     rigBuilderCountEl.textContent = status.completedCount + "/4";
+  }
+  if (mnavRigCountEl) {
+    mnavRigCountEl.textContent = status.completedCount + "/4";
   }
   if (rigBuilderBtnEl) {
     rigBuilderBtnEl.classList.toggle("bundle-active", status.qualifies);
@@ -1364,6 +1410,18 @@ function recalc(isNewItemAdded) {
 
   cartBadgeEl.textContent = totals.count;
   cartBadgeEl.hidden = (totals.count === 0);
+  if (mnavCartBadgeEl) {
+    mnavCartBadgeEl.textContent = totals.count;
+    mnavCartBadgeEl.hidden = (totals.count === 0);
+  }
+  if (orderExpandToggleEl) {
+    var toggleLabel = document.getElementById("order-expand-label") || orderExpandToggleEl.querySelector(".order-expand-label");
+    if (toggleLabel) {
+      toggleLabel.textContent = totals.count > 0
+        ? (totals.count + (totals.count === 1 ? " item" : " items") + " · Promo & Tax ▲")
+        : "Promo & Breakdown ▲";
+    }
+  }
 
   checkoutEl.disabled    = (totals.count === 0);
   cartSheetGoEl.disabled = (totals.count === 0);
@@ -1679,10 +1737,146 @@ function wireUpButtons() {
     if (e.target === overlayEl) closeReceipt();
   });
 
+  // Background FX Mode Switcher
+  if (bgFxBtnEl) {
+    bgFxBtnEl.addEventListener("click", cycleBgFxMode);
+  }
+
+  // PWA Install Guide Modal
+  if (pwaInstallBtnEl) {
+    pwaInstallBtnEl.addEventListener("click", openPwaInstallModal);
+  }
+  if (pwaInstallCloseEl) {
+    pwaInstallCloseEl.addEventListener("click", closePwaInstallModal);
+  }
+  if (pwaInstallOverlayEl) {
+    pwaInstallOverlayEl.addEventListener("click", function (e) {
+      if (e.target === pwaInstallOverlayEl) closePwaInstallModal();
+    });
+  }
+  if (pwaNativeTriggerEl) {
+    pwaNativeTriggerEl.addEventListener("click", function () {
+      if (deferredPwaPrompt) {
+        deferredPwaPrompt.prompt();
+        deferredPwaPrompt.userChoice.finally(function () {
+          deferredPwaPrompt = null;
+          pwaNativeTriggerEl.hidden = true;
+          closePwaInstallModal();
+        });
+      }
+    });
+  }
+
+  // Bench Messenger Drawer
+  if (messengerBtnEl) {
+    messengerBtnEl.addEventListener("click", function () {
+      if (isMessengerOpen) closeMessenger();
+      else openMessenger();
+    });
+  }
+  if (messengerCloseEl) {
+    messengerCloseEl.addEventListener("click", closeMessenger);
+  }
+  if (messengerOverlayEl) {
+    messengerOverlayEl.addEventListener("click", function (e) {
+      if (e.target === messengerOverlayEl) closeMessenger();
+    });
+  }
+  if (messengerChannelsEl) {
+    messengerChannelsEl.addEventListener("click", function (e) {
+      var tab = e.target.closest(".msg-channel-btn, .msg-channel-tab");
+      if (!tab) return;
+      activeChatChannel = tab.getAttribute("data-channel") || "general";
+      var allTabs = messengerChannelsEl.querySelectorAll(".msg-channel-btn, .msg-channel-tab");
+      for (var i = 0; i < allTabs.length; i++) {
+        var active = allTabs[i] === tab;
+        allTabs[i].classList.toggle("active", active);
+        allTabs[i].setAttribute("aria-selected", active ? "true" : "false");
+      }
+      if (chatMessageInputEl) {
+        chatMessageInputEl.placeholder = "Message #" + activeChatChannel + " or share a PC build…";
+      }
+      renderMessengerFeed();
+    });
+  }
+  if (messengerChipsEl) {
+    messengerChipsEl.addEventListener("click", function (e) {
+      var chip = e.target.closest(".msg-quick-chip, .msg-chip");
+      if (!chip || !chatMessageInputEl) return;
+      var promptText = chip.getAttribute("data-prompt") || "";
+      chatMessageInputEl.value = promptText;
+      chatMessageInputEl.focus();
+    });
+  }
+  if (messengerFormEl) {
+    messengerFormEl.addEventListener("submit", function (e) {
+      e.preventDefault();
+      sendMessengerMessage();
+    });
+  }
+  if (chatSendBtnEl) {
+    chatSendBtnEl.addEventListener("click", function (e) {
+      e.preventDefault();
+      sendMessengerMessage();
+    });
+  }
+  if (chatMessageInputEl) {
+    chatMessageInputEl.addEventListener("keydown", function (e) {
+      if (e.key === "Enter" && !e.shiftKey) {
+        e.preventDefault();
+        sendMessengerMessage();
+      }
+    });
+  }
+
+  // Mobile Collapsible Order Bar Toggle
+  if (orderExpandToggleEl && orderBarEl) {
+    orderExpandToggleEl.addEventListener("click", function () {
+      var expanded = orderBarEl.classList.toggle("mobile-expanded");
+      orderExpandToggleEl.setAttribute("aria-expanded", expanded ? "true" : "false");
+    });
+  }
+
+  // Mobile & iPad Bottom App Dock
+  if (mobileAppNavEl) {
+    mobileAppNavEl.addEventListener("click", function (e) {
+      var navBtn = e.target.closest(".mnav-item, .mobile-nav-item");
+      if (!navBtn) return;
+      var target = navBtn.getAttribute("data-nav");
+      setMobileDockActive(target);
+
+      if (target === "catalog") {
+        closeMessenger();
+        closeRigDrawer();
+        closeSpecDrawer();
+        closeAllSheets();
+        window.scrollTo({ top: 0, behavior: "smooth" });
+      } else if (target === "rig") {
+        closeMessenger();
+        closeAllSheets();
+        openRigDrawer();
+      } else if (target === "messenger") {
+        closeRigDrawer();
+        closeAllSheets();
+        openMessenger();
+      } else if (target === "cart") {
+        closeMessenger();
+        closeRigDrawer();
+        toggleSheet(cartSheetEl, cartBtnEl);
+      } else if (target === "account") {
+        closeMessenger();
+        closeRigDrawer();
+        toggleSheet(profileSheetEl, avatarBtnEl);
+      }
+    });
+  }
+
   document.addEventListener("keydown", function (e) {
     if (e.key !== "Escape") return;
     if (overlayEl.classList.contains("open")) closeReceipt();
     else if (checkoutOverlayEl.classList.contains("open")) closeModal(checkoutOverlayEl);
+    else if (pwaInstallOverlayEl && pwaInstallOverlayEl.classList.contains("open")) closePwaInstallModal();
+    else if (messengerOverlayEl && messengerOverlayEl.classList.contains("open")) closeMessenger();
     else if (specDrawerOverlayEl && specDrawerOverlayEl.classList.contains("open")) closeSpecDrawer();
     else if (rigDrawerOverlayEl && rigDrawerOverlayEl.classList.contains("open")) closeRigDrawer();
     else closeAllSheets();
@@ -2283,3 +2477,453 @@ function watchScroll() {
     }
   }, { passive: true });
 }
+
+
+// ═══════════════════════════════════════════════════════════════════
+// QUANTUM SILICON WAFER & HOLOGRAPHIC CONSTELLATION BACKGROUND ENGINE
+// ═══════════════════════════════════════════════════════════════════
+
+function cycleBgFxMode() {
+  currentBgModeIdx = (currentBgModeIdx + 1) % bgModes.length;
+  var mode = bgModes[currentBgModeIdx];
+  document.body.setAttribute("data-bg-mode", mode);
+  if (bgFxLabelEl) {
+    bgFxLabelEl.textContent = bgModeLabels[mode] || "FX: Quantum";
+  }
+  if (typeof window.triggerVoltboxShockwave === "function") {
+    window.triggerVoltboxShockwave(window.innerWidth * 0.5, 80);
+  }
+}
+
+function initQuantumCanvasBg() {
+  var canvas = document.getElementById("quantum-bg-canvas");
+  if (!canvas) return;
+  var ctx = canvas.getContext("2d");
+  if (!ctx) return;
+
+  var width = window.innerWidth;
+  var height = window.innerHeight;
+  var dpr = Math.min(window.devicePixelRatio || 1, 2);
+
+  function resizeCanvas() {
+    width = window.innerWidth;
+    height = window.innerHeight;
+    canvas.width = Math.floor(width * dpr);
+    canvas.height = Math.floor(height * dpr);
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  }
+  resizeCanvas();
+  window.addEventListener("resize", resizeCanvas, { passive: true });
+
+  var DIE_LABELS = [
+    "DIE_04", "CLK_5.7G", "PCIE_5.0", "VRM_24P", "NPU_36T",
+    "L3_96MB", "GDDR7", "BUS_512B", "NVLINK", "TSMC_3NM",
+    "DDR5_8000", "PWM_SYNC", "VOLT_1.2V", "CORE_X9"
+  ];
+
+  var nodeCount = width < 680 ? 20 : 36;
+  var nodes = [];
+  for (var i = 0; i < nodeCount; i++) {
+    nodes.push({
+      x: Math.random() * width,
+      y: Math.random() * height,
+      vx: (Math.random() - 0.5) * 0.42,
+      vy: (Math.random() - 0.5) * 0.42,
+      size: (i % 4 === 0) ? 3.2 : 2.1,
+      label: (i % 3 === 0) ? DIE_LABELS[i % DIE_LABELS.length] : null,
+      phase: Math.random() * Math.PI * 2
+    });
+  }
+
+  var pointer = { x: width * 0.5, y: height * 0.35, active: false };
+  window.addEventListener("mousemove", function (e) {
+    pointer.x = e.clientX;
+    pointer.y = e.clientY;
+    pointer.active = true;
+  }, { passive: true });
+
+  window.addEventListener("touchmove", function (e) {
+    if (e.touches && e.touches[0]) {
+      pointer.x = e.touches[0].clientX;
+      pointer.y = e.touches[0].clientY;
+      pointer.active = true;
+    }
+  }, { passive: true });
+
+  var shockwaves = [];
+  window.triggerVoltboxShockwave = function (cx, cy) {
+    shockwaves.push({
+      x: typeof cx === "number" ? cx : pointer.x,
+      y: typeof cy === "number" ? cy : pointer.y,
+      r: 8,
+      maxR: Math.max(width, height) * 0.45,
+      alpha: 0.52
+    });
+  };
+
+  function getPalette() {
+    var mode = document.body.getAttribute("data-bg-mode") || "quantum";
+    if (mode === "overclock") {
+      return {
+        primary: "255, 180, 0",
+        secondary: "255, 107, 107",
+        nodeHex: "#ffd23f"
+      };
+    }
+    if (mode === "cyber") {
+      return {
+        primary: "124, 108, 246",
+        secondary: "45, 212, 191",
+        nodeHex: "#a78bfa"
+      };
+    }
+    return {
+      primary: "45, 212, 191",
+      secondary: "255, 210, 63",
+      nodeHex: "#2dd4bf"
+    };
+  }
+
+  function renderFrame(now) {
+    ctx.clearRect(0, 0, width, height);
+    var pal = getPalette();
+    var linkDist = width < 680 ? 125 : 165;
+
+    // Draw expanding shockwave rings on cart / FX / chat actions
+    for (var s = shockwaves.length - 1; s >= 0; s--) {
+      var sw = shockwaves[s];
+      sw.r += 7.5;
+      sw.alpha *= 0.96;
+      ctx.beginPath();
+      ctx.arc(sw.x, sw.y, sw.r, 0, Math.PI * 2);
+      ctx.strokeStyle = "rgba(" + pal.secondary + ", " + sw.alpha.toFixed(3) + ")";
+      ctx.lineWidth = 1.5;
+      ctx.stroke();
+      if (sw.r >= sw.maxR || sw.alpha < 0.02) {
+        shockwaves.splice(s, 1);
+      }
+    }
+
+    // Update and draw silicon wafer nodes
+    for (var i = 0; i < nodes.length; i++) {
+      var n = nodes[i];
+      n.x += n.vx;
+      n.y += n.vy;
+
+      if (n.x < 0) n.x = width;
+      if (n.x > width) n.x = 0;
+      if (n.y < 0) n.y = height;
+      if (n.y > height) n.y = 0;
+
+      // Gentle cursor magnetic pull
+      var dxP = pointer.x - n.x;
+      var dyP = pointer.y - n.y;
+      var distP = Math.sqrt(dxP * dxP + dyP * dyP);
+      if (distP < 190 && distP > 1) {
+        n.x += (dxP / distP) * 0.28;
+        n.y += (dyP / distP) * 0.28;
+        ctx.beginPath();
+        ctx.moveTo(n.x, n.y);
+        ctx.lineTo(pointer.x, pointer.y);
+        var pAlpha = ((1 - distP / 190) * 0.22).toFixed(3);
+        ctx.strokeStyle = "rgba(" + pal.secondary + ", " + pAlpha + ")";
+        ctx.lineWidth = 0.9;
+        ctx.stroke();
+      }
+
+      // Connect nearby silicon nodes with orthogonal/diagonal circuit traces
+      for (var j = i + 1; j < nodes.length; j++) {
+        var m = nodes[j];
+        var dx = m.x - n.x;
+        var dy = m.y - n.y;
+        var dist = Math.sqrt(dx * dx + dy * dy);
+        if (dist < linkDist) {
+          var alpha = ((1 - dist / linkDist) * 0.18).toFixed(3);
+          ctx.beginPath();
+          ctx.moveTo(n.x, n.y);
+          ctx.lineTo(m.x, m.y);
+          ctx.strokeStyle = "rgba(" + pal.primary + ", " + alpha + ")";
+          ctx.lineWidth = 0.8;
+          ctx.stroke();
+        }
+      }
+
+      var pulse = 0.55 + 0.45 * Math.sin(now * 0.0025 + n.phase);
+      ctx.fillStyle = "rgba(" + pal.primary + ", " + (0.35 + pulse * 0.45).toFixed(2) + ")";
+      ctx.fillRect(n.x - n.size * 0.5, n.y - n.size * 0.5, n.size, n.size);
+
+      if (n.label && distP < 240) {
+        ctx.font = "600 9px JetBrains Mono, monospace";
+        ctx.fillStyle = "rgba(" + pal.secondary + ", 0.55)";
+        ctx.fillText(n.label, n.x + 6, n.y - 4);
+      }
+    }
+
+    window.requestAnimationFrame(renderFrame);
+  }
+
+  window.requestAnimationFrame(renderFrame);
+}
+
+
+// ═══════════════════════════════════════════════════════════════════
+// BENCH MESSENGER (REAL-TIME HARDWARE CHAT & PART SHARING)
+// ═══════════════════════════════════════════════════════════════════
+
+function setMobileDockActive(navKey) {
+  if (!mobileAppNavEl) return;
+  var items = mobileAppNavEl.querySelectorAll(".mnav-item, .mobile-nav-item");
+  for (var i = 0; i < items.length; i++) {
+    items[i].classList.toggle("active", items[i].getAttribute("data-nav") === navKey);
+  }
+}
+
+function updateMessengerBadges() {
+  if (messengerBadgeEl) {
+    messengerBadgeEl.textContent = String(unreadChatCount);
+    messengerBadgeEl.hidden = (unreadChatCount <= 0);
+  }
+  if (mnavMsgBadgeEl) {
+    mnavMsgBadgeEl.textContent = String(unreadChatCount);
+    mnavMsgBadgeEl.hidden = (unreadChatCount <= 0);
+  }
+}
+
+function openMessenger() {
+  if (!messengerOverlayEl) return;
+  isMessengerOpen = true;
+  unreadChatCount = 0;
+  updateMessengerBadges();
+  closeAllSheets();
+  messengerOverlayEl.classList.add("open");
+  messengerOverlayEl.setAttribute("aria-hidden", "false");
+  if (messengerBtnEl) messengerBtnEl.setAttribute("aria-expanded", "true");
+  document.body.classList.add("no-scroll");
+  setMobileDockActive("messenger");
+
+  loadMessengerMessages();
+  setTimeout(function () {
+    if (chatMessageInputEl) chatMessageInputEl.focus();
+  }, 120);
+}
+
+function closeMessenger() {
+  if (!messengerOverlayEl) return;
+  isMessengerOpen = false;
+  messengerOverlayEl.classList.remove("open");
+  messengerOverlayEl.setAttribute("aria-hidden", "true");
+  if (messengerBtnEl) messengerBtnEl.setAttribute("aria-expanded", "false");
+  document.body.classList.remove("no-scroll");
+  setMobileDockActive("catalog");
+}
+
+function populateMessengerProductSelect() {
+  if (!chatProductSelectEl) return;
+  var currentVal = chatProductSelectEl.value;
+  var html = '<option value="">+ Attach Hardware Part (optional)</option>';
+  var sorted = products.slice().sort(function (a, b) { return a.title.localeCompare(b.title); });
+  for (var i = 0; i < sorted.length; i++) {
+    var p = sorted[i];
+    html += '<option value="' + p.id + '">' + esc(p.title) + ' ($' + p.price.toFixed(0) + ')</option>';
+  }
+  chatProductSelectEl.innerHTML = html;
+  if (currentVal) chatProductSelectEl.value = currentVal;
+}
+
+function loadMessengerMessages() {
+  api("/api/messages")
+    .then(function (r) { return r.json(); })
+    .then(function (data) {
+      if (data && Array.isArray(data.messages)) {
+        chatMessages = data.messages;
+      }
+      if (data && typeof data.onlineCount === "number" && messengerOnlineEl) {
+        messengerOnlineEl.textContent = Math.max(3, data.onlineCount + 2) + " builders online";
+      }
+      renderMessengerFeed();
+    })
+    .catch(function () {});
+}
+
+function renderMessengerFeed() {
+  if (!messengerFeedEl) return;
+  var filtered = [];
+  for (var i = 0; i < chatMessages.length; i++) {
+    var m = chatMessages[i];
+    if ((m.channel || "general") === activeChatChannel) {
+      filtered.push(m);
+    }
+  }
+
+  if (filtered.length === 0) {
+    messengerFeedEl.innerHTML =
+      '<div class="msg-empty">' +
+        '<p>No messages in <b>#' + esc(activeChatChannel) + '</b> yet.</p>' +
+        '<span>Drop a rig question or attach a catalog part below to start the thread.</span>' +
+      '</div>';
+    return;
+  }
+
+  var html = "";
+  for (var j = 0; j < filtered.length; j++) {
+    var msg = filtered[j];
+    var isSelf = me && msg.senderEmail === me.email;
+    var roleBadge = "";
+    if (msg.senderRole === "moderator") {
+      roleBadge = '<span class="msg-role-pill mod">MOD</span>';
+    } else if (msg.senderRole === "contributor") {
+      roleBadge = '<span class="msg-role-pill contrib">TECH</span>';
+    }
+
+    var when = new Date(msg.createdAt || Date.now());
+    var timeLabel = formatTime(when);
+
+    var partCardHtml = "";
+    if (msg.productId && msg.productTitle) {
+      var liveProd = findProductById(msg.productId);
+      var pPrice = typeof msg.productPrice === "number" ? msg.productPrice : (liveProd ? liveProd.price : 0);
+      var pSku = msg.productSku || (liveProd ? getSkuFor(liveProd) : ("VB-PRT-" + msg.productId));
+      var pImg = (liveProd && liveProd.image) ? liveProd.image : (msg.productImage || tileFor("components"));
+      partCardHtml =
+        '<div class="msg-part-card" data-testid="messenger-part-card">' +
+          '<img class="msg-part-img" src="' + esc(pImg) + '" alt="" onerror="this.onerror=null;this.src=NO_IMAGE" />' +
+          '<div class="msg-part-info">' +
+            '<span class="msg-part-sku">' + esc(pSku) + '</span>' +
+            '<strong class="msg-part-title">' + esc(msg.productTitle) + '</strong>' +
+            '<span class="msg-part-price">$' + Number(pPrice).toFixed(2) + '</span>' +
+          '</div>' +
+          '<div class="msg-part-actions">' +
+            '<button type="button" class="msg-part-btn add" onclick="inc(' + Number(msg.productId) + ')">+ Cart</button>' +
+            '<button type="button" class="msg-part-btn specs" onclick="closeMessenger();openSpecDrawer(' + Number(msg.productId) + ')">Specs</button>' +
+          '</div>' +
+        '</div>';
+    }
+
+    html +=
+      '<article class="msg-card' + (isSelf ? ' self' : '') + '" data-testid="messenger-msg-card">' +
+        '<div class="msg-avatar" style="background:' + esc(msg.senderColor || "#2dd4bf") + '">' +
+          esc(msg.senderInitial || "V") +
+        '</div>' +
+        '<div class="msg-body">' +
+          '<div class="msg-meta">' +
+            '<span class="msg-author">' + esc(msg.senderName || "Builder") + '</span>' +
+            roleBadge +
+            '<span class="msg-time">' + esc(timeLabel) + '</span>' +
+          '</div>' +
+          '<div class="msg-text">' + esc(msg.text) + '</div>' +
+          partCardHtml +
+        '</div>' +
+      '</article>';
+  }
+
+  messengerFeedEl.innerHTML = html;
+  messengerFeedEl.scrollTop = messengerFeedEl.scrollHeight;
+}
+
+function sendMessengerMessage() {
+  if (!chatMessageInputEl) return;
+  var text = chatMessageInputEl.value.trim();
+  if (!text) return;
+
+  var prodIdVal = chatProductSelectEl && chatProductSelectEl.value ? Number(chatProductSelectEl.value) : null;
+  chatSendBtnEl.disabled = true;
+
+  api("/api/messages", {
+    method: "POST",
+    body: JSON.stringify({
+      text: text,
+      channel: activeChatChannel,
+      productId: prodIdVal
+    })
+  })
+    .then(function (res) {
+      return res.json().then(function (data) { return { ok: res.ok, data: data }; });
+    })
+    .then(function (result) {
+      chatSendBtnEl.disabled = false;
+      if (result.ok && result.data) {
+        chatMessageInputEl.value = "";
+        if (chatProductSelectEl) chatProductSelectEl.value = "";
+        appendIncomingChatMessage(result.data);
+        triggerPerimeterSignalPulse();
+      }
+    })
+    .catch(function () {
+      chatSendBtnEl.disabled = false;
+    });
+}
+
+function appendIncomingChatMessage(msg) {
+  if (!msg || !msg.id) return;
+  for (var i = 0; i < chatMessages.length; i++) {
+    if (chatMessages[i].id === msg.id) return;
+  }
+  chatMessages.push(msg);
+  if (isMessengerOpen) {
+    renderMessengerFeed();
+  } else {
+    unreadChatCount++;
+    updateMessengerBadges();
+  }
+}
+
+window.onChatMessageReceived = function (msg, onlineCount) {
+  if (typeof onlineCount === "number" && messengerOnlineEl) {
+    messengerOnlineEl.textContent = Math.max(3, onlineCount + 2) + " builders online";
+  }
+  appendIncomingChatMessage(msg);
+};
+
+window.onPresenceUpdate = function (onlineCount) {
+  if (typeof onlineCount === "number" && messengerOnlineEl) {
+    messengerOnlineEl.textContent = Math.max(3, onlineCount + 2) + " builders online";
+  }
+};
+
+
+// ═══════════════════════════════════════════════════════════════════
+// PWA SERVICE WORKER, OFFLINE BANNER & INSTALL GUIDE
+// ═══════════════════════════════════════════════════════════════════
+
+function initPwaExperience() {
+  if ("serviceWorker" in navigator) {
+    window.addEventListener("load", function () {
+      navigator.serviceWorker.register("/sw.js").catch(function () {});
+    });
+  }
+
+  function syncOnlineBanner() {
+    if (!offlineBannerEl) return;
+    offlineBannerEl.hidden = navigator.onLine !== false;
+  }
+  window.addEventListener("online", syncOnlineBanner);
+  window.addEventListener("offline", syncOnlineBanner);
+  syncOnlineBanner();
+
+  window.addEventListener("beforeinstallprompt", function (e) {
+    e.preventDefault();
+    deferredPwaPrompt = e;
+    if (pwaNativeTriggerEl) {
+      pwaNativeTriggerEl.hidden = false;
+    }
+  });
+
+  // Preload initial chat count so badge/feed is ready
+  setTimeout(loadMessengerMessages, 450);
+}
+
+function openPwaInstallModal() {
+  if (!pwaInstallOverlayEl) return;
+  closeAllSheets();
+  pwaInstallOverlayEl.classList.add("open");
+  pwaInstallOverlayEl.setAttribute("aria-hidden", "false");
+  document.body.classList.add("no-scroll");
+}
+
+function closePwaInstallModal() {
+  if (!pwaInstallOverlayEl) return;
+  pwaInstallOverlayEl.classList.remove("open");
+  pwaInstallOverlayEl.setAttribute("aria-hidden", "true");
+  document.body.classList.remove("no-scroll");
+}
+

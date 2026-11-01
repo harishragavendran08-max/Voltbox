@@ -2,9 +2,16 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
   <title>Sign in — Voltbox</title>
   <meta name="description" content="Sign in to Voltbox Hardware Bench & Electronics Catalog." />
+  <meta name="theme-color" content="#0f1115" />
+  <meta name="mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <link rel="manifest" href="/manifest.json" />
+  <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+  <link rel="icon" type="image/svg+xml" href="/icon.svg" />
 
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
@@ -18,12 +25,15 @@
     }
   </script>
 </head>
-<body class="login-body">
+<body class="login-body" data-bg-mode="quantum">
 
-  <!-- Global Industrial PCB Blueprint, Cursor Voltage Spotlight, Signal Pulse Traces & Film Grain -->
+  <!-- Global Quantum Silicon Wafer, Holographic Aurora, 3D Horizon Grid & Interactive Laser Constellation -->
   <div class="bg-canvas" id="bg-canvas" aria-hidden="true">
+    <div class="bg-aurora-nebula"></div>
+    <div class="bg-horizon-plane"></div>
     <div class="bg-pcb-grid"></div>
     <div class="bg-crosshairs"></div>
+    <canvas class="quantum-bg-canvas" id="quantum-bg-canvas"></canvas>
     <div class="voltage-spotlight" id="voltage-spotlight"></div>
     <svg class="signal-traces-svg" viewBox="0 0 1440 900" preserveAspectRatio="none">
       <path class="pcb-trace-base" d="M 0 110 H 110 L 145 145 V 340 L 115 370 V 680 L 150 715 V 900" />

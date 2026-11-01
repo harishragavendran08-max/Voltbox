@@ -2,11 +2,19 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
   <title>Voltbox — Electronics Shop</title>
   <meta name="description" content="Voltbox — a community price catalog and electronics shop with real-time contributor moderation, live stock tracking, and retro receipts." />
   <meta property="og:title" content="Voltbox — Electronics Shop" />
   <meta property="og:description" content="Voltbox — a community price catalog and electronics shop with real-time contributor moderation, live stock tracking, and retro receipts." />
+  <meta name="theme-color" content="#0f1115" />
+  <meta name="mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <meta name="apple-mobile-web-app-title" content="Voltbox" />
+  <link rel="manifest" href="/manifest.json" />
+  <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+  <link rel="icon" type="image/svg+xml" href="/icon.svg" />
 
   <!-- inter font — looks clean and modern -->
   <link rel="preconnect" href="https://fonts.googleapis.com" />
@@ -28,12 +36,21 @@
     }
   </script>
 </head>
-<body>
+<body data-bg-mode="quantum">
 
-  <!-- Global Industrial PCB Blueprint, Cursor Voltage Spotlight, Signal Pulse Traces & Film Grain -->
+  <!-- Offline Connectivity Indicator Banner -->
+  <div class="offline-banner" id="offline-banner" role="status" aria-live="polite" hidden>
+    <span class="led-dot amber"></span>
+    <span>Offline Mode — Viewing cached Voltbox catalog</span>
+  </div>
+
+  <!-- Global Quantum Silicon Wafer, Holographic Aurora, 3D Horizon Grid & Interactive Laser Constellation -->
   <div class="bg-canvas" id="bg-canvas" aria-hidden="true">
+    <div class="bg-aurora-nebula"></div>
+    <div class="bg-horizon-plane"></div>
     <div class="bg-pcb-grid"></div>
     <div class="bg-crosshairs"></div>
+    <canvas class="quantum-bg-canvas" id="quantum-bg-canvas"></canvas>
     <div class="voltage-spotlight" id="voltage-spotlight"></div>
     <svg class="signal-traces-svg" viewBox="0 0 1440 900" preserveAspectRatio="none">
       <!-- Left & Top PCB Copper + Signal Traces -->
@@ -80,6 +97,27 @@
       </div>
 
       <div class="topbar-right">
+
+        <!-- Background FX Engine Switcher (Quantum / Overclock / Cyber) -->
+        <button class="topbar-pill-btn fx-mode-btn" id="bg-fx-btn" type="button"
+                aria-label="Switch background visual engine" title="Switch Holographic Background Engine">
+          <span data-icon="layers" data-icon-size="14"></span>
+          <span id="bg-fx-label">FX: Quantum</span>
+        </button>
+
+        <!-- Install Web App Button (iOS / Android / iPad / Desktop PWA) -->
+        <button class="topbar-pill-btn pwa-install-btn" id="pwa-install-btn" type="button"
+                aria-label="Install Voltbox Web App">
+          <span data-icon="smartphone" data-icon-size="14"></span>
+          <span class="pwa-btn-text">Install App</span>
+        </button>
+
+        <!-- Real-Time Bench Messenger Button -->
+        <button class="icon-btn messenger-trigger-btn" id="messenger-btn" type="button"
+                aria-label="Open Bench Messenger" title="Bench Messenger (Live Chat)">
+          <span data-icon="message"></span>
+          <span class="badge messenger-badge" id="messenger-badge" hidden>0</span>
+        </button>
 
         <!-- ── the admin / community panel — what's inside depends on your
              role (member, contributor, or moderator). built by community.js ── -->
@@ -234,29 +272,38 @@
     <!-- the bar stuck to the bottom — promo code + subtotal / discounts / tax / total + checkout button -->
     <div class="order-bar" id="order-bar">
       <div class="order-lines">
-        <div class="promo-bar-row">
-          <div class="promo-input-group">
-            <input id="promo-code-input" type="text" placeholder="Promo code (try VOLT10)"
-                   aria-label="Promo code" autocomplete="off" spellcheck="false" />
-            <button class="promo-apply-btn" id="promo-apply-btn" type="button">Apply</button>
+        <div class="order-details-collapsible" id="order-details-collapsible">
+          <div class="promo-bar-row">
+            <div class="promo-input-group">
+              <input id="promo-code-input" type="text" placeholder="Promo code (try VOLT10)"
+                     aria-label="Promo code" autocomplete="off" spellcheck="false" />
+              <button class="promo-apply-btn" id="promo-apply-btn" type="button">Apply</button>
+            </div>
+            <span class="promo-status-note" id="promo-status-note" hidden></span>
           </div>
-          <span class="promo-status-note" id="promo-status-note" hidden></span>
+
+          <div class="order-line muted">
+            <span>Subtotal</span>
+            <span class="odometer-wrap">$<span id="subtotal" class="odometer-val">0.00</span></span>
+          </div>
+          <div class="order-line discount-line" id="discount-row" hidden>
+            <span id="discount-label">Bundle / Promo Discount</span>
+            <span class="odometer-wrap">−$<span id="discount-amount" class="odometer-val">0.00</span></span>
+          </div>
+          <div class="order-line muted">
+            <span>Tax (8.25%)</span>
+            <span class="odometer-wrap">$<span id="tax" class="odometer-val">0.00</span></span>
+          </div>
         </div>
 
-        <div class="order-line muted">
-          <span>Subtotal</span>
-          <span class="odometer-wrap">$<span id="subtotal" class="odometer-val">0.00</span></span>
-        </div>
-        <div class="order-line discount-line" id="discount-row" hidden>
-          <span id="discount-label">Bundle / Promo Discount</span>
-          <span class="odometer-wrap">−$<span id="discount-amount" class="odometer-val">0.00</span></span>
-        </div>
-        <div class="order-line muted">
-          <span>Tax (8.25%)</span>
-          <span class="odometer-wrap">$<span id="tax" class="odometer-val">0.00</span></span>
-        </div>
         <div class="order-line total">
-          <span>Total</span>
+          <span class="order-total-left">
+            <span>Total</span>
+            <button type="button" class="order-expand-toggle" id="order-expand-toggle"
+                    aria-expanded="false" aria-label="Toggle order breakdown">
+              <span id="order-expand-label">Promo &amp; Breakdown ▲</span>
+            </button>
+          </span>
           <span class="odometer-wrap">$<span id="total" class="odometer-val">0.00</span></span>
         </div>
       </div>
@@ -266,6 +313,36 @@
     </div>
 
   </div>
+
+  <!-- Native Mobile & iPad Web-Application Bottom Navigation Dock -->
+  <nav class="mobile-app-nav" id="mobile-app-nav" aria-label="Mobile Web App Navigation">
+    <button type="button" class="mnav-item active" id="mnav-catalog" data-nav="catalog">
+      <span data-icon="grid" data-icon-size="18"></span>
+      <span class="mnav-label">Catalog</span>
+    </button>
+    <button type="button" class="mnav-item" id="mnav-rig" data-nav="rig">
+      <span data-icon="cpu" data-icon-size="18"></span>
+      <span class="mnav-label">Rig <b id="mnav-rig-count">0/4</b></span>
+    </button>
+    <button type="button" class="mnav-item" id="mnav-messenger" data-nav="messenger">
+      <span class="mnav-icon-wrap">
+        <span data-icon="message" data-icon-size="18"></span>
+        <span class="mnav-badge" id="mnav-msg-badge" hidden>0</span>
+      </span>
+      <span class="mnav-label">Messenger</span>
+    </button>
+    <button type="button" class="mnav-item" id="mnav-cart" data-nav="cart">
+      <span class="mnav-icon-wrap">
+        <span data-icon="cart" data-icon-size="18"></span>
+        <span class="mnav-badge" id="mnav-cart-badge" hidden>0</span>
+      </span>
+      <span class="mnav-label">Cart</span>
+    </button>
+    <button type="button" class="mnav-item" id="mnav-account" data-nav="account">
+      <span data-icon="user" data-icon-size="18"></span>
+      <span class="mnav-label">Account</span>
+    </button>
+  </nav>
 
   <!-- Live Restock & Contributor Activity Feed Toast -->
   <div class="activity-toast" id="live-activity-toast" role="status" aria-live="polite" hidden>
@@ -493,6 +570,103 @@
     </div>
   </div>
 
+  <!-- Real-Time Hardware Bench Messenger Drawer (WebSocket + Spring Boot /api/messages) -->
+  <div class="drawer-overlay" id="messenger-overlay" aria-hidden="true">
+    <aside class="side-drawer messenger-drawer" id="messenger-drawer" role="dialog" aria-modal="true" aria-label="Voltbox Bench Messenger">
+      <div class="drawer-head messenger-head">
+        <div>
+          <div class="drawer-kicker">
+            <span class="led-dot emerald"></span>
+            <span>LIVE WEBSOCKET // BENCH MESSENGER</span>
+          </div>
+          <h2 class="drawer-title">Hardware Messenger</h2>
+        </div>
+        <div class="messenger-head-right">
+          <span class="messenger-online-tag" id="messenger-online-pill">1 online</span>
+          <button class="modal-close" id="messenger-close" aria-label="Close Messenger">
+            <span data-icon="x" data-icon-size="18"></span>
+          </button>
+        </div>
+      </div>
+
+      <!-- Channel Switcher Tabs -->
+      <div class="messenger-channels" id="messenger-channels" role="tablist" aria-label="Messenger channels">
+        <button type="button" class="msg-channel-btn active" data-channel="general" role="tab" aria-selected="true">#general</button>
+        <button type="button" class="msg-channel-btn" data-channel="rig-builds" role="tab" aria-selected="false">#rig-builds</button>
+        <button type="button" class="msg-channel-btn" data-channel="price-drops" role="tab" aria-selected="false">#price-drops</button>
+      </div>
+
+      <!-- Quick-Prompt Hardware Discussion Chips -->
+      <div class="messenger-quick-chips" id="messenger-quick-chips">
+        <button type="button" class="msg-quick-chip" data-prompt="Does the Intel Core Ultra 9 pair well with the RTX 5090?">Intel Ultra 9 + RTX 5090?</button>
+        <button type="button" class="msg-quick-chip" data-prompt="Just unlocked the 5% Rig Bundle + VOLT10 promo code!">5% Rig Bundle + VOLT10</button>
+        <button type="button" class="msg-quick-chip" data-prompt="Any restock update on the Aethel VX-1 OLED Handheld?">OLED Handheld Restock?</button>
+      </div>
+
+      <!-- Scrollable Real-Time Message Feed -->
+      <div class="messenger-feed" id="messenger-feed" data-testid="messenger-feed" aria-live="polite"></div>
+
+      <!-- Message Composer with Hardware Part Attachment Selector -->
+      <form class="messenger-composer" id="messenger-form" autocomplete="off">
+        <div class="messenger-attach-row">
+          <label class="msg-attach-label" for="chat-product-select">
+            <span data-icon="cpu" data-icon-size="13"></span>
+            <span>Attach Part:</span>
+          </label>
+          <select id="chat-product-select" aria-label="Attach hardware component to message">
+            <option value="">None (Text message only)</option>
+          </select>
+        </div>
+        <div class="messenger-input-row">
+          <input id="chat-input" type="text" maxlength="420"
+                 placeholder="Message #general or share a PC build…"
+                 aria-label="Message text" autocomplete="off" />
+          <button type="submit" class="messenger-send-btn" id="chat-send-btn" aria-label="Send message">
+            <span data-icon="send" data-icon-size="15"></span>
+            <span>Send</span>
+          </button>
+        </div>
+      </form>
+    </aside>
+  </div>
+
+  <!-- Install Web App Modal (iOS / iPadOS / Android / Desktop PWA + Full-Stack Architecture) -->
+  <div class="modal-overlay" id="pwa-install-overlay" aria-hidden="true">
+    <div class="modal-card pwa-modal-card" id="pwa-install-card" role="dialog" aria-modal="true" aria-label="Install Voltbox Web App">
+      <button class="modal-close" id="pwa-install-close" aria-label="Close"><span data-icon="x" data-icon-size="18"></span></button>
+      <div class="pwa-modal-head">
+        <img src="/pwa-192x192.png" alt="Voltbox App Icon" class="pwa-app-icon-preview" />
+        <div>
+          <div class="drawer-kicker">UNIVERSAL WEB APPLICATION</div>
+          <h2 class="modal-title">Install Voltbox App</h2>
+          <p class="pwa-modal-sub">Optimized for iOS, Android, iPadOS &amp; Desktop</p>
+        </div>
+      </div>
+
+      <button type="button" class="modal-btn solid pwa-native-trigger" id="pwa-native-install-btn" hidden>
+        <span data-icon="download" data-icon-size="16"></span> Install Voltbox Now
+      </button>
+
+      <div class="pwa-platform-grid">
+        <div class="pwa-platform-item">
+          <div class="pwa-plat-title">iPhone &amp; iPad (iOS / iPadOS Safari)</div>
+          <p class="pwa-plat-steps">Tap the <strong>Share</strong> icon in Safari, then choose <strong>Add to Home Screen</strong> to launch Voltbox in full-screen standalone mode.</p>
+        </div>
+        <div class="pwa-platform-item">
+          <div class="pwa-plat-title">Android &amp; Desktop (Chrome / Edge)</div>
+          <p class="pwa-plat-steps">Tap <strong>Install App</strong> in your browser menu or address bar to pin Voltbox as a native desktop or mobile app with offline catalog caching.</p>
+        </div>
+      </div>
+
+      <div class="pwa-stack-strip">
+        <span>STACK:</span>
+        <code>Java 17 · Spring Boot 3.3</code>
+        <code>React 19 · Recharts</code>
+        <code>HTML5 · CSS3 · JS</code>
+        <code>JSON Store</code>
+      </div>
+    </div>
+  </div>
 
   <script src="icons.js"></script>
   <script src="recharts-bundle.js"></script>

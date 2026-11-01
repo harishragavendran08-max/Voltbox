@@ -615,6 +615,14 @@ function handleLiveEvent(msg) {
     if (typeof window.showActivityToast === "function") {
       window.showActivityToast(msg.message);
     }
+  } else if (msg.type === "chat-message" && msg.message) {
+    if (typeof window.onChatMessageReceived === "function") {
+      window.onChatMessageReceived(msg.message, msg.onlineCount);
+    }
+  } else if (msg.type === "presence-update") {
+    if (typeof window.onPresenceUpdate === "function") {
+      window.onPresenceUpdate(msg.onlineCount);
+    }
   }
 }
 

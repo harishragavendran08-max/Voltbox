@@ -18,6 +18,8 @@ import {
   computeOdometerColumns,
   computeAuthKeyTelemetry,
   computeCardParallaxTilt,
+  sanitizeChatMessage,
+  classifyDeviceViewport,
 } from './inventory';
 
 test('LOW_STOCK_THRESHOLD is 5', () => {
@@ -215,4 +217,36 @@ test('computeCardParallaxTilt calculates 3D tilt angles and parallax shifts towa
   assert.equal(bottomLeft.shiftYPx, 4.5);
   assert.equal(bottomLeft.glareXPercent, 0);
   assert.equal(bottomLeft.glareYPercent, 100);
+});
+
+test('sanitizeChatMessage validates channels, trims message text, and supports attached hardware product IDs', () => {
+  const empty = sanitizeChatMessage({ text: '   ', channel: 'general' });
+  assert.equal(empty.valid, false);
+
+  const validMsg = sanitizeChatMessage({
+    text: '  Pairing Intel Core Ultra 9 with X870E!  ',
+    channel: 'rig-builds',
+    productId: '36',
+  });
+  assert.equal(validMsg.valid, true);
+  assert.equal(validMsg.channel, 'rig-builds');
+  assert.equal(validMsg.text, 'Pairing Intel Core Ultra 9 with X870E!');
+  assert.equal(validMsg.productId, 36);
+});
+
+test('classifyDeviceViewport adapts layout across iOS/Android mobile, iPad tablet, and desktop viewports', () => {
+  const iphone = classifyDeviceViewport(390, 844);
+  assert.equal(iphone.deviceTier, 'mobile');
+  assert.equal(iphone.showBottomAppDock, true);
+  assert.equal(iphone.compactOrderBarByDefault, true);
+
+  const ipad = classifyDeviceViewport(820, 1180);
+  assert.equal(ipad.deviceTier, 'ipad-tablet');
+  assert.equal(ipad.showBottomAppDock, true);
+  assert.equal(ipad.columnsSuggested, 3);
+
+  const desktop = classifyDeviceViewport(1440, 900);
+  assert.equal(desktop.deviceTier, 'desktop');
+  assert.equal(desktop.showBottomAppDock, false);
+  assert.equal(desktop.columnsSuggested, 4);
 });

@@ -86,16 +86,34 @@ export interface Report {
   createdAt: number;
 }
 
+export interface ChatMessage {
+  id: number;
+  channel: 'general' | 'rig-builds' | 'price-drops';
+  senderName: string;
+  senderEmail: string;
+  senderRole: string;
+  senderColor: string;
+  text: string;
+  productId: number | null;
+  productTitle?: string | null;
+  productPrice?: number | null;
+  productSku?: string | null;
+  productImage?: string | null;
+  createdAt: number;
+}
+
 export interface StoreData {
   nextId: number;
   nextProductId: number;
   nextApplicationId: number;
   nextReportId: number;
+  nextMessageId?: number;
   users: User[];
   sessions: Record<string, string>;
   products: Product[];
   applications: Application[];
   reports: Report[];
+  messages?: ChatMessage[];
 }
 
 const DATA_FILE = path.resolve(process.cwd(), 'voltbox-data.json');
@@ -112,6 +130,8 @@ export class Store {
   private nextApplicationId = 1;
   private reports: Report[] = [];
   private nextReportId = 1;
+  private messages: ChatMessage[] = [];
+  private nextMessageId = 1;
   private sessions: Record<string, string> = {};
 
   constructor() {
@@ -131,10 +151,12 @@ export class Store {
       this.products = Array.isArray(data.products) ? data.products : [];
       this.applications = Array.isArray(data.applications) ? data.applications : [];
       this.reports = Array.isArray(data.reports) ? data.reports : [];
+      this.messages = Array.isArray(data.messages) ? data.messages : [];
       this.nextId = Math.max(data.nextId || 1, 1);
       this.nextProductId = Math.max(data.nextProductId || 1, 1);
       this.nextApplicationId = Math.max(data.nextApplicationId || 1, 1);
       this.nextReportId = Math.max(data.nextReportId || 1, 1);
+      this.nextMessageId = Math.max(data.nextMessageId || 1, 1);
 
       // Ensure every product has explicit quantity, stock,lowStock fields, and reliable image URLs
       let updated = false;
@@ -285,6 +307,72 @@ export class Store {
           ratingCount: 41,
           quantity: 9,
         },
+        {
+          id: 36,
+          title: 'Intel Core Ultra 9 285K Processor',
+          price: 195,
+          description: '24-Core (8P+16E) Arrow Lake unlocked desktop processor with integrated NPU, 5.7 GHz thermal velocity boost, and LGA1851.',
+          category: 'cpus',
+          image: '/src/assets/images/product_intel_ultra_cpu_1793517563101.jpg',
+          ratingRate: 4.8,
+          ratingCount: 74,
+          quantity: 4,
+        },
+        {
+          id: 37,
+          title: 'ASUS ROG Crosshair X870E Hero Motherboard',
+          price: 230,
+          description: 'Flagship 18+2+2 power stage ATX motherboard with dual USB4, PCIe 5.0 x16 SafeSlots, 5× M.2 heatsinks, and Wi-Fi 7.',
+          category: 'motherboards',
+          image: '/src/assets/images/product_x870e_motherboard_1793517565006.jpg',
+          ratingRate: 4.9,
+          ratingCount: 58,
+          quantity: 2,
+        },
+        {
+          id: 38,
+          title: 'Corsair MP700 Pro 4TB PCIe 5.0 NVMe SSD',
+          price: 175,
+          description: 'Extreme-throughput 4TB M.2 2280 Gen5 x4 NVMe SSD with CNC aluminum heatsink and up to 12,400 MB/s sequential reads.',
+          category: 'storage',
+          image: '/src/assets/images/product_nvme_heatsink_ssd_1793517600287.jpg',
+          ratingRate: 4.9,
+          ratingCount: 91,
+          quantity: 5,
+        },
+        {
+          id: 39,
+          title: 'Apex Pro X1 8K Wireless Esports Mouse',
+          price: 118,
+          description: '53g ultra-lightweight magnesium-shell wireless esports mouse with 35,000 DPI optical sensor and 8000Hz USB-C hyperpolling dongle.',
+          category: 'peripherals',
+          image: '/src/assets/images/product_wireless_gaming_mouse_1793517565308.jpg',
+          ratingRate: 4.8,
+          ratingCount: 89,
+          quantity: 7,
+        },
+        {
+          id: 40,
+          title: 'Shure SM7dB Dynamic Broadcast Microphone',
+          price: 210,
+          description: 'Cardioid studio broadcast XLR microphone with built-in +28dB discrete preamp, internal air-suspension shock isolation, and boom arm.',
+          category: 'audio',
+          image: '/src/assets/images/product_studio_broadcast_mic_1793517601003.jpg',
+          ratingRate: 4.9,
+          ratingCount: 108,
+          quantity: 3,
+        },
+        {
+          id: 41,
+          title: 'Aethel VX-1 1TB OLED Handheld Console',
+          price: 285,
+          description: 'Portable PC gaming handheld with 7.4" 90Hz HDR OLED display, Hall-effect thumbsticks, 50Wh battery, and custom RDNA 3 APU.',
+          category: 'gaming',
+          image: '/src/assets/images/product_handheld_oled_console_1793517566556.jpg',
+          ratingRate: 4.9,
+          ratingCount: 134,
+          quantity: 2,
+        },
       ];
 
       for (const extra of extraCatalogItems) {
@@ -321,6 +409,10 @@ export class Store {
         this.sessions['ed4a9555-540b-4bb9-a406-b353acded905'] = 'harish@voltbox.test';
         updated = true;
       }
+      if (this.messages.length === 0) {
+        this.seedMessages();
+        updated = true;
+      }
       if (updated) {
         this.save();
       }
@@ -336,11 +428,13 @@ export class Store {
       nextProductId: this.nextProductId,
       nextApplicationId: this.nextApplicationId,
       nextReportId: this.nextReportId,
+      nextMessageId: this.nextMessageId,
       users: this.users,
       sessions: this.sessions,
       products: this.products,
       applications: this.applications,
       reports: this.reports,
+      messages: this.messages,
     };
     const tmpFile = `${DATA_FILE}.tmp`;
     fs.writeFileSync(tmpFile, JSON.stringify(data, null, 2), 'utf-8');
@@ -353,16 +447,88 @@ export class Store {
     this.products = [];
     this.applications = [];
     this.reports = [];
+    this.messages = [];
     this.nextId = 1;
     this.nextProductId = 1;
     this.nextApplicationId = 1;
     this.nextReportId = 1;
+    this.nextMessageId = 1;
 
     const harish = this.add('Harish', 'harish@voltbox.test', 'Harish123');
     harish.role = 'moderator';
     this.sessions['ed4a9555-540b-4bb9-a406-b353acded905'] = harish.email;
     this.seedProducts();
+    this.seedMessages();
     this.save();
+  }
+
+  private seedMessages(): void {
+    const now = Date.now();
+    const initial: Omit<ChatMessage, 'id'>[] = [
+      {
+        channel: 'general',
+        senderName: 'Harish',
+        senderEmail: 'harish@voltbox.test',
+        senderRole: 'moderator',
+        senderColor: '#ffd23f',
+        text: 'Welcome to Voltbox Bench Messenger! Drop part inquiries, restock pings, or share your 4-slot Rig Builder setups here.',
+        productId: 19,
+        productTitle: 'Nvidia RTX 5090',
+        productPrice: 200,
+        productSku: 'VB-GPU-019',
+        productImage: 'https://www.nvidia.com/content/dam/en-zz/Solutions/geforce/graphic-cards/50-series/rtx-5090/geforce-rtx-5090-learn-more-og-1200x630.jpg',
+        createdAt: now - 1000 * 60 * 18,
+      },
+      {
+        channel: 'general',
+        senderName: 'Maya Lin',
+        senderEmail: 'maya@voltbox.test',
+        senderRole: 'contributor',
+        senderColor: '#20c997',
+        text: 'Just bench-tested the new Aethel VX-1 1TB OLED Handheld and ROG X870E Hero boards — thermal headroom is super clean.',
+        productId: 41,
+        productTitle: 'Aethel VX-1 1TB OLED Handheld Console',
+        productPrice: 285,
+        productSku: 'VB-GMG-041',
+        productImage: '/src/assets/images/product_handheld_oled_console_1793517566556.jpg',
+        createdAt: now - 1000 * 60 * 9,
+      },
+      {
+        channel: 'rig-builds',
+        senderName: 'Alex Rivera',
+        senderEmail: 'alex@voltbox.test',
+        senderRole: 'contributor',
+        senderColor: '#4dabf7',
+        text: 'Pro tip: Pairing Ryzen 9 + ROG Crosshair X870E + Corsair MP700 4TB unlocks the 5% Rig Bundle automatically, and stacks with VOLT10!',
+        productId: 37,
+        productTitle: 'ASUS ROG Crosshair X870E Hero Motherboard',
+        productPrice: 230,
+        productSku: 'VB-MBD-037',
+        productImage: '/src/assets/images/product_x870e_motherboard_1793517565006.jpg',
+        createdAt: now - 1000 * 60 * 14,
+      },
+      {
+        channel: 'price-drops',
+        senderName: 'Harish',
+        senderEmail: 'harish@voltbox.test',
+        senderRole: 'moderator',
+        senderColor: '#ffd23f',
+        text: 'Restock Alert: 4 units of Intel Core Ultra 9 285K and 5 units of Corsair MP700 Pro 4TB Gen5 SSD just landed on the shelf.',
+        productId: 36,
+        productTitle: 'Intel Core Ultra 9 285K Processor',
+        productPrice: 195,
+        productSku: 'VB-CPU-036',
+        productImage: '/src/assets/images/product_intel_ultra_cpu_1793517563101.jpg',
+        createdAt: now - 1000 * 60 * 5,
+      },
+    ];
+
+    for (const item of initial) {
+      this.messages.push({
+        ...item,
+        id: this.nextMessageId++,
+      });
+    }
   }
 
   private seedProducts(): void {
@@ -521,6 +687,27 @@ export class Store {
       id: this.nextReportId++,
     };
     this.reports.push(created);
+    this.save();
+    return created;
+  }
+
+  public getMessages(channel?: string): ChatMessage[] {
+    if (!channel || channel === 'all') {
+      return this.messages.slice(-80);
+    }
+    return this.messages.filter((m) => m.channel === channel).slice(-60);
+  }
+
+  public addMessage(msg: Omit<ChatMessage, 'id' | 'createdAt'>): ChatMessage {
+    const created: ChatMessage = {
+      ...msg,
+      id: this.nextMessageId++,
+      createdAt: Date.now(),
+    };
+    this.messages.push(created);
+    if (this.messages.length > 200) {
+      this.messages = this.messages.slice(-200);
+    }
     this.save();
     return created;
   }

@@ -1,0 +1,56 @@
+{
+  "id": "/",
+  "name": "Voltbox — Hardware Bench & Electronics Catalog",
+  "short_name": "Voltbox",
+  "description": "Community-verified electronics and PC hardware web application with live stock, rig builder, 6-month price telemetry, and thermal receipts.",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "display_override": ["window-controls-overlay", "standalone", "minimal-ui"],
+  "orientation": "any",
+  "theme_color": "#0f1115",
+  "background_color": "#0f1115",
+  "categories": ["shopping", "utilities", "productivity"],
+  "icons": [
+    {
+      "src": "/pwa-192x192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/pwa-512x512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/pwa-maskable-512x512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    },
+    {
+      "src": "/icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    }
+  ],
+  "shortcuts": [
+    {
+      "name": "Build a PC Rig",
+      "short_name": "Rig Builder",
+      "description": "Open the PC Rig compatibility checklist and 5% bundle builder",
+      "url": "/?view=rig",
+      "icons": [{ "src": "/pwa-192x192.png", "sizes": "192x192", "type": "image/png" }]
+    },
+    {
+      "name": "Low Stock Deals",
+      "short_name": "Low Stock",
+      "description": "View components with low remaining inventory",
+      "url": "/?filter=low-stock",
+      "icons": [{ "src": "/pwa-192x192.png", "sizes": "192x192", "type": "image/png" }]
+    }
+  ]
+}

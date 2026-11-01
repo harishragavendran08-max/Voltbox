@@ -3831,3 +3831,966 @@ body.signal-burst .pcb-trace-pulse.cyan {
 }
 
 
+/* ═══════════════════════════════════════════════════════════════════
+   QUANTUM SILICON WAFER & HOLOGRAPHIC REACTOR BACKGROUND SYSTEM
+   ═══════════════════════════════════════════════════════════════════ */
+
+html, body {
+  max-width: 100vw;
+  overflow-x: clip;
+}
+
+.bg-aurora-nebula {
+  position: fixed;
+  inset: 0;
+  width: 100vw;
+  height: 100vh;
+  overflow: hidden;
+  pointer-events: none;
+  z-index: 0;
+  background:
+    radial-gradient(ellipse 46% 38% at 22% 24%, rgba(45, 212, 191, 0.085), transparent 70%),
+    radial-gradient(ellipse 44% 36% at 78% 68%, rgba(124, 108, 246, 0.085), transparent 72%),
+    radial-gradient(ellipse 35% 28% at 52% 88%, rgba(255, 210, 63, 0.055), transparent 70%);
+  filter: blur(24px);
+  animation: auroraDrift 18s ease-in-out infinite alternate;
+}
+
+@keyframes auroraDrift {
+  0%   { opacity: 0.88; }
+  50%  { opacity: 1; }
+  100% { opacity: 0.92; }
+}
+
+/* 3D Perspective Silicon Wafer Horizon Plane */
+.bg-horizon-plane {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  width: 100vw;
+  height: 46vh;
+  overflow: hidden;
+  pointer-events: none;
+  z-index: 0;
+  background-image:
+    linear-gradient(to right, rgba(45, 212, 191, 0.075) 1px, transparent 1px),
+    linear-gradient(to bottom, rgba(255, 210, 63, 0.06) 1px, transparent 1px);
+  background-size: 48px 48px;
+  transform: perspective(560px) rotateX(62deg);
+  transform-origin: center bottom;
+  -webkit-mask-image: linear-gradient(to top, rgba(0, 0, 0, 0.75) 0%, rgba(0, 0, 0, 0.2) 55%, transparent 100%);
+  mask-image: linear-gradient(to top, rgba(0, 0, 0, 0.75) 0%, rgba(0, 0, 0, 0.2) 55%, transparent 100%);
+  animation: horizonFlow 14s linear infinite;
+}
+
+@keyframes horizonFlow {
+  0%   { background-position: 0 0; }
+  100% { background-position: 0 48px; }
+}
+
+.quantum-bg-canvas {
+  position: fixed;
+  inset: 0;
+  width: 100vw;
+  height: 100vh;
+  pointer-events: none;
+  z-index: 0;
+}
+
+/* Dynamic Background FX Modes: Overclock & Cyber */
+body[data-bg-mode="overclock"] .bg-aurora-nebula {
+  background:
+    radial-gradient(ellipse 48% 40% at 25% 24%, rgba(255, 180, 0, 0.12), transparent 70%),
+    radial-gradient(ellipse 44% 38% at 76% 68%, rgba(255, 107, 107, 0.10), transparent 72%),
+    radial-gradient(ellipse 35% 30% at 50% 85%, rgba(255, 210, 63, 0.08), transparent 70%);
+}
+
+body[data-bg-mode="overclock"] .bg-horizon-plane {
+  background-image:
+    linear-gradient(to right, rgba(255, 180, 0, 0.11) 1px, transparent 1px),
+    linear-gradient(to bottom, rgba(255, 107, 107, 0.08) 1px, transparent 1px);
+}
+
+body[data-bg-mode="cyber"] .bg-aurora-nebula {
+  background:
+    radial-gradient(ellipse 48% 40% at 24% 25%, rgba(124, 108, 246, 0.14), transparent 70%),
+    radial-gradient(ellipse 44% 38% at 78% 66%, rgba(45, 212, 191, 0.12), transparent 72%),
+    radial-gradient(ellipse 36% 30% at 50% 86%, rgba(236, 72, 153, 0.08), transparent 70%);
+}
+
+body[data-bg-mode="cyber"] .bg-horizon-plane {
+  background-image:
+    linear-gradient(to right, rgba(124, 108, 246, 0.12) 1px, transparent 1px),
+    linear-gradient(to bottom, rgba(45, 212, 191, 0.09) 1px, transparent 1px);
+}
+
+
+/* ═══════════════════════════════════════════════════════════════════
+   WIDE WEB-APPLICATION LAYOUT & TOPBAR CONTROLS
+   ═══════════════════════════════════════════════════════════════════ */
+
+.app {
+  max-width: 1220px;
+  padding: 0 24px 215px;
+}
+
+.order-bar-inner {
+  max-width: 1220px;
+}
+
+.topbar-pill-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: rgba(24, 27, 34, 0.88);
+  border: 1px solid var(--line);
+  color: #c9ced8;
+  border-radius: 999px;
+  padding: 7px 12px;
+  font-family: 'JetBrains Mono', 'Inter', sans-serif;
+  font-size: 11.5px;
+  font-weight: 700;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: border-color 0.2s ease, color 0.2s ease, background 0.2s ease, transform 0.12s ease;
+}
+
+.topbar-pill-btn:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+  background: rgba(45, 212, 191, 0.08);
+  transform: translateY(-1px);
+}
+
+.fx-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--accent);
+  box-shadow: 0 0 8px var(--accent);
+}
+
+body[data-bg-mode="overclock"] .fx-dot {
+  background: #ffd23f;
+  box-shadow: 0 0 8px #ffd23f;
+}
+
+body[data-bg-mode="cyber"] .fx-dot {
+  background: #a78bfa;
+  box-shadow: 0 0 8px #a78bfa;
+}
+
+.messenger-trigger-btn {
+  position: relative;
+}
+
+/* Offline status banner */
+.offline-banner {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 95;
+  background: linear-gradient(90deg, #ffd23f, #ff922b);
+  color: #14161b;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 12px;
+  font-weight: 700;
+  text-align: center;
+  padding: 6px 14px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+}
+
+.offline-banner[hidden] {
+  display: none;
+}
+
+.offline-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #14161b;
+}
+
+
+/* ═══════════════════════════════════════════════════════════════════
+   BENCH MESSENGER DRAWER (REAL-TIME CHANNELS & HARDWARE CARDS)
+   ═══════════════════════════════════════════════════════════════════ */
+
+.messenger-drawer {
+  width: min(440px, 100vw);
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  padding: 0;
+  overflow: hidden;
+}
+
+.messenger-head {
+  padding: 16px 18px 14px;
+  border-bottom: 1px solid var(--line);
+  background: rgba(16, 19, 25, 0.96);
+  align-items: center;
+}
+
+.messenger-head-right {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+.messenger-online-pill,
+.messenger-online-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 10.5px;
+  font-weight: 700;
+  color: #51cf66;
+  background: rgba(81, 207, 102, 0.12);
+  border: 1px solid rgba(81, 207, 102, 0.3);
+  padding: 4px 9px;
+  border-radius: 999px;
+  white-space: nowrap;
+}
+
+.messenger-channels {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 10px 16px;
+  background: #12151c;
+  border-bottom: 1px solid var(--line);
+  overflow-x: auto;
+  flex-shrink: 0;
+}
+
+.msg-channel-tab,
+.msg-channel-btn {
+  background: #181c24;
+  border: 1px solid #262b36;
+  color: var(--muted);
+  border-radius: 7px;
+  padding: 6px 11px;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 11.5px;
+  font-weight: 700;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: all 0.16s ease;
+}
+
+.msg-channel-tab:hover,
+.msg-channel-btn:hover {
+  color: var(--text);
+  border-color: #384052;
+}
+
+.msg-channel-tab.active,
+.msg-channel-btn.active {
+  background: rgba(45, 212, 191, 0.14);
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.messenger-quick-chips {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 16px;
+  background: rgba(20, 23, 30, 0.85);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+  overflow-x: auto;
+  flex-shrink: 0;
+}
+
+.msg-chip,
+.msg-quick-chip {
+  background: rgba(255, 210, 63, 0.08);
+  border: 1px solid rgba(255, 210, 63, 0.28);
+  color: #ffd23f;
+  border-radius: 6px;
+  padding: 4px 9px;
+  font-family: inherit;
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background 0.15s ease, border-color 0.15s ease;
+}
+
+.msg-chip:hover,
+.msg-quick-chip:hover {
+  background: rgba(255, 210, 63, 0.16);
+  border-color: #ffd23f;
+}
+
+.messenger-feed {
+  flex: 1;
+  overflow-y: auto;
+  padding: 14px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  background:
+    radial-gradient(circle at 50% 0%, rgba(45, 212, 191, 0.04), transparent 65%),
+    #0f1217;
+}
+
+.msg-empty {
+  margin: auto 0;
+  text-align: center;
+  padding: 32px 18px;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.msg-empty b {
+  color: var(--accent);
+}
+
+.msg-empty span {
+  display: block;
+  font-size: 11.5px;
+  margin-top: 6px;
+  color: #6c7483;
+}
+
+.msg-card {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 11px 12px;
+  border-radius: 12px;
+  background: #171b22;
+  border: 1px solid #252a35;
+  animation: fadeIn 0.18s ease;
+}
+
+.msg-card.self {
+  background: linear-gradient(180deg, rgba(45, 212, 191, 0.09), rgba(23, 27, 34, 0.96));
+  border-color: rgba(45, 212, 191, 0.32);
+}
+
+.msg-avatar {
+  width: 30px;
+  height: 30px;
+  border-radius: 8px;
+  display: grid;
+  place-items: center;
+  font-size: 13px;
+  font-weight: 800;
+  color: #12141a;
+  flex-shrink: 0;
+}
+
+.msg-body {
+  flex: 1;
+  min-width: 0;
+}
+
+.msg-meta {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+  margin-bottom: 4px;
+}
+
+.msg-author {
+  font-size: 12.5px;
+  font-weight: 700;
+  color: var(--text);
+}
+
+.msg-role-pill {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 9.5px;
+  font-weight: 800;
+  padding: 1px 5px;
+  border-radius: 4px;
+  letter-spacing: 0.4px;
+}
+
+.msg-role-pill.mod {
+  background: rgba(255, 210, 63, 0.16);
+  color: #ffd23f;
+  border: 1px solid rgba(255, 210, 63, 0.35);
+}
+
+.msg-role-pill.contrib {
+  background: rgba(45, 212, 191, 0.14);
+  color: var(--accent);
+  border: 1px solid rgba(45, 212, 191, 0.3);
+}
+
+.msg-time {
+  margin-left: auto;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 10px;
+  color: #6c7483;
+}
+
+.msg-text {
+  font-size: 13px;
+  color: #d7dce5;
+  line-height: 1.45;
+  word-break: break-word;
+}
+
+/* Attached Hardware Component Card inside Messenger */
+.msg-part-card {
+  margin-top: 9px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 10px;
+  border-radius: 9px;
+  background: #11141a;
+  border: 1px solid #2b313e;
+}
+
+.msg-part-img {
+  width: 42px;
+  height: 42px;
+  border-radius: 7px;
+  object-fit: cover;
+  background: #1b1f28;
+  flex-shrink: 0;
+}
+
+.msg-part-info {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.msg-part-sku {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 9.5px;
+  color: #7c8596;
+}
+
+.msg-part-title {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.msg-part-price {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 11.5px;
+  font-weight: 700;
+  color: #ffd23f;
+}
+
+.msg-part-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  flex-shrink: 0;
+}
+
+.msg-part-btn {
+  border-radius: 6px;
+  padding: 4px 8px;
+  font-family: inherit;
+  font-size: 11px;
+  font-weight: 700;
+  cursor: pointer;
+  border: 1px solid transparent;
+}
+
+.msg-part-btn.add {
+  background: rgba(45, 212, 191, 0.15);
+  border-color: rgba(45, 212, 191, 0.4);
+  color: var(--accent);
+}
+
+.msg-part-btn.add:hover {
+  background: var(--accent);
+  color: var(--accent-ink);
+}
+
+.msg-part-btn.specs {
+  background: #1a1e27;
+  border-color: #2c3240;
+  color: var(--muted);
+}
+
+.msg-part-btn.specs:hover {
+  color: var(--text);
+  border-color: #454d60;
+}
+
+.messenger-composer {
+  padding: 12px 16px calc(14px + env(safe-area-inset-bottom, 0px));
+  background: #14171f;
+  border-top: 1px solid var(--line);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+.messenger-attach-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.msg-attach-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--muted);
+  white-space: nowrap;
+}
+
+.messenger-attach-select,
+#chat-product-select {
+  flex: 1;
+  min-width: 0;
+  width: 100%;
+  background: #0f1218;
+  border: 1px solid #282e3b;
+  border-radius: 8px;
+  padding: 7px 10px;
+  color: #b7bfce;
+  font-family: inherit;
+  font-size: 12px;
+  outline: none;
+}
+
+.messenger-attach-select:focus,
+#chat-product-select:focus {
+  border-color: var(--accent);
+}
+
+.messenger-input-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+#chat-message-input,
+#chat-input {
+  flex: 1;
+  background: #0f1218;
+  border: 1px solid #2b313e;
+  border-radius: 9px;
+  padding: 10px 12px;
+  color: var(--text);
+  font-family: inherit;
+  font-size: 13px;
+  outline: none;
+}
+
+#chat-message-input:focus,
+#chat-input:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px var(--accent-glow);
+}
+
+.messenger-send-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 38px;
+  padding: 0 14px;
+  border-radius: 9px;
+  border: none;
+  background: linear-gradient(135deg, var(--accent), var(--accent-2));
+  color: var(--accent-ink);
+  font-family: inherit;
+  font-size: 12.5px;
+  font-weight: 800;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
+.messenger-send-btn:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+
+/* ═══════════════════════════════════════════════════════════════════
+   PWA INSTALL GUIDE MODAL
+   ═══════════════════════════════════════════════════════════════════ */
+
+.pwa-modal-card {
+  max-width: 440px;
+  text-align: left;
+}
+
+.pwa-modal-head {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  margin-bottom: 16px;
+}
+
+.pwa-app-icon-preview {
+  width: 54px;
+  height: 54px;
+  border-radius: 14px;
+  border: 1px solid #2c3240;
+  flex-shrink: 0;
+}
+
+.pwa-modal-sub {
+  font-size: 12px;
+  color: var(--muted);
+  margin-top: 2px;
+}
+
+.pwa-platform-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin: 12px 0 16px;
+}
+
+.pwa-platform-item {
+  padding: 11px 13px;
+  border-radius: 10px;
+  background: #12151c;
+  border: 1px solid #252a35;
+}
+
+.pwa-plat-title {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 11px;
+  font-weight: 800;
+  color: #ffd23f;
+  margin-bottom: 4px;
+}
+
+.pwa-plat-steps {
+  font-size: 12.5px;
+  color: #c9ced8;
+  line-height: 1.45;
+}
+
+.pwa-stack-strip {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding-top: 12px;
+  border-top: 1px dashed #252a35;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 10px;
+  color: var(--muted);
+}
+
+.pwa-stack-strip code {
+  background: #12151c;
+  border: 1px solid #252a35;
+  padding: 2px 6px;
+  border-radius: 4px;
+  color: var(--accent);
+}
+
+
+/* ═══════════════════════════════════════════════════════════════════
+   MOBILE / IPAD BOTTOM NAVIGATION DOCK & COLLAPSIBLE ORDER BAR
+   ═══════════════════════════════════════════════════════════════════ */
+
+.order-expand-toggle {
+  display: none;
+  align-items: center;
+  gap: 5px;
+  background: #171b23;
+  border: 1px solid #2b313e;
+  color: var(--muted);
+  border-radius: 7px;
+  padding: 5px 9px;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 10.5px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.mobile-app-nav {
+  display: none;
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 48;
+  height: calc(62px + env(safe-area-inset-bottom, 0px));
+  padding: 4px 8px calc(4px + env(safe-area-inset-bottom, 0px));
+  background: rgba(13, 15, 20, 0.96);
+  backdrop-filter: blur(18px);
+  -webkit-backdrop-filter: blur(18px);
+  border-top: 1px solid #252a35;
+  grid-template-columns: repeat(5, 1fr);
+  align-items: center;
+}
+
+.mobile-nav-item,
+.mnav-item {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 3px;
+  height: 50px;
+  background: transparent;
+  border: none;
+  color: #8b93a2;
+  font-family: inherit;
+  font-size: 10.5px;
+  font-weight: 700;
+  cursor: pointer;
+  border-radius: 10px;
+  transition: color 0.16s ease, background 0.16s ease;
+}
+
+.mobile-nav-item.active,
+.mnav-item.active {
+  color: var(--accent);
+  background: rgba(45, 212, 191, 0.08);
+}
+
+.mnav-icon-wrap {
+  position: relative;
+  display: inline-flex;
+}
+
+.mobile-nav-badge,
+.mnav-badge {
+  position: absolute;
+  top: -5px;
+  right: -10px;
+  min-width: 16px;
+  height: 16px;
+  padding: 0 4px;
+  border-radius: 999px;
+  background: #ffd23f;
+  color: #14161b;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 9.5px;
+  font-weight: 800;
+  display: grid;
+  place-items: center;
+}
+
+.mobile-nav-badge.accent,
+.mnav-badge.accent {
+  background: var(--accent);
+  color: var(--accent-ink);
+}
+
+.mobile-nav-badge[hidden],
+.mnav-badge[hidden] {
+  display: none;
+}
+
+/* Disable 3D card tilt on touch-only screens so finger scrolling is effortless */
+@media (hover: none), (pointer: coarse) {
+  .card,
+  .card:hover,
+  .card.is-tilting {
+    transform: none !important;
+  }
+  .card:hover .card-img-wrap,
+  .card.is-tilting .card-img-wrap {
+    transform: none !important;
+  }
+}
+
+/* iPad & Tablet Ergonomics (<= 1024px) */
+@media (max-width: 1024px) {
+  .app {
+    max-width: 100%;
+    padding: 0 18px 250px;
+  }
+
+  .grid {
+    grid-template-columns: repeat(auto-fill, minmax(215px, 1fr));
+    gap: 14px;
+  }
+
+  .mobile-app-nav {
+    display: grid;
+  }
+
+  .order-bar {
+    bottom: calc(62px + env(safe-area-inset-bottom, 0px));
+  }
+
+  .live-activity-toast {
+    bottom: calc(150px + env(safe-area-inset-bottom, 0px));
+  }
+}
+
+/* iOS & Android Mobile Ergonomics (<= 680px) */
+@media (max-width: 680px) {
+  .app {
+    padding: 0 12px 230px;
+  }
+
+  .topbar {
+    padding: 12px 0;
+    gap: 8px;
+  }
+
+  .logo {
+    font-size: 19px;
+  }
+
+  #donate-btn,
+  #pwa-install-btn {
+    display: none;
+  }
+
+  .topbar-pill-btn {
+    padding: 5px 9px;
+    font-size: 10.5px;
+  }
+
+  .icon-btn {
+    width: 36px;
+    height: 36px;
+  }
+
+  .topbar-search {
+    order: 3;
+    flex-basis: 100%;
+    max-width: none;
+    margin: 6px 0 0;
+  }
+
+  #product-search {
+    padding: 9px 14px 9px 38px;
+    font-size: 13.5px;
+  }
+
+  .catalog-toolbar {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 8px;
+    padding: 8px 0 12px;
+  }
+
+  .filter-bar {
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    padding-bottom: 4px;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .toolbar-actions {
+    width: 100%;
+    justify-content: space-between;
+    margin-left: 0;
+  }
+
+  .sort-wrap {
+    flex: 1;
+  }
+
+  .sort-wrap select {
+    width: 100%;
+  }
+
+  /* 2-column compact product grid on phones */
+  .grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 10px;
+  }
+
+  .card {
+    padding: 10px;
+    border-radius: 12px;
+  }
+
+  .card-tag {
+    display: none;
+  }
+
+  .card-meta-right {
+    width: 100%;
+    justify-content: space-between;
+  }
+
+  .card-title-btn {
+    font-size: 13px;
+  }
+
+  .card-desc {
+    display: none;
+  }
+
+  .card-sku-strip {
+    padding: 3px 6px;
+    font-size: 9px;
+  }
+
+  .sku-bars-svg {
+    width: 44px;
+  }
+
+  .card-price {
+    font-size: 15.5px;
+  }
+
+  .chart-toggle-btn span {
+    display: none;
+  }
+
+  /* Compact Collapsible Order Bar on phones */
+  .order-bar {
+    padding: 8px 12px;
+  }
+
+  .order-details-collapsible {
+    display: none;
+  }
+
+  .order-bar.mobile-expanded .order-details-collapsible {
+    display: block;
+    margin-bottom: 8px;
+  }
+
+  .order-expand-toggle {
+    display: inline-flex;
+  }
+
+  .order-total-row {
+    gap: 8px;
+  }
+
+  .checkout-btn {
+    padding: 10px 14px;
+    font-size: 13px;
+  }
+
+  /* Bottom-sheet style drawers on mobile */
+  .side-drawer.messenger-drawer,
+  .side-drawer {
+    width: 100vw;
+    max-width: 100vw;
+  }
+}
+
+
+
+

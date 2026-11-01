@@ -1,0 +1,20 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <defs>
+    <linearGradient id="vbBg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#161922" />
+      <stop offset="100%" stop-color="#0f1115" />
+    </linearGradient>
+    <linearGradient id="vbBadge" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#ffd23f" />
+      <stop offset="100%" stop-color="#ffb400" />
+    </linearGradient>
+    <linearGradient id="vbRing" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#ffd23f" stop-opacity="0.65" />
+      <stop offset="100%" stop-color="#2dd4bf" stop-opacity="0.65" />
+    </linearGradient>
+  </defs>
+  <rect width="512" height="512" rx="112" fill="url(#vbBg)" />
+  <rect x="20" y="20" width="472" height="472" rx="96" fill="none" stroke="url(#vbRing)" stroke-width="6" />
+  <rect x="76" y="76" width="360" height="360" rx="88" fill="url(#vbBadge)" />
+  <path fill="#12151c" d="M284 126 L148 278 H242 L226 386 L364 234 H270 Z" />
+</svg>
