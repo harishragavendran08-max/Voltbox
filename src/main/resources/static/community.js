@@ -197,8 +197,9 @@ function uploadForm() {
       field("Title", '<input id="pr-title" type="text" placeholder="e.g. Ubiquiti UniFi U7 Pro">') +
       '<div class="admin-row2">' +
         field("Price (USD)", '<input id="pr-price" type="number" min="0" step="0.01" placeholder="189.00">') +
-        field("Category", categorySelect()) +
+        field("Stock Qty", '<input id="pr-quantity" type="number" min="0" step="1" value="3" placeholder="3">') +
       '</div>' +
+      field("Category", categorySelect()) +
       field("Image link", '<input id="pr-image" type="url" placeholder="https://… paste a photo of the part">') +
       field("Description", '<textarea id="pr-desc" rows="2" placeholder="A short, honest line about it"></textarea>') +
       '<p class="admin-msg" id="pr-msg" hidden></p>' +
@@ -223,9 +224,11 @@ function wireUploadForm() {
 }
 
 function submitProduct() {
+  var rawQty = parseInt(val("pr-quantity"), 10);
   var body = {
     title: val("pr-title"),
     price: parseFloat(val("pr-price")) || 0,
+    quantity: isNaN(rawQty) ? 3 : Math.max(0, rawQty),
     category: val("pr-category"),
     image: val("pr-image"),
     description: val("pr-desc")
@@ -263,13 +266,14 @@ function loadMyUploads() {
       for (var i = 0; i < list.length; i++) {
         var p = list[i];
         var down = p.takenDown;
+        var qty = typeof p.quantity === "number" ? p.quantity : 10;
         html +=
           '<div class="admin-item' + (down ? " dim" : "") + '">' +
             '<div class="admin-item-main">' +
               '<div class="admin-item-title">' + esc(p.title) + (down ? ' <span class="pill">taken down</span>' : '') + '</div>' +
-              '<div class="admin-item-sub">$' + Number(p.price).toFixed(2) + ' · ' + esc(p.category) + '</div>' +
+              '<div class="admin-item-sub">$' + Number(p.price).toFixed(2) + ' · ' + esc(p.category) + ' · ' + qty + ' in stock</div>' +
             '</div>' +
-            (down ? '' : '<button class="icon-mini danger" title="Take down" onclick="takeDownProduct(' + p.id + ')">' + icon("trash", 15) + '</button>') +
+            (down ? '' : '<button class="icon-mini danger" title="Take down" aria-label="Take down ' + esc(p.title) + '" onclick="takeDownProduct(' + p.id + ')">' + icon("trash", 15) + '</button>') +
           '</div>';
       }
       box.innerHTML = html;
@@ -317,8 +321,7 @@ function renderModeratorPanel() {
     '</div>' +
 
     '<div class="sheet-divider"></div>' +
-    uploadFormMyUploads() +
-
+    uploadFormMyUploads();
 
   wireUploadForm();
   document.getElementById("grant-btn").addEventListener("click", grantAccess);
@@ -449,8 +452,9 @@ function resolveReport(id, takedown) {
     .then(function (res) { if (res.ok) { loadReports(); if (takedown) reloadShop(); } });
 }
 
-
-  el.className = 'admin-toast' + (isError? ' error':'');
+function showAdminToast(text, isError) {
+  var el = document.createElement("div");
+  el.className = 'admin-toast' + (isError ? ' error' : '');
   el.textContent = text;
   adminBody.insertBefore(el, adminBody.firstChild);
   setTimeout(function () { el.classList.add('fade'); setTimeout(function () { el.remove(); }, 400); }, 2500);
@@ -508,30 +512,6 @@ function openDonate() {
   donateUpi.hidden = !upiId && !qr;
   donateUpiId.textContent = upiId;
   donateUpiId.parentElement.hidden = !upiId;
-
-  // populate a small photo strip using either provided images or fallbacks
-  try {
-    var photosEl = document.getElementById("donate-photos");
-    if (photosEl) {
-      var provided = me && me.donateImages && me.donateImages.length ? me.donateImages : null;
-      var fallbacks = ["/images/donate/original-poor-kids.jpg","/images/donate/poor-children.jpg","/images/donate/poor-children.svg","/images/donate/child1.svg","/images/donate/child2.svg","/images/donate/child3.svg"];
-      var list = provided || fallbacks;
-      // show up to 4 thumbnails
-      var show = list.slice(0, 4);
-      var html = "";
-      for (var i = 0; i < show.length; i++) {
-        var src = show[i];
-        // ensure absolute-ish path (if someone provided just a filename assume /images/donate/)
-        if (src && !src.match(/^https?:|^\/|^data:/)) src = "/images/donate/" + src;
-        html += '<img src="' + esc(src) + '" alt="poor kids donation photo">';
-      }
-      photosEl.innerHTML = html;
-      photosEl.hidden = show.length === 0;
-    }
-  } catch (e) {
-    // harmless if DOM not exactly as expected
-    console.warn('donate photos render failed', e);
-  }
 
   // QR image: use provided QR if present; otherwise show a small fake QR (inline SVG)
   if (qr) {
@@ -625,6 +605,16 @@ function handleLiveEvent(msg) {
     refreshRole();
   } else if (msg.type === "product-added" || msg.type === "product-taken-down") {
     reloadShop();
+  } else if (msg.type === "product-restocked") {
+    if (typeof window.onProductRestocked === "function") {
+      window.onProductRestocked(msg.product);
+    } else {
+      reloadShop();
+    }
+  } else if (msg.type === "activity-feed" && msg.message) {
+    if (typeof window.showActivityToast === "function") {
+      window.showActivityToast(msg.message);
+    }
   }
 }
 

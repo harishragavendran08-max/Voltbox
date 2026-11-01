@@ -117,6 +117,7 @@ form.addEventListener("submit", function (event) {
 
 
 function rememberUser(data) {
+  sessionStorage.removeItem("voltbox_signed_out");
   localStorage.setItem("voltbox_token", data.token);
   localStorage.setItem("voltbox_user", data.name);
 }

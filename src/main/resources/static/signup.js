@@ -47,7 +47,7 @@ form.addEventListener("submit", function (event) {
     })
     .then(function (result) {
       if (result.ok) {
-    
+        sessionStorage.removeItem("voltbox_signed_out");
         localStorage.setItem("voltbox_token", result.data.token);
         localStorage.setItem("voltbox_user", result.data.name || name);
         // …and head straight into the shop.

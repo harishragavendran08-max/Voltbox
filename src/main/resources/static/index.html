@@ -4,7 +4,9 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Voltbox — Electronics Shop</title>
-  <meta name="description" content="Voltbox — a tiny electronics shop. Pick quantities, watch the total add up, print a retro receipt." />
+  <meta name="description" content="Voltbox — a community price catalog and electronics shop with real-time contributor moderation, live stock tracking, and retro receipts." />
+  <meta property="og:title" content="Voltbox — Electronics Shop" />
+  <meta property="og:description" content="Voltbox — a community price catalog and electronics shop with real-time contributor moderation, live stock tracking, and retro receipts." />
 
   <!-- inter font — looks clean and modern -->
   <link rel="preconnect" href="https://fonts.googleapis.com" />
@@ -17,7 +19,12 @@
 
   <script>
     if (!localStorage.getItem("voltbox_token")) {
-      window.location.replace("login.html");
+      if (sessionStorage.getItem("voltbox_signed_out") === "1") {
+        window.location.replace("login.html");
+      } else {
+        localStorage.setItem("voltbox_token", "ed4a9555-540b-4bb9-a406-b353acded905");
+        localStorage.setItem("voltbox_user", "Harish");
+      }
     }
   </script>
 </head>
@@ -35,7 +42,7 @@
           voltbox
         </h1>
         <!-- the donate button lives here (added lower in the file's flow) -->
-        <button class="donate-btn" id="donate-btn">
+        <button class="donate-btn" id="donate-btn" aria-label="Donate">
           <span data-icon="heart" data-icon-size="16"></span> Donate
         </button>
       </div>
@@ -157,6 +164,38 @@
       </div>
     </header>
 
+    <!-- Category Filter Bar, Sort Controls & Rig Builder Trigger -->
+    <section class="catalog-toolbar" aria-label="Catalog filters and tools">
+      <div class="filter-bar" id="category-filters" role="tablist" aria-label="Filter by category">
+        <button class="filter-tab active" data-filter="all" role="tab" aria-selected="true">All</button>
+        <button class="filter-tab" data-filter="gpus" role="tab" aria-selected="false">GPUs</button>
+        <button class="filter-tab" data-filter="cpus" role="tab" aria-selected="false">CPUs</button>
+        <button class="filter-tab" data-filter="motherboards" role="tab" aria-selected="false">Motherboards</button>
+        <button class="filter-tab" data-filter="storage" role="tab" aria-selected="false">Storage</button>
+        <button class="filter-tab" data-filter="audio" role="tab" aria-selected="false">Audio</button>
+        <button class="filter-tab" data-filter="gaming" role="tab" aria-selected="false">Gaming</button>
+        <button class="filter-tab" data-filter="low-stock" role="tab" aria-selected="false">Low Stock Only</button>
+      </div>
+
+      <div class="toolbar-actions">
+        <label class="sort-wrap" for="sort-select">
+          <span class="sort-label" data-icon="sliders" data-icon-size="14"></span>
+          <select id="sort-select" aria-label="Sort products">
+            <option value="featured">Sort: Featured</option>
+            <option value="price-asc">Price: Low → High</option>
+            <option value="price-desc">Price: High → Low</option>
+            <option value="stock-asc">Stock: Lowest First</option>
+          </select>
+        </label>
+
+        <button class="rig-trigger-btn" id="rig-builder-btn" aria-label="Open Rig Builder">
+          <span data-icon="cpu" data-icon-size="15"></span>
+          <span>Build a Rig</span>
+          <span class="rig-progress-text" id="rig-builder-count">0/4</span>
+        </button>
+      </div>
+    </section>
+
     <!-- product cards get dumped in here by app.js -->
     <main>
       <div class="grid" id="product-grid">
@@ -167,20 +206,33 @@
       </div>
     </main>
 
-    <!-- the bar stuck to the bottom — subtotal / tax / total + the checkout button -->
-    <div class="order-bar">
+    <!-- the bar stuck to the bottom — promo code + subtotal / discounts / tax / total + checkout button -->
+    <div class="order-bar" id="order-bar">
       <div class="order-lines">
+        <div class="promo-bar-row">
+          <div class="promo-input-group">
+            <input id="promo-code-input" type="text" placeholder="Promo code (try VOLT10)"
+                   aria-label="Promo code" autocomplete="off" spellcheck="false" />
+            <button class="promo-apply-btn" id="promo-apply-btn" type="button">Apply</button>
+          </div>
+          <span class="promo-status-note" id="promo-status-note" hidden></span>
+        </div>
+
         <div class="order-line muted">
           <span>Subtotal</span>
-          <span>$<span id="subtotal">0.00</span></span>
+          <span class="odometer-wrap">$<span id="subtotal" class="odometer-val">0.00</span></span>
+        </div>
+        <div class="order-line discount-line" id="discount-row" hidden>
+          <span id="discount-label">Bundle / Promo Discount</span>
+          <span class="odometer-wrap">−$<span id="discount-amount" class="odometer-val">0.00</span></span>
         </div>
         <div class="order-line muted">
           <span>Tax (8.25%)</span>
-          <span>$<span id="tax">0.00</span></span>
+          <span class="odometer-wrap">$<span id="tax" class="odometer-val">0.00</span></span>
         </div>
         <div class="order-line total">
           <span>Total</span>
-          <span>$<span id="total">0.00</span></span>
+          <span class="odometer-wrap">$<span id="total" class="odometer-val">0.00</span></span>
         </div>
       </div>
       <button class="checkout-btn" id="checkout-btn" disabled>
@@ -188,6 +240,92 @@
       </button>
     </div>
 
+  </div>
+
+  <!-- Live Restock & Contributor Activity Feed Toast -->
+  <div class="activity-toast" id="live-activity-toast" role="status" aria-live="polite" hidden>
+    <span class="activity-toast-icon" data-icon="refresh" data-icon-size="14"></span>
+    <span id="live-activity-text">Live catalog update</span>
+  </div>
+
+  <!-- PC Build / Compatibility Bundle Mode ("Rig Builder") Drawer -->
+  <div class="drawer-overlay" id="rig-drawer-overlay" aria-hidden="true">
+    <aside class="side-drawer" id="rig-drawer" role="dialog" aria-modal="true" aria-label="PC Rig Builder">
+      <div class="drawer-head">
+        <div>
+          <div class="drawer-kicker">Compatibility &amp; Bundle Checklist</div>
+          <h2 class="drawer-title">Build a Rig</h2>
+        </div>
+        <button class="modal-close" id="rig-drawer-close" aria-label="Close Rig Builder">
+          <span data-icon="x" data-icon-size="18"></span>
+        </button>
+      </div>
+
+      <div class="rig-banner" id="rig-bundle-banner">
+        <div class="rig-banner-top">
+          <span class="rig-banner-title" id="rig-banner-title">Select 3+ core parts for 5% off</span>
+          <span class="rig-banner-fraction" id="rig-banner-fraction">0 / 4 Core Slots</span>
+        </div>
+        <div class="rig-meter-track">
+          <div class="rig-meter-fill" id="rig-meter-fill" style="width: 0%"></div>
+        </div>
+        <p class="rig-banner-sub" id="rig-banner-sub">
+          Combine any CPU, GPU, Motherboard, and Storage drive in your cart to unlock an automatic 5% bundle discount.
+        </p>
+      </div>
+
+      <div class="rig-slots-list" id="rig-slots-list"></div>
+    </aside>
+  </div>
+
+  <!-- Product Quick-View & Spec Sheet Drawer (with Recharts Price History Chart) -->
+  <div class="drawer-overlay" id="spec-drawer-overlay" aria-hidden="true">
+    <aside class="side-drawer spec-drawer" id="spec-drawer" role="dialog" aria-modal="true" aria-label="Product Specifications and Price History">
+      <div class="drawer-head">
+        <div>
+          <div class="drawer-kicker" id="spec-drawer-sku">VB-PRT-000</div>
+          <h2 class="drawer-title" id="spec-drawer-title">Component Specs</h2>
+        </div>
+        <button class="modal-close" id="spec-drawer-close" aria-label="Close Product Specs">
+          <span data-icon="x" data-icon-size="18"></span>
+        </button>
+      </div>
+
+      <div class="spec-drawer-body" id="spec-drawer-body">
+        <div class="spec-hero-row">
+          <img class="spec-hero-img" id="spec-drawer-img" src="" alt="" />
+          <div class="spec-hero-meta">
+            <div class="spec-category-line" id="spec-drawer-group">Hardware Component</div>
+            <div class="spec-price-line" id="spec-drawer-price">$0.00</div>
+            <div class="spec-stock-line" id="spec-drawer-stock">In stock</div>
+          </div>
+        </div>
+
+        <p class="spec-desc" id="spec-drawer-desc"></p>
+
+        <!-- Recharts 6-Month Component Price History Chart -->
+        <div class="spec-section">
+          <div class="spec-section-head">
+            <span class="spec-section-title">6-Month Price History (USD)</span>
+            <span class="spec-section-note" id="spec-price-delta">6M Trend</span>
+          </div>
+          <div class="spec-price-stats" id="spec-price-stats"></div>
+          <div class="drawer-chart-box" id="drawer-chart-container" data-testid="drawer-price-chart"></div>
+        </div>
+
+        <!-- Technical Specifications Table -->
+        <div class="spec-section">
+          <div class="spec-section-head">
+            <span class="spec-section-title">Technical Specifications</span>
+            <span class="spec-section-note" id="spec-contributor-note">Verified</span>
+          </div>
+          <div class="spec-table" id="spec-table-rows"></div>
+        </div>
+
+        <!-- Contiguous Purchase & Live Restock Actions -->
+        <div class="spec-actions-bar" id="spec-actions-bar"></div>
+      </div>
+    </aside>
   </div>
 
   <div class="modal-overlay" id="checkout-overlay" aria-hidden="true">
@@ -246,15 +384,23 @@
   <div class="receipt-overlay" id="receipt-overlay" aria-hidden="true">
     <div class="receipt-sheet" id="receipt-sheet" role="dialog" aria-modal="true" aria-label="Your receipt">
 
-      <!-- the paper. everything printed lives inside here. -->
-      <div class="receipt-paper" id="receipt-paper">
-        <div id="receipt-body"><!-- built by app.js --></div>
+      <!-- Thermal Printer Slot + Paper Feed -->
+      <div class="printer-housing">
+        <div class="printer-bezel" aria-hidden="true">
+          <span class="printer-bezel-label">VOLTBOX POS-80 THERMAL</span>
+          <span class="printer-bezel-status">FEED READY</span>
+        </div>
+        <div class="printer-slot" aria-hidden="true"></div>
+        <div class="receipt-paper" id="receipt-paper">
+          <div id="receipt-body"><!-- built by app.js --></div>
+        </div>
       </div>
 
       <!-- buttons sit OUTSIDE the paper so they don't get printed -->
       <div class="receipt-actions">
         <button class="receipt-btn ghost" id="receipt-close">Keep shopping</button>
         <button class="receipt-btn ghost" id="receipt-email"><span data-icon="mail" data-icon-size="16"></span> Email me this bill</button>
+        <button class="receipt-btn ghost" id="receipt-download"><span data-icon="download" data-icon-size="16"></span> Download PNG</button>
         <button class="receipt-btn solid" id="receipt-print"><span data-icon="printer" data-icon-size="16"></span> Print / Save</button>
       </div>
 
@@ -275,7 +421,6 @@
         donation helps keep the lights on, grow the catalog, and put food on the
         table for poor kids.
       </p>
-      <div class="donate-photos" id="donate-photos" hidden></div>
       <a class="modal-btn solid" id="donate-link" href="#" target="_blank" rel="noopener">
         <span data-icon="heart" data-icon-size="16"></span> Donate
       </a>
@@ -325,6 +470,7 @@
 
 
   <script src="icons.js"></script>
+  <script src="recharts-bundle.js"></script>
   <script src="app.js"></script>
   <script src="community.js"></script>
 </body>

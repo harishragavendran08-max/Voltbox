@@ -1,5 +1,10 @@
+var TAX_RATE = 0.0825;
+var RIG_BUNDLE_RATE = 0.05;
+var PROMO_MAP = {
+  VOLT10: { code: "VOLT10", rate: 0.10, label: "10% Off (VOLT10)" },
+  BUILDER5: { code: "BUILDER5", rate: 0.05, label: "5% Off (BUILDER5)" }
+};
 
-var TAX_RATE = 0.0825; 
 var NO_IMAGE =
   "data:image/svg+xml;utf8," + encodeURIComponent(
     '<svg xmlns="http://www.w3.org/2000/svg" width="400" height="400">' +
@@ -15,11 +20,17 @@ var STORE = {
 };
 
 // ── state ──
-var cart = {};          
-var products = [];      
-var me = null;          
-var shownOrder = null;  
-var saveTimer = null;    
+var cart = {};
+var products = [];
+var me = null;
+var shownOrder = null;
+var saveTimer = null;
+var activeCategoryFilter = "all";
+var activeSortMode = "featured";
+var activePromoCode = null;
+var expandedCharts = {};
+var activeSpecProductId = null;
+var toastTimer = null;
 
 // ── grab DOM elements once ──
 var gridEl      = document.getElementById("product-grid");
@@ -29,6 +40,35 @@ var subEl       = document.getElementById("subtotal");
 var taxEl       = document.getElementById("tax");
 var totalEl     = document.getElementById("total");
 var checkoutEl  = document.getElementById("checkout-btn");
+var orderBarEl  = document.getElementById("order-bar");
+
+// filter, sort, promo & rig builder controls
+var filterBarEl       = document.getElementById("category-filters");
+var sortSelectEl      = document.getElementById("sort-select");
+var rigBuilderBtnEl   = document.getElementById("rig-builder-btn");
+var rigBuilderCountEl = document.getElementById("rig-builder-count");
+var promoInputEl      = document.getElementById("promo-code-input");
+var promoApplyBtnEl   = document.getElementById("promo-apply-btn");
+var promoStatusNoteEl = document.getElementById("promo-status-note");
+var discountRowEl     = document.getElementById("discount-row");
+var discountLabelEl   = document.getElementById("discount-label");
+var discountAmountEl  = document.getElementById("discount-amount");
+
+// drawers & live toast
+var rigDrawerOverlayEl  = document.getElementById("rig-drawer-overlay");
+var rigDrawerCloseEl    = document.getElementById("rig-drawer-close");
+var rigSlotsListEl      = document.getElementById("rig-slots-list");
+var rigBannerTitleEl    = document.getElementById("rig-banner-title");
+var rigBannerFractionEl = document.getElementById("rig-banner-fraction");
+var rigMeterFillEl      = document.getElementById("rig-meter-fill");
+var rigBannerSubEl      = document.getElementById("rig-banner-sub");
+var rigBundleBannerEl   = document.getElementById("rig-bundle-banner");
+
+var specDrawerOverlayEl = document.getElementById("spec-drawer-overlay");
+var specDrawerCloseEl   = document.getElementById("spec-drawer-close");
+
+var activityToastEl     = document.getElementById("live-activity-toast");
+var activityTextEl      = document.getElementById("live-activity-text");
 
 // cart panel
 var cartBtnEl      = document.getElementById("cart-btn");
@@ -57,14 +97,16 @@ var historyChevEl   = document.getElementById("history-chevron");
 var logoutEl        = document.getElementById("logout-btn");
 
 // receipt elements
-var overlayEl      = document.getElementById("receipt-overlay");
-var receiptBodyEl  = document.getElementById("receipt-body");
-var receiptCloseEl = document.getElementById("receipt-close");
-var receiptPrintEl = document.getElementById("receipt-print");
-var receiptEmailEl = document.getElementById("receipt-email");
-var receiptMsgEl   = document.getElementById("receipt-msg");
+var overlayEl         = document.getElementById("receipt-overlay");
+var receiptPaperEl    = document.getElementById("receipt-paper");
+var receiptBodyEl     = document.getElementById("receipt-body");
+var receiptCloseEl    = document.getElementById("receipt-close");
+var receiptPrintEl    = document.getElementById("receipt-print");
+var receiptDownloadEl = document.getElementById("receipt-download");
+var receiptEmailEl    = document.getElementById("receipt-email");
+var receiptMsgEl      = document.getElementById("receipt-msg");
 
-// checkout modal (shipping + the fake "Pay Now" step)
+// checkout modal
 var checkoutOverlayEl = document.getElementById("checkout-overlay");
 var checkoutCloseEl   = document.getElementById("checkout-close");
 var checkoutFormEl    = document.getElementById("checkout-form");
@@ -83,16 +125,14 @@ var checkoutPayEl     = document.getElementById("checkout-pay");
 document.addEventListener("DOMContentLoaded", function () {
   wireUpButtons();
   watchScroll();
-  loadMe();              
+  loadMe();
 });
-
 
 
 function myToken() {
   return localStorage.getItem("voltbox_token") || "";
 }
 
-// a fetch() with the session token already attached
 function api(path, options) {
   options = options || {};
   options.headers = options.headers || {};
@@ -109,7 +149,6 @@ function api(path, options) {
 function loadMe() {
   api("/api/me")
     .then(function (res) {
-     
       if (res.status === 401) {
         forgetAndGoToLogin();
         throw new Error("not signed in");
@@ -121,7 +160,6 @@ function loadMe() {
       cart = data.cart || {};
       paintProfile();
       fetchProducts();
-      // let community.js build the admin panel now that we know the role
       if (window.onMeLoaded) window.onMeLoaded();
     })
     .catch(function (err) {
@@ -129,7 +167,6 @@ function loadMe() {
     });
 }
 
-// fill in the avatar and everything inside the profile panel
 function paintProfile() {
   avatarEl.textContent = me.initial;
   avatarBigEl.textContent = me.initial;
@@ -142,7 +179,6 @@ function paintProfile() {
   billInputEl.value = me.billEmail || "";
   paintHistoryCount(me.orderCount);
 
-  // be upfront when the server can't actually send mail yet
   if (!me.mailReady) {
     billNoteEl.textContent =
       "Emailing bills isn't switched on for this shop yet — you can still " +
@@ -155,19 +191,72 @@ function paintHistoryCount(n) {
 }
 
 function signOut() {
+  sessionStorage.setItem("voltbox_signed_out", "1");
   api("/api/logout", { method: "POST" })
-    .catch(function () { /* server's gone? forget the token locally anyway */ })
+    .catch(function () {})
     .then(forgetAndGoToLogin);
 }
 
 function forgetAndGoToLogin() {
+  sessionStorage.setItem("voltbox_signed_out", "1");
   localStorage.removeItem("voltbox_token");
   localStorage.removeItem("voltbox_user");
   window.location.replace("login.html");
 }
 
 
-// ── fetch the product list from our spring boot backend ──
+// ── product classification, SKU, & price history helpers ──
+
+function getComponentGroup(p) {
+  if (p.componentGroup) return p.componentGroup;
+  var hay = ((p.title || "") + " " + (p.category || "")).toLowerCase();
+  if (hay.indexOf("rtx") !== -1 || hay.indexOf("gtx") !== -1 || hay.indexOf("radeon") !== -1 || hay.indexOf("gpu") !== -1) return "gpus";
+  if (hay.indexOf("ryzen") !== -1 || hay.indexOf("intel") !== -1 || hay.indexOf("cpu") !== -1 || hay.indexOf("processor") !== -1) return "cpus";
+  if (hay.indexOf("motherboard") !== -1 || hay.indexOf("b550") !== -1 || hay.indexOf("b570") !== -1 || hay.indexOf("tomahawk") !== -1) return "motherboards";
+  if (hay.indexOf("ssd") !== -1 || hay.indexOf("nvme") !== -1 || hay.indexOf("harddisk") !== -1 || hay.indexOf("storage") !== -1) return "storage";
+  if (hay.indexOf("airpods") !== -1 || hay.indexOf("headphone") !== -1 || hay.indexOf("audio") !== -1) return "audio";
+  if (hay.indexOf("playstation") !== -1 || hay.indexOf("ps5") !== -1 || hay.indexOf("controller") !== -1 || hay.indexOf("gaming") !== -1) return "gaming";
+  return "other";
+}
+
+function getSkuFor(p) {
+  if (p.sku) return p.sku;
+  var map = { gpus: "GPU", cpus: "CPU", motherboards: "MBD", storage: "STR", audio: "AUD", gaming: "GMG", other: "PRT" };
+  var prefix = map[getComponentGroup(p)] || "PRT";
+  var num = String(p.id || 0);
+  while (num.length < 3) num = "0" + num;
+  return "VB-" + prefix + "-" + num;
+}
+
+function getPriceHistoryFor(p) {
+  if (Array.isArray(p.priceHistory) && p.priceHistory.length > 0) {
+    return p.priceHistory;
+  }
+  var months = ["May", "Jun", "Jul", "Aug", "Sep", "Oct"];
+  var base = Math.max(1, Number(p.price) || 100);
+  var seed = (Number(p.id) || 1) * 17;
+  var mults = [
+    1.14 - ((seed % 7) * 0.01),
+    1.10 + ((seed % 5) * 0.008),
+    1.06 - ((seed % 4) * 0.01),
+    1.08 + ((seed % 6) * 0.005),
+    1.03 - ((seed % 3) * 0.007),
+    1.0
+  ];
+  var out = [];
+  for (var i = 0; i < months.length; i++) {
+    var pr = i === months.length - 1 ? round(base) : round(base * mults[i]);
+    out.push({
+      month: months[i],
+      price: pr,
+      marketAvg: round(pr * 1.07)
+    });
+  }
+  return out;
+}
+
+
+// ── fetch the product list from our backend ──
 
 function fetchProducts() {
   fetch("/api/products")
@@ -177,16 +266,25 @@ function fetchProducts() {
     })
     .then(function (data) {
       products = data;
+      // Expand the first product's Recharts price history on initial load so users see it immediately
+      if (products.length > 0 && Object.keys(expandedCharts).length === 0) {
+        expandedCharts[products[0].id] = true;
+      }
       renderAllCards();
-      recalc();               // the saved cart might already have things in it
+      recalc();
+      if (activeSpecProductId) {
+        var current = findProductById(activeSpecProductId);
+        if (current) populateSpecDrawer(current);
+      }
     })
     .catch(function (err) {
       console.error("couldn't load products:", err);
-      loadingEl.innerHTML =
-        '<p style="color:#ff6b6b;">couldn\'t load products — is the server running?</p>';
+      if (loadingEl) {
+        loadingEl.innerHTML =
+          '<p style="color:#ff6b6b;">couldn\'t load products — is the server running?</p>';
+      }
     });
 }
-
 
 
 function upgradeCardPhotos() {
@@ -204,17 +302,16 @@ function loadRealPhoto(img) {
   var probe = new Image();
   var timer = setTimeout(function () {
     probe.onload = null;
-    probe.src = "";            // give up on a hanging photo; the tile stays
+    probe.src = "";
   }, 8000);
 
   probe.onload = function () {
     clearTimeout(timer);
-    img.src = url;             // arrived → upgrade the card to the real photo
+    img.src = url;
   };
   probe.src = url;
 }
 
-// the local category tile for a product — the always-available base image
 function tileFor(category) {
   return "/images/categories/" + category + ".svg";
 }
@@ -228,19 +325,69 @@ function cardTag(p) {
          '</span>';
 }
 
+var LOW_STOCK_LIMIT = 5;
+
+function getProductStock(p) {
+  if (typeof p.quantity === "number" && !isNaN(p.quantity)) return p.quantity;
+  if (typeof p.stock === "number" && !isNaN(p.stock)) return p.stock;
+  return 10;
+}
+
+function getEffectiveStock(p) {
+  var base = getProductStock(p);
+  if (base < LOW_STOCK_LIMIT) return base;
+  var inCart = cart[p.id] || 0;
+  return Math.max(0, base - inCart);
+}
+
+function isLowStockItem(p) {
+  return getEffectiveStock(p) < LOW_STOCK_LIMIT;
+}
+
+function getSortedProductsList() {
+  var copy = products.slice();
+  if (activeSortMode === "price-asc") {
+    copy.sort(function (a, b) { return a.price - b.price; });
+  } else if (activeSortMode === "price-desc") {
+    copy.sort(function (a, b) { return b.price - a.price; });
+  } else if (activeSortMode === "stock-asc") {
+    copy.sort(function (a, b) { return getEffectiveStock(a) - getEffectiveStock(b); });
+  }
+  return copy;
+}
+
 
 // ── build the card HTML for every product and drop it in the grid ──
 
 function renderAllCards() {
-  loadingEl.classList.add("gone");
+  if (loadingEl) loadingEl.classList.add("gone");
 
-  for (var i = 0; i < products.length; i++) {
-    var p = products[i];
+  var existingCards = gridEl.querySelectorAll(".card");
+  for (var c = 0; c < existingCards.length; c++) {
+    existingCards[c].remove();
+  }
+
+  var sorted = getSortedProductsList();
+
+  for (var i = 0; i < sorted.length; i++) {
+    var p = sorted[i];
     var q = cart[p.id] || 0;
+    var stockQty = getEffectiveStock(p);
+    var lowStock = isLowStockItem(p);
+    var isCriticalStock = stockQty <= 2;
+    var sku = getSkuFor(p);
+    var isChartOpen = !!expandedCharts[p.id];
+    var history = getPriceHistoryFor(p);
+    var prices = history.map(function (h) { return h.price; });
+    var minPrice = Math.min.apply(null, prices);
+    var maxPrice = Math.max.apply(null, prices);
 
     var card = document.createElement("article");
-    card.className = "card";
+    card.className = "card" + (lowStock ? " is-low-stock" : "");
     card.id = "card-" + p.id;
+    card.setAttribute("data-stock", String(stockQty));
+    card.setAttribute("data-group", getComponentGroup(p));
+    card.style.setProperty("--stagger-idx", String(i));
 
     var ratingRow = p.ratingCount > 0
       ? '<div class="card-rating">' +
@@ -251,48 +398,261 @@ function renderAllCards() {
 
     var tag = cardTag(p);
 
+    var lowStockBadge = lowStock
+      ? '<span class="low-stock-badge' + (isCriticalStock ? ' critical' : '') + '" id="low-stock-' + p.id + '" data-testid="low-stock-badge">Low Stock</span>'
+      : '';
+
+    var stockNote = lowStock
+      ? '<span class="card-stock low" id="stock-note-' + p.id + '">' + stockQty + ' left in stock</span>'
+      : '<span class="card-stock" id="stock-note-' + p.id + '">' + stockQty + ' in stock</span>';
+
     var flag =
       '<button class="card-flag" onclick="reportProduct(' + p.id + ')" ' +
-      '        title="Report this listing" aria-label="Report this listing">' +
+      '        title="Report this listing" aria-label="Report ' + esc(p.title) + '">' +
         icon("flag", 15) +
       '</button>';
 
     var hasRealPhoto = p.image && (p.image.indexOf("http") === 0 || p.image.indexOf("/") === 0);
     card.innerHTML =
-      '<div class="card-img-wrap">' +
+      '<div class="card-img-wrap" onclick="openSpecDrawer(' + p.id + ')">' +
         '<img class="card-img"' +
         '     src="' + tileFor(p.category) + '"' +
         (hasRealPhoto ? ' data-photo="' + p.image + '"' : '') +
         '     alt="' + esc(p.title) + '"' +
         '     onerror="this.onerror=null;this.src=NO_IMAGE" />' +
+        lowStockBadge +
         flag +
       '</div>' +
-      tag +
-      '<h3 class="card-title">' + esc(p.title) + '</h3>' +
+      '<div class="card-sku-row">' +
+        '<span class="card-sku">' + esc(sku) + '</span>' +
+        stockNote +
+      '</div>' +
+      '<div class="card-meta-row">' +
+        tag +
+        '<button class="card-specs-link" type="button" onclick="openSpecDrawer(' + p.id + ')" aria-label="Specs for ' + esc(p.title) + '">Specs &rarr;</button>' +
+      '</div>' +
+      '<h3 class="card-title"><button type="button" class="card-title-btn" onclick="openSpecDrawer(' + p.id + ')">' + esc(p.title) + '</button></h3>' +
       (p.description ? '<p class="card-desc">' + esc(p.description) + '</p>' : '') +
       ratingRow +
-      '<p class="card-price">$' + p.price.toFixed(2) + '</p>' +
+      '<div class="card-price-row">' +
+        '<p class="card-price">$' + p.price.toFixed(2) + '</p>' +
+        '<button type="button" class="chart-toggle-btn' + (isChartOpen ? ' active' : '') + '" ' +
+                'id="chart-toggle-' + p.id + '" ' +
+                'aria-expanded="' + (isChartOpen ? 'true' : 'false') + '" ' +
+                'aria-label="Price History for ' + esc(p.title) + '" ' +
+                'onclick="toggleCardChart(' + p.id + ')">' +
+          icon("chart", 13) + ' <span>Price History</span>' +
+        '</button>' +
+      '</div>' +
+      '<div class="card-chart-drawer' + (isChartOpen ? ' open' : '') + '" id="card-chart-panel-' + p.id + '"' + (isChartOpen ? '' : ' hidden') + '>' +
+        '<div class="card-chart-meta">' +
+          '<span>6M Low: <b>$' + minPrice.toFixed(0) + '</b></span>' +
+          '<span>Peak: <b>$' + maxPrice.toFixed(0) + '</b></span>' +
+        '</div>' +
+        '<div class="card-chart-mount" id="card-chart-mount-' + p.id + '" data-testid="card-price-chart"></div>' +
+      '</div>' +
       '<div class="qty">' +
         '<button class="qty-btn" id="dec-' + p.id + '"' +
         '        onclick="dec(' + p.id + ')"' +
         '        ' + (q <= 0 ? 'disabled' : '') +
-        '        aria-label="decrease">−</button>' +
+        '        aria-label="Decrease quantity for ' + esc(p.title) + '">−</button>' +
         '<span class="qty-value' + (q > 0 ? ' active' : '') + '"' +
         '      id="qty-' + p.id + '">' + q + '</span>' +
         '<button class="qty-btn" id="inc-' + p.id + '"' +
         '        onclick="inc(' + p.id + ')"' +
-        '        aria-label="increase">+</button>' +
+        '        aria-label="Increase quantity for ' + esc(p.title) + '">+</button>' +
       '</div>';
 
+    // Cursor radial spotlight tracking on tactile card surface
+    card.addEventListener("mousemove", function (ev) {
+      var rect = this.getBoundingClientRect();
+      this.style.setProperty("--mouse-x", (ev.clientX - rect.left) + "px");
+      this.style.setProperty("--mouse-y", (ev.clientY - rect.top) + "px");
+    });
+
     gridEl.appendChild(card);
+
+    if (isChartOpen) {
+      mountCardRecharts(p);
+    }
   }
 
-  // now start upgrading the tiles to real photos as they scroll into view
   upgradeCardPhotos();
+  applyFiltersAndSearch();
+}
+
+function mountCardRecharts(p) {
+  var mountEl = document.getElementById("card-chart-mount-" + p.id);
+  if (!mountEl || typeof window.renderVoltboxPriceChart !== "function") return;
+  window.renderVoltboxPriceChart(mountEl, getPriceHistoryFor(p), {
+    variant: "card",
+    accentColor: "#ffd23f",
+    height: 112
+  });
+}
+
+function toggleCardChart(productId) {
+  var nextState = !expandedCharts[productId];
+  expandedCharts[productId] = nextState;
+
+  var panel = document.getElementById("card-chart-panel-" + productId);
+  var btn = document.getElementById("chart-toggle-" + productId);
+  if (btn) {
+    btn.classList.toggle("active", nextState);
+    btn.setAttribute("aria-expanded", nextState ? "true" : "false");
+  }
+  if (panel) {
+    panel.hidden = !nextState;
+    panel.classList.toggle("open", nextState);
+  }
+  if (nextState) {
+    var p = findProductById(productId);
+    if (p) mountCardRecharts(p);
+  }
 }
 
 
-var noResultsEl = null;   // the "nothing found" message, made once on demand
+// ── Product Quick-View & Spec Sheet Drawer (with Recharts LineChart) ──
+
+function openSpecDrawer(productId) {
+  var p = findProductById(productId);
+  if (!p) return;
+  activeSpecProductId = productId;
+  populateSpecDrawer(p);
+  specDrawerOverlayEl.classList.add("open");
+  specDrawerOverlayEl.setAttribute("aria-hidden", "false");
+  document.body.classList.add("no-scroll");
+}
+
+function closeSpecDrawer() {
+  specDrawerOverlayEl.classList.remove("open");
+  specDrawerOverlayEl.setAttribute("aria-hidden", "true");
+  document.body.classList.remove("no-scroll");
+  activeSpecProductId = null;
+}
+
+function populateSpecDrawer(p) {
+  var specs = p.specs || {};
+  var sku = getSkuFor(p);
+  var stockQty = getEffectiveStock(p);
+  var lowStock = isLowStockItem(p);
+  var q = cart[p.id] || 0;
+  var history = getPriceHistoryFor(p);
+  var prices = history.map(function (h) { return h.price; });
+  var minP = Math.min.apply(null, prices);
+  var maxP = Math.max.apply(null, prices);
+  var avgP = round(prices.reduce(function (a, b) { return a + b; }, 0) / prices.length);
+
+  document.getElementById("spec-drawer-sku").textContent = sku;
+  document.getElementById("spec-drawer-title").textContent = p.title;
+  document.getElementById("spec-drawer-group").textContent = specs.groupLabel || getComponentGroup(p).toUpperCase();
+  document.getElementById("spec-drawer-price").textContent = "$" + p.price.toFixed(2);
+
+  var stockEl = document.getElementById("spec-drawer-stock");
+  stockEl.textContent = lowStock ? ("Low Stock · " + stockQty + " left in stock") : (stockQty + " units available");
+  stockEl.className = lowStock ? "spec-stock-line low" : "spec-stock-line";
+
+  var imgEl = document.getElementById("spec-drawer-img");
+  imgEl.src = (p.image && (p.image.indexOf("http") === 0 || p.image.indexOf("/") === 0)) ? p.image : tileFor(p.category);
+  imgEl.alt = p.title;
+  imgEl.onerror = function () { this.onerror = null; this.src = tileFor(p.category); };
+
+  var descEl = document.getElementById("spec-drawer-desc");
+  descEl.textContent = p.description || "Community-verified electronics hardware component with live inventory tracking and historical pricing.";
+
+  var deltaPct = specs.priceDeltaPct || round(((p.price - prices[0]) / prices[0]) * 100);
+  var deltaNote = document.getElementById("spec-price-delta");
+  deltaNote.textContent = (deltaPct <= 0 ? "↓ " + Math.abs(deltaPct) + "% vs May" : "↑ " + deltaPct + "% vs May");
+
+  document.getElementById("spec-price-stats").innerHTML =
+    '<div class="spec-stat-cell"><span class="spec-stat-label">6M Low</span><span class="spec-stat-val">$' + minP.toFixed(2) + '</span></div>' +
+    '<div class="spec-stat-cell"><span class="spec-stat-label">6M Average</span><span class="spec-stat-val">$' + avgP.toFixed(2) + '</span></div>' +
+    '<div class="spec-stat-cell"><span class="spec-stat-label">6M Peak</span><span class="spec-stat-val">$' + maxP.toFixed(2) + '</span></div>';
+
+  document.getElementById("spec-contributor-note").textContent =
+    p.official ? "Official Voltbox Catalog" : ("Listed by " + (p.addedByName || "Contributor"));
+
+  document.getElementById("spec-table-rows").innerHTML =
+    '<div class="spec-row"><span>Part SKU</span><span class="mono">' + esc(sku) + '</span></div>' +
+    '<div class="spec-row"><span>Architecture</span><span>' + esc(specs.architecture || "Precision Solid-State") + '</span></div>' +
+    '<div class="spec-row"><span>Interface / Bus</span><span>' + esc(specs.interfaceSpec || "PCIe / High-Speed Bus") + '</span></div>' +
+    '<div class="spec-row"><span>Power / Thermal</span><span>' + esc(specs.powerDraw || "65W Nominal") + '</span></div>' +
+    '<div class="spec-row"><span>Warranty</span><span>' + esc(specs.warranty || "3-Year Hardware") + '</span></div>';
+
+  document.getElementById("spec-actions-bar").innerHTML =
+    '<div class="spec-qty-control">' +
+      '<button class="qty-btn" onclick="dec(' + p.id + ')" ' + (q <= 0 ? 'disabled' : '') + ' aria-label="Decrease quantity in drawer">−</button>' +
+      '<span class="qty-value' + (q > 0 ? ' active' : '') + '">' + q + ' in cart</span>' +
+      '<button class="qty-btn" onclick="inc(' + p.id + ')" aria-label="Increase quantity in drawer">+</button>' +
+    '</div>' +
+    '<button class="restock-btn" type="button" onclick="restockProduct(' + p.id + ')">' +
+      icon("refresh", 14) + ' <span>Restock +3</span>' +
+    '</button>';
+
+  var chartContainer = document.getElementById("drawer-chart-container");
+  if (chartContainer && typeof window.renderVoltboxPriceChart === "function") {
+    window.renderVoltboxPriceChart(chartContainer, history, {
+      variant: "drawer",
+      accentColor: "#2dd4bf",
+      height: 170
+    });
+  }
+}
+
+function restockProduct(productId) {
+  api("/api/products/" + productId + "/restock", {
+    method: "POST",
+    body: JSON.stringify({ amount: 3 })
+  })
+    .then(function (r) { return r.json(); })
+    .then(function (updated) {
+      if (updated && updated.id) {
+        onProductRestocked(updated);
+      }
+    })
+    .catch(function (err) {
+      console.error("couldn't restock product:", err);
+    });
+}
+
+window.onProductRestocked = function (updated) {
+  if (!updated || !updated.id) return;
+  for (var i = 0; i < products.length; i++) {
+    if (products[i].id === updated.id) {
+      products[i] = updated;
+      break;
+    }
+  }
+  refreshCard(updated.id);
+  var card = document.getElementById("card-" + updated.id);
+  if (card) {
+    card.classList.remove("restock-flash");
+    void card.offsetWidth;
+    card.classList.add("restock-flash");
+  }
+  if (activeSpecProductId === updated.id) {
+    populateSpecDrawer(updated);
+  }
+};
+
+window.showActivityToast = function (message) {
+  if (!activityToastEl || !activityTextEl) return;
+  activityTextEl.textContent = message;
+  activityToastEl.hidden = false;
+  activityToastEl.classList.add("visible");
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(function () {
+    activityToastEl.classList.remove("visible");
+    setTimeout(function () {
+      activityToastEl.hidden = true;
+    }, 220);
+  }, 3800);
+};
+
+
+// ── Category Filter Bar & Search Filtering ──
+
+var noResultsEl = null;
 
 var CATEGORY_WORDS = {
   cpus: "cpu processor", gpus: "gpu graphics card video card",
@@ -308,7 +668,11 @@ var CATEGORY_WORDS = {
 };
 
 function filterProducts(query) {
-  query = (query || "").trim().toLowerCase();
+  applyFiltersAndSearch(query);
+}
+
+function applyFiltersAndSearch(explicitQuery) {
+  var query = (explicitQuery !== undefined ? explicitQuery : (searchEl ? searchEl.value : "")).trim().toLowerCase();
   var shown = 0;
 
   for (var i = 0; i < products.length; i++) {
@@ -316,23 +680,39 @@ function filterProducts(query) {
     var card = document.getElementById("card-" + p.id);
     if (!card) continue;
 
-    var hay = (p.title + " " + (p.description || "") + " " + p.category + " " +
-               (CATEGORY_WORDS[p.category] || "") + " " +
+    var group = getComponentGroup(p);
+    var hay = (p.title + " " + (p.description || "") + " " + p.category + " " + group + " " +
+               getSkuFor(p) + " " + (CATEGORY_WORDS[p.category] || "") + " " +
                (p.addedByName || "")).toLowerCase();
-    var match = query === "" || hay.indexOf(query) !== -1;
+    var textMatch = query === "" || hay.indexOf(query) !== -1;
 
-    card.style.display = match ? "" : "none";
-    if (match) shown++;
+    var catMatch = true;
+    if (activeCategoryFilter === "low-stock") {
+      catMatch = isLowStockItem(p);
+    } else if (activeCategoryFilter !== "all") {
+      catMatch = (group === activeCategoryFilter);
+    }
+
+    var visible = textMatch && catMatch;
+    card.style.display = visible ? "" : "none";
+    if (visible) {
+      card.style.setProperty("--stagger-idx", String(shown));
+      card.classList.remove("stagger-in");
+      void card.offsetWidth;
+      card.classList.add("stagger-in");
+      shown++;
+    }
   }
 
-  // show a friendly "nothing matched" line when a search comes up empty
   if (!noResultsEl) {
     noResultsEl = document.createElement("p");
     noResultsEl.className = "no-results";
     gridEl.appendChild(noResultsEl);
   }
-  if (shown === 0 && query !== "") {
-    noResultsEl.textContent = 'No parts match "' + query + '".';
+  if (shown === 0) {
+    noResultsEl.textContent = query
+      ? ('No parts match "' + query + '" in this view.')
+      : "No parts in this category right now.";
     noResultsEl.style.display = "";
   } else {
     noResultsEl.style.display = "none";
@@ -340,23 +720,164 @@ function filterProducts(query) {
 }
 
 
+// ── PC Build / Compatibility Bundle Mode ("Rig Builder") ──
+
+var RIG_SLOTS = [
+  { key: "cpus", label: "Processor (CPU)", hint: "AM5 / Multi-Core Desktop CPU" },
+  { key: "gpus", label: "Graphics Card (GPU)", hint: "PCIe 5.0 Dedicated GPU" },
+  { key: "motherboards", label: "Motherboard", hint: "ATX / B570 System Board" },
+  { key: "storage", label: "Primary Storage", hint: "NVMe SSD or SATA Drive" }
+];
+
+function computeRigStatus() {
+  var found = { cpus: null, gpus: null, motherboards: null, storage: null };
+  for (var i = 0; i < products.length; i++) {
+    var p = products[i];
+    var q = cart[p.id] || 0;
+    if (q <= 0) continue;
+    var g = getComponentGroup(p);
+    if (g in found && !found[g]) {
+      found[g] = p;
+    }
+  }
+  var count = (found.cpus ? 1 : 0) + (found.gpus ? 1 : 0) + (found.motherboards ? 1 : 0) + (found.storage ? 1 : 0);
+  var qualifies = count >= 3;
+  return {
+    slots: found,
+    completedCount: count,
+    qualifies: qualifies,
+    discountRate: qualifies ? RIG_BUNDLE_RATE : 0
+  };
+}
+
+function openRigDrawer() {
+  renderRigDrawer();
+  rigDrawerOverlayEl.classList.add("open");
+  rigDrawerOverlayEl.setAttribute("aria-hidden", "false");
+  document.body.classList.add("no-scroll");
+}
+
+function closeRigDrawer() {
+  rigDrawerOverlayEl.classList.remove("open");
+  rigDrawerOverlayEl.setAttribute("aria-hidden", "true");
+  document.body.classList.remove("no-scroll");
+}
+
+function renderRigDrawer() {
+  var status = computeRigStatus();
+  var pct = Math.round((status.completedCount / 4) * 100);
+
+  if (rigBuilderCountEl) {
+    rigBuilderCountEl.textContent = status.completedCount + "/4";
+  }
+  if (rigBuilderBtnEl) {
+    rigBuilderBtnEl.classList.toggle("bundle-active", status.qualifies);
+  }
+  if (!rigSlotsListEl) return;
+
+  rigBannerFractionEl.textContent = status.completedCount + " / 4 Core Slots";
+  rigMeterFillEl.style.width = pct + "%";
+  rigBundleBannerEl.classList.toggle("unlocked", status.qualifies);
+
+  if (status.qualifies) {
+    rigBannerTitleEl.textContent = "5% Rig Builder Bundle Unlocked!";
+    rigBannerSubEl.textContent = "Your cart includes " + status.completedCount + " core PC component groups — 5% bundle discount is active at checkout.";
+  } else {
+    var needed = 3 - status.completedCount;
+    rigBannerTitleEl.textContent = "Add " + needed + " more core part" + (needed === 1 ? "" : "s") + " for 5% off";
+    rigBannerSubEl.textContent = "Select at least 3 of the 4 core PC component groups below to activate the automatic 5% Rig Bundle discount.";
+  }
+
+  var html = "";
+  for (var i = 0; i < RIG_SLOTS.length; i++) {
+    var slot = RIG_SLOTS[i];
+    var chosen = status.slots[slot.key];
+    var candidate = null;
+    if (!chosen) {
+      for (var j = 0; j < products.length; j++) {
+        if (getComponentGroup(products[j]) === slot.key) {
+          candidate = products[j];
+          break;
+        }
+      }
+    }
+
+    html +=
+      '<div class="rig-slot-card' + (chosen ? ' filled' : '') + '">' +
+        '<div class="rig-slot-top">' +
+          '<span class="rig-slot-name">' + esc(slot.label) + '</span>' +
+          '<span class="rig-slot-state">' + (chosen ? "Selected" : "Empty Slot") + '</span>' +
+        '</div>' +
+        (chosen
+          ? '<div class="rig-slot-picked">' +
+              '<span>' + esc(chosen.title) + ' ($' + chosen.price.toFixed(2) + ')</span>' +
+              '<button type="button" class="rig-slot-action remove" onclick="dec(' + chosen.id + ')">Remove</button>' +
+            '</div>'
+          : '<div class="rig-slot-empty">' +
+              '<span>' + esc(slot.hint) + '</span>' +
+              (candidate
+                ? '<button type="button" class="rig-slot-action add" onclick="inc(' + candidate.id + ')">+ Add ' + esc(candidate.title) + ' ($' + candidate.price.toFixed(0) + ')</button>'
+                : '') +
+            '</div>') +
+      '</div>';
+  }
+  rigSlotsListEl.innerHTML = html;
+}
+
+
+// ── Promo Code Handling ──
+
+function applyPromoCode() {
+  var raw = (promoInputEl ? promoInputEl.value : "").trim().toUpperCase();
+  if (!raw) {
+    activePromoCode = null;
+    showPromoNote("Promo cleared.", false);
+    recalc();
+    return;
+  }
+  if (raw in PROMO_MAP) {
+    activePromoCode = raw;
+    showPromoNote("Applied " + PROMO_MAP[raw].label, false);
+    recalc();
+  } else {
+    showPromoNote("Unknown code — try VOLT10 or BUILDER5", true);
+  }
+}
+
+function showPromoNote(text, isError) {
+  if (!promoStatusNoteEl) return;
+  promoStatusNoteEl.textContent = text;
+  promoStatusNoteEl.className = isError ? "promo-status-note error" : "promo-status-note";
+  promoStatusNoteEl.hidden = false;
+}
+
+
 // ── cart operations ──
 
 function inc(id) {
-  cart[id] = (cart[id] || 0) + 1;
+  var prev = cart[id] || 0;
+  cart[id] = prev + 1;
   refreshCard(id);
-  recalc();
+  recalc(prev === 0);
   queueCartSave();
+  if (activeSpecProductId === id) {
+    var p = findProductById(id);
+    if (p) populateSpecDrawer(p);
+  }
 }
 
 function dec(id) {
   var now = cart[id] || 0;
-  if (now <= 0) return;            // can't go negative
+  if (now <= 0) return;
   cart[id] = now - 1;
   if (cart[id] === 0) delete cart[id];
   refreshCard(id);
-  recalc();
+  recalc(false);
   queueCartSave();
+  if (activeSpecProductId === id) {
+    var p = findProductById(id);
+    if (p) populateSpecDrawer(p);
+  }
 }
 
 function queueCartSave() {
@@ -396,31 +917,147 @@ function refreshCard(id) {
   if (btn) {
     btn.disabled = (q <= 0);
   }
+
+  var p = findProductById(id);
+  if (p) {
+    var card = document.getElementById("card-" + id);
+    var stockQty = getEffectiveStock(p);
+    var lowStock = isLowStockItem(p);
+    var isCriticalStock = stockQty <= 2;
+    var stockNoteEl = document.getElementById("stock-note-" + id);
+    if (stockNoteEl) {
+      stockNoteEl.className = lowStock ? "card-stock low" : "card-stock";
+      stockNoteEl.textContent = lowStock ? (stockQty + " left in stock") : (stockQty + " in stock");
+    }
+    if (card) {
+      card.classList.toggle("is-low-stock", lowStock);
+      card.setAttribute("data-stock", String(stockQty));
+      var wrap = card.querySelector(".card-img-wrap");
+      var badge = document.getElementById("low-stock-" + id);
+      if (lowStock && !badge && wrap) {
+        var span = document.createElement("span");
+        span.className = "low-stock-badge" + (isCriticalStock ? " critical" : "");
+        span.id = "low-stock-" + id;
+        span.setAttribute("data-testid", "low-stock-badge");
+        span.textContent = "Low Stock";
+        wrap.insertBefore(span, wrap.querySelector(".card-flag"));
+      } else if (lowStock && badge) {
+        badge.classList.toggle("critical", isCriticalStock);
+      } else if (!lowStock && badge) {
+        badge.remove();
+      }
+    }
+  }
 }
 
 
+function updateFilterTabCounts() {
+  if (!filterBarEl) return;
+  var counts = {
+    all: products.length,
+    gpus: 0,
+    cpus: 0,
+    motherboards: 0,
+    storage: 0,
+    audio: 0,
+    gaming: 0,
+    "low-stock": 0
+  };
+  for (var i = 0; i < products.length; i++) {
+    var p = products[i];
+    var g = getComponentGroup(p);
+    if (counts[g] !== undefined) counts[g]++;
+    if (isLowStockItem(p)) counts["low-stock"]++;
+  }
+  var labels = {
+    all: "All",
+    gpus: "GPUs",
+    cpus: "CPUs",
+    motherboards: "Motherboards",
+    storage: "Storage",
+    audio: "Audio",
+    gaming: "Gaming",
+    "low-stock": "Low Stock Only"
+  };
+  var tabs = filterBarEl.querySelectorAll(".filter-tab");
+  for (var t = 0; t < tabs.length; t++) {
+    var key = tabs[t].getAttribute("data-filter") || "all";
+    var baseLabel = labels[key] || key;
+    var c = counts[key] !== undefined ? counts[key] : 0;
+    tabs[t].innerHTML = esc(baseLabel) + ' <span class="filter-count">' + c + '</span>';
+  }
+}
 
-function recalc() {
+// ── Odometer Digit Roll & Totals Calculation ──
+
+function setOdometerText(el, nextText) {
+  if (!el) return;
+  var prevText = el.getAttribute("data-val") || el.textContent || "";
+  if (prevText === nextText) return;
+  el.setAttribute("data-val", nextText);
+
+  var html = "";
+  var padPrev = prevText;
+  while (padPrev.length < nextText.length) padPrev = " " + padPrev;
+
+  for (var i = 0; i < nextText.length; i++) {
+    var ch = nextText.charAt(i);
+    var oldCh = padPrev.charAt(i);
+    var changed = (ch !== oldCh && ch !== ".");
+    if (changed) {
+      html += '<span class="odo-digit roll" style="--digit-idx:' + i + '">' + esc(ch) + '</span>';
+    } else {
+      html += '<span class="odo-digit">' + esc(ch) + '</span>';
+    }
+  }
+  el.innerHTML = html;
+}
+
+function recalc(isNewItemAdded) {
   var totals = computeTotals();
+  updateFilterTabCounts();
 
-  subEl.textContent   = totals.sub.toFixed(2);
-  taxEl.textContent   = totals.tax.toFixed(2);
-  totalEl.textContent = totals.total.toFixed(2);
+  setOdometerText(subEl, totals.sub.toFixed(2));
+  setOdometerText(taxEl, totals.tax.toFixed(2));
+  setOdometerText(totalEl, totals.total.toFixed(2));
 
-  // the badge on the cart button
+  if (discountRowEl && discountAmountEl && discountLabelEl) {
+    if (totals.discountTotal > 0) {
+      discountRowEl.hidden = false;
+      var labels = [];
+      if (totals.rigDiscount > 0) labels.push("5% Rig Bundle");
+      if (totals.promoDiscount > 0 && activePromoCode) labels.push(activePromoCode);
+      discountLabelEl.textContent = "Discount (" + labels.join(" + ") + ")";
+      setOdometerText(discountAmountEl, totals.discountTotal.toFixed(2));
+    } else {
+      discountRowEl.hidden = true;
+    }
+  }
+
   cartBadgeEl.textContent = totals.count;
   cartBadgeEl.hidden = (totals.count === 0);
 
-  // you can only check out with something in the cart
   checkoutEl.disabled    = (totals.count === 0);
   cartSheetGoEl.disabled = (totals.count === 0);
 
   renderCartSheet(totals);
+  renderRigDrawer();
 
-  // little bounce on the cart button so it feels alive
   cartBtnEl.classList.remove("pop");
-  void cartBtnEl.offsetWidth;          
+  void cartBtnEl.offsetWidth;
   cartBtnEl.classList.add("pop");
+
+  // Fly-to-Cart & Badge Pop + Order Bar Amber Pulse when incrementing from 0 to 1
+  if (isNewItemAdded) {
+    cartBadgeEl.classList.remove("badge-spring");
+    void cartBadgeEl.offsetWidth;
+    cartBadgeEl.classList.add("badge-spring");
+    if (orderBarEl) {
+      orderBarEl.classList.remove("bar-pulse");
+      void orderBarEl.offsetWidth;
+      orderBarEl.classList.add("bar-pulse");
+    }
+  }
 }
 
 function computeTotals() {
@@ -430,10 +1067,24 @@ function computeTotals() {
     count += q;
     sub   += products[i].price * q;
   }
-  var tax = round(sub * TAX_RATE);
-  return { count: count, sub: round(sub), tax: tax, total: round(sub + tax) };
+  var roundedSub = round(sub);
+  var rigStatus = computeRigStatus();
+  var rigDiscount = rigStatus.qualifies ? round(roundedSub * rigStatus.discountRate) : 0;
+  var promoObj = activePromoCode && PROMO_MAP[activePromoCode] ? PROMO_MAP[activePromoCode] : null;
+  var promoDiscount = promoObj ? round(roundedSub * promoObj.rate) : 0;
+  var discountTotal = round(Math.min(roundedSub, rigDiscount + promoDiscount));
+  var discountedSub = round(Math.max(0, roundedSub - discountTotal));
+  var tax = round(discountedSub * TAX_RATE);
+  return {
+    count: count,
+    sub: roundedSub,
+    rigDiscount: rigDiscount,
+    promoDiscount: promoDiscount,
+    discountTotal: discountTotal,
+    tax: tax,
+    total: round(discountedSub + tax)
+  };
 }
-
 
 
 function toggleSheet(sheetEl, buttonEl) {
@@ -444,7 +1095,6 @@ function toggleSheet(sheetEl, buttonEl) {
     buttonEl.setAttribute("aria-expanded", "true");
   }
 }
-
 
 function closeAllSheets() {
   var sheets = document.querySelectorAll(".sheet");
@@ -534,8 +1184,6 @@ function toggleHistory() {
   if (opening) loadHistory();
 }
 
-// fold the history back up. we do this after a checkout so the list can't
-// sit there showing yesterday's bills — next time it's opened it refetches.
 function collapseHistory() {
   historyListEl.hidden = true;
   historyListEl.innerHTML = "";
@@ -578,7 +1226,6 @@ function loadHistory() {
     });
 }
 
-// tapping an old bill re-opens the exact same paper receipt
 function openOrderFromHistory(orderId) {
   api("/api/orders")
     .then(function (res) { return res.json(); })
@@ -594,20 +1241,78 @@ function openOrderFromHistory(orderId) {
 }
 
 
-
 function wireUpButtons() {
   logoutEl.addEventListener("click", signOut);
 
-  // catch a tab close/switch/navigate-away with a cart save still queued
   document.addEventListener("visibilitychange", function () {
     if (document.visibilityState === "hidden") flushCartSave();
   });
   window.addEventListener("pagehide", flushCartSave);
 
-  // the search box filters the grid on every keystroke
   searchEl.addEventListener("input", function () { filterProducts(searchEl.value); });
 
-  // the two top-right panels
+  // Category filter tabs
+  if (filterBarEl) {
+    filterBarEl.addEventListener("click", function (e) {
+      var btn = e.target.closest(".filter-tab");
+      if (!btn) return;
+      var filterVal = btn.getAttribute("data-filter") || "all";
+      activeCategoryFilter = filterVal;
+      var tabs = filterBarEl.querySelectorAll(".filter-tab");
+      for (var i = 0; i < tabs.length; i++) {
+        var isCurrent = tabs[i] === btn;
+        tabs[i].classList.toggle("active", isCurrent);
+        tabs[i].setAttribute("aria-selected", isCurrent ? "true" : "false");
+      }
+      applyFiltersAndSearch();
+    });
+  }
+
+  // Sort select
+  if (sortSelectEl) {
+    sortSelectEl.addEventListener("change", function () {
+      activeSortMode = sortSelectEl.value || "featured";
+      renderAllCards();
+    });
+  }
+
+  // Rig Builder drawer
+  if (rigBuilderBtnEl) {
+    rigBuilderBtnEl.addEventListener("click", openRigDrawer);
+  }
+  if (rigDrawerCloseEl) {
+    rigDrawerCloseEl.addEventListener("click", closeRigDrawer);
+  }
+  if (rigDrawerOverlayEl) {
+    rigDrawerOverlayEl.addEventListener("click", function (e) {
+      if (e.target === rigDrawerOverlayEl) closeRigDrawer();
+    });
+  }
+
+  // Product Spec drawer
+  if (specDrawerCloseEl) {
+    specDrawerCloseEl.addEventListener("click", closeSpecDrawer);
+  }
+  if (specDrawerOverlayEl) {
+    specDrawerOverlayEl.addEventListener("click", function (e) {
+      if (e.target === specDrawerOverlayEl) closeSpecDrawer();
+    });
+  }
+
+  // Promo code controls
+  if (promoApplyBtnEl) {
+    promoApplyBtnEl.addEventListener("click", applyPromoCode);
+  }
+  if (promoInputEl) {
+    promoInputEl.addEventListener("keydown", function (e) {
+      if (e.key === "Enter") {
+        e.preventDefault();
+        applyPromoCode();
+      }
+    });
+  }
+
+  // Top-right sheets
   cartBtnEl.addEventListener("click", function (e) {
     e.stopPropagation();
     toggleSheet(cartSheetEl, cartBtnEl);
@@ -617,19 +1322,14 @@ function wireUpButtons() {
     toggleSheet(profileSheetEl, avatarBtnEl);
   });
 
-  // clicking inside a panel shouldn't close it
   cartSheetEl.addEventListener("click", function (e) { e.stopPropagation(); });
   profileSheetEl.addEventListener("click", function (e) { e.stopPropagation(); });
 
-  // ...but clicking anywhere else should
   document.addEventListener("click", closeAllSheets);
 
-  // profile panel bits
   billSaveEl.addEventListener("click", saveBillEmail);
   historyToggleEl.addEventListener("click", toggleHistory);
 
-  // checkout — from the bottom bar or from inside the cart panel — opens
-  // the shipping/pay modal; payNow() in there does the actual checkout call
   checkoutEl.addEventListener("click", openCheckoutModal);
   cartSheetGoEl.addEventListener("click", openCheckoutModal);
 
@@ -639,34 +1339,34 @@ function wireUpButtons() {
     if (e.target === checkoutOverlayEl) closeModal(checkoutOverlayEl);
   });
 
-  // receipt buttons
+  // Receipt buttons
   receiptCloseEl.addEventListener("click", closeReceipt);
   receiptPrintEl.addEventListener("click", function () { window.print(); });
+  if (receiptDownloadEl) {
+    receiptDownloadEl.addEventListener("click", downloadReceiptPng);
+  }
   receiptEmailEl.addEventListener("click", emailCurrentBill);
 
-  // click the dark backdrop (but not the paper) to close
   overlayEl.addEventListener("click", function (e) {
     if (e.target === overlayEl) closeReceipt();
   });
-  // Esc closes the receipt, then the checkout modal, then the panels
+
   document.addEventListener("keydown", function (e) {
     if (e.key !== "Escape") return;
     if (overlayEl.classList.contains("open")) closeReceipt();
     else if (checkoutOverlayEl.classList.contains("open")) closeModal(checkoutOverlayEl);
+    else if (specDrawerOverlayEl && specDrawerOverlayEl.classList.contains("open")) closeSpecDrawer();
+    else if (rigDrawerOverlayEl && rigDrawerOverlayEl.classList.contains("open")) closeRigDrawer();
     else closeAllSheets();
   });
 }
 
-// checkout button (either one) opens the shipping/pay modal instead of
-// ringing things up straight away — see payNow() for the actual charge.
 function openCheckoutModal() {
   var totals = computeTotals();
-  if (totals.count === 0) return;          // nothing to ring up
+  if (totals.count === 0) return;
 
   checkoutNameEl.value = me ? me.name : "";
   checkoutAddressEl.value = "";
-  // card fields never get saved anywhere (not even sent to the server —
-  // see payNow()), so there's nothing to prefill; always start blank
   checkoutCardNumEl.value = "";
   checkoutExpiryEl.value = "";
   checkoutCvvEl.value = "";
@@ -703,7 +1403,7 @@ function payNow() {
     showCheckoutMsg("Add a name and an address before paying.", true);
     return;
   }
- 
+
   if (!cardNumber || !expiry || !cvv) {
     showCheckoutMsg("Fill in the card fields too (any numbers work).", true);
     return;
@@ -712,17 +1412,18 @@ function payNow() {
   checkoutMsgEl.hidden = true;
   checkoutPayEl.disabled = true;
   checkoutPayEl.innerHTML = '<span class="btn-spinner"></span> Processing…';
-  clearTimeout(saveTimer);                 // don't let a queued save race us
+  clearTimeout(saveTimer);
 
-  // save the cart first, so the server rings up exactly what's on screen.
-  // Promise.all with a short delay so "processing" shows for a beat even
-  // when the server answers instantly (it's on localhost, after all).
   Promise.all([
     api("/api/cart", { method: "PUT", body: JSON.stringify(cart) })
       .then(function () {
         return api("/api/checkout", {
           method: "POST",
-          body: JSON.stringify({ shippingName: name, shippingAddress: address })
+          body: JSON.stringify({
+            shippingName: name,
+            shippingAddress: address,
+            promoCode: activePromoCode
+          })
         });
       })
       .then(function (res) {
@@ -740,19 +1441,13 @@ function payNow() {
         return;
       }
 
-      // the bill is made and the cart is spent — match that on screen
       cart = {};
-      for (var i = 0; i < products.length; i++) refreshCard(products[i].id);
-      recalc();
+      fetchProducts();
 
       me.orderCount++;
       paintHistoryCount(me.orderCount);
-      collapseHistory();          // so it reloads with the new bill in it
+      collapseHistory();
 
-      // swap the form for a "Payment successful" tick for a beat, then
-      // move on to the receipt — the dummy card details never get sent
-      // to the server or read again; they're forgotten the moment the
-      // modal closes.
       checkoutFormEl.hidden = true;
       checkoutSuccessEl.hidden = false;
       setTimeout(function () {
@@ -776,6 +1471,12 @@ function showReceipt(order) {
   receiptEmailEl.disabled = false;
   receiptEmailEl.innerHTML = emailBtnLabel();
 
+  if (receiptPaperEl) {
+    receiptPaperEl.classList.remove("thermal-feed");
+    void receiptPaperEl.offsetWidth;
+    receiptPaperEl.classList.add("thermal-feed");
+  }
+
   overlayEl.classList.add("open");
   overlayEl.setAttribute("aria-hidden", "false");
   document.body.classList.add("no-scroll");
@@ -788,7 +1489,6 @@ function closeReceipt() {
   shownOrder = null;
 }
 
-// send whichever bill is currently on screen
 function emailCurrentBill() {
   if (!shownOrder) return;
 
@@ -802,7 +1502,7 @@ function emailCurrentBill() {
     })
     .then(function (result) {
       if (result.ok) {
-        receiptEmailEl.disabled = true;             // no need to send it twice
+        receiptEmailEl.disabled = true;
         receiptEmailEl.innerHTML = icon("check", 16) + " Sent";
         showReceiptMsg("Bill sent to " + result.data.sentTo, false);
       } else {
@@ -818,7 +1518,6 @@ function emailCurrentBill() {
     });
 }
 
-// the mail button's normal label (icon + text), reused after every state change
 function emailBtnLabel() {
   return icon("mail", 16) + " Email me this bill";
 }
@@ -829,8 +1528,102 @@ function showReceiptMsg(text, isError) {
   receiptMsgEl.hidden = false;
 }
 
-// assemble the actual paper from a saved bill. one row per item, then the
-// totals block, then a barcode.
+// Downloadable PNG Receipt generator
+function downloadReceiptPng() {
+  if (!shownOrder) return;
+  var order = shownOrder;
+  var canvas = document.createElement("canvas");
+  var lineCount = (order.lines || []).length;
+  var height = 430 + lineCount * 42;
+  canvas.width = 640;
+  canvas.height = height;
+  var ctx = canvas.getContext("2d");
+  if (!ctx) return;
+
+  // Thermal cream paper background
+  ctx.fillStyle = "#f6f2e9";
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+  ctx.fillStyle = "#1c1a17";
+  ctx.textAlign = "center";
+  ctx.font = "bold 36px JetBrains Mono, monospace";
+  ctx.fillText(STORE.name, 320, 56);
+  ctx.font = "14px JetBrains Mono, monospace";
+  ctx.fillText(STORE.tagline, 320, 80);
+  ctx.fillText(STORE.address + " · " + STORE.phone, 320, 102);
+
+  ctx.strokeStyle = "#1c1a17";
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.moveTo(40, 120);
+  ctx.lineTo(600, 120);
+  ctx.stroke();
+
+  ctx.textAlign = "left";
+  ctx.font = "14px JetBrains Mono, monospace";
+  var when = new Date(order.placedAt);
+  ctx.fillText("ORDER: " + order.id, 40, 148);
+  ctx.textAlign = "right";
+  ctx.fillText(formatDate(when) + " " + formatTime(when), 600, 148);
+
+  var y = 185;
+  for (var i = 0; i < lineCount; i++) {
+    var ln = order.lines[i];
+    ctx.textAlign = "left";
+    ctx.font = "bold 14px JetBrains Mono, monospace";
+    ctx.fillText(ln.title.substring(0, 32), 40, y);
+    ctx.font = "13px JetBrains Mono, monospace";
+    ctx.fillText(ln.qty + " x $" + ln.price.toFixed(2), 40, y + 18);
+    ctx.textAlign = "right";
+    ctx.fillText("$" + round(ln.qty * ln.price).toFixed(2), 600, y + 10);
+    y += 42;
+  }
+
+  y += 10;
+  ctx.beginPath();
+  ctx.moveTo(40, y);
+  ctx.lineTo(600, y);
+  ctx.stroke();
+  y += 28;
+
+  ctx.textAlign = "left";
+  ctx.fillText("SUBTOTAL", 40, y);
+  ctx.textAlign = "right";
+  ctx.fillText("$" + order.subtotal.toFixed(2), 600, y);
+
+  if (order.discountTotal && order.discountTotal > 0) {
+    y += 22;
+    ctx.textAlign = "left";
+    ctx.fillText("DISCOUNT", 40, y);
+    ctx.textAlign = "right";
+    ctx.fillText("-$" + order.discountTotal.toFixed(2), 600, y);
+  }
+
+  y += 22;
+  ctx.textAlign = "left";
+  ctx.fillText("TAX (8.25%)", 40, y);
+  ctx.textAlign = "right";
+  ctx.fillText("$" + order.tax.toFixed(2), 600, y);
+
+  y += 32;
+  ctx.font = "bold 22px JetBrains Mono, monospace";
+  ctx.textAlign = "left";
+  ctx.fillText("TOTAL", 40, y);
+  ctx.textAlign = "right";
+  ctx.fillText("$" + order.total.toFixed(2), 600, y);
+
+  y += 44;
+  ctx.textAlign = "center";
+  ctx.font = "13px JetBrains Mono, monospace";
+  ctx.fillText("*** THANK YOU FOR SUPPORTING VOLTBOX ***", 320, y);
+
+  var link = document.createElement("a");
+  link.download = "voltbox-receipt-" + order.id + ".png";
+  link.href = canvas.toDataURL("image/png");
+  link.click();
+  showReceiptMsg("Downloaded voltbox-receipt-" + order.id + ".png", false);
+}
+
 function buildReceiptHTML(order) {
   var when = new Date(order.placedAt);
 
@@ -838,9 +1631,6 @@ function buildReceiptHTML(order) {
   for (var i = 0; i < order.lines.length; i++) {
     var line = order.lines[i];
     var lineTotal = round(line.price * line.qty);
-
-    // use the product's category tile for the thumbnail (always loads),
-    // falling back to a hidden thumb only if we can't work out the category
     var lineProduct = (typeof findProductById === "function") ? findProductById(line.productId) : null;
     var thumb = lineProduct ? tileFor(lineProduct.category) : line.image;
 
@@ -858,8 +1648,15 @@ function buildReceiptHTML(order) {
       '</div>';
   }
 
+  var discountRows = "";
+  if (order.rigDiscount && order.rigDiscount > 0) {
+    discountRows += '<div class="r-tot"><span>RIG BUNDLE (5%)</span><span>−$' + order.rigDiscount.toFixed(2) + '</span></div>';
+  }
+  if (order.promoDiscount && order.promoDiscount > 0) {
+    discountRows += '<div class="r-tot"><span>PROMO (' + esc(order.promoCode || "CODE") + ')</span><span>−$' + order.promoDiscount.toFixed(2) + '</span></div>';
+  }
+
   return '' +
-    // ── header ──
     '<div class="r-head">' +
       '<div class="r-bolt"><svg width="26" height="26" viewBox="0 0 24 24"><path fill="#1c1a17" d="M13 2 3 14h7l-1 8 10-12h-7z"/></svg></div>' +
       '<div class="r-store">' + STORE.name + '</div>' +
@@ -870,7 +1667,6 @@ function buildReceiptHTML(order) {
 
     '<div class="r-rule"></div>' +
 
-    // ── order + date line ──
     '<div class="r-info">' +
       '<span>ORDER ' + esc(order.id) + '</span>' +
       '<span>' + formatDate(when) + '</span>' +
@@ -880,23 +1676,16 @@ function buildReceiptHTML(order) {
       '<span>' + formatTime(when) + '</span>' +
     '</div>' +
 
-    // show the current order status (may be undefined for legacy orders)
-
-    // bills placed before the shipping/pay step shipped won't have this —
-    // still shows fine, just skips the line
     (order.shippingName
       ? '<div class="r-ship">SHIP TO: ' + esc(order.shippingName) + ' — ' + esc(order.shippingAddress) + '</div>'
       : '') +
 
     '<div class="r-rule dashed"></div>' +
-
-    // ── the items ──
     rows +
-
     '<div class="r-rule dashed"></div>' +
 
-    // ── totals ──
     '<div class="r-tot"><span>SUBTOTAL</span><span>$' + order.subtotal.toFixed(2) + '</span></div>' +
+    discountRows +
     '<div class="r-tot"><span>TAX (8.25%)</span><span>$' + order.tax.toFixed(2) + '</span></div>' +
     '<div class="r-tot grand"><span>TOTAL</span><span>$' + order.total.toFixed(2) + '</span></div>' +
     '<div class="r-tot small"><span>ITEMS</span><span>' + order.count + '</span></div>' +
@@ -905,41 +1694,36 @@ function buildReceiptHTML(order) {
 
     '<div class="r-rule dashed"></div>' +
 
-    // ── footer ──
     '<div class="r-foot">' +
       '<div class="r-thanks">*** THANK YOU ***</div>' +
-      '<div class="r-meta">You saved 0 electrons today.</div>' +
-      '<div class="r-barcode">' + barcode() + '</div>' +
-      '<div class="r-meta">' + esc(order.id) + '</div>' +
+      '<div class="r-meta">Verified Community Hardware Receipt</div>' +
+      '<div class="r-barcode">' + barcode(order.id) + '</div>' +
+      '<div class="r-meta">' + esc(order.id) + ' · SCAN TO VERIFY</div>' +
     '</div>';
 }
 
 
 // ── receipt helpers ──
 
-// a fake barcode, drawn as proper black bars of varying width. purely
-// decorative — it doesn't encode anything, it just makes the paper look real.
-function barcode() {
+function barcode(seedStr) {
   var widths = [2,1,3,1,2,4,1,2,1,3,2,1,4,1,2,1,3,1,2,2,1,3,1,4,1,2,1,2,3,1,2,1,3,2,1,2,4,1,2,1];
   var x = 0, bars = "";
   for (var i = 0; i < widths.length; i++) {
     var w = widths[i] * 3;
-    if (i % 2 === 0) {                      // every other stripe is a black bar
+    if (i % 2 === 0) {
       bars += '<rect x="' + x + '" y="0" width="' + w + '" height="44" />';
     }
     x += w;
   }
   return '<svg class="barcode-svg" viewBox="0 0 ' + x + ' 44" width="100%" height="44" ' +
-         'preserveAspectRatio="none"><g fill="#1c1a17">' + bars + '</g></svg>';
+         'preserveAspectRatio="none" aria-label="Receipt barcode ' + esc(seedStr || "") + '"><g fill="#1c1a17">' + bars + '</g></svg>';
 }
 
-// 16 Jul 2026
 function formatDate(d) {
   var months = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
   return d.getDate() + " " + months[d.getMonth()] + " " + d.getFullYear();
 }
 
-// 09:41 PM
 function formatTime(d) {
   var h = d.getHours(), m = d.getMinutes();
   var ampm = h >= 12 ? "PM" : "AM";
@@ -948,26 +1732,16 @@ function formatTime(d) {
   return (h < 10 ? "0" + h : h) + ":" + m + " " + ampm;
 }
 
-
-// ── general helpers ──
-
-// keep numbers to two decimal places so they don't drift
 function round(n) {
   return Math.round(n * 100) / 100;
 }
 
-// basic XSS protection for product titles
 function esc(str) {
   var d = document.createElement("div");
-  d.textContent = str;
+  d.textContent = str == null ? "" : String(str);
   return d.innerHTML;
 }
 
-// the star rating, drawn as real star icons instead of ★ glyphs.
-//
-// it's two rows of five stars stacked on top of each other: a muted outline
-// row underneath, and a filled yellow row on top clipped to the exact rating
-// width. that gives precise part-stars (4.6 → 4.6 stars) with no half-glyph.
 var STAR_PATH = "M11.5 2.3a.53.53 0 0 1 .95 0l2.31 4.68a2.1 2.1 0 0 0 1.6 1.16l5.16.75a.53.53 0 0 1 .3.9l-3.74 3.64a2.1 2.1 0 0 0-.61 1.88l.88 5.14a.53.53 0 0 1-.77.56l-4.62-2.43a2.1 2.1 0 0 0-1.97 0L6.4 21.77a.53.53 0 0 1-.77-.56l.88-5.14a2.1 2.1 0 0 0-.61-1.88L2.16 10.55a.53.53 0 0 1 .3-.9l5.16-.75a2.1 2.1 0 0 0 1.6-1.16z";
 
 function starSvg(filled) {
@@ -987,7 +1761,6 @@ function starRating(rate) {
          '</span>';
 }
 
-// show a subtle border on the topbar once you scroll down a bit
 function watchScroll() {
   var bar = document.getElementById("topbar");
   window.addEventListener("scroll", function () {

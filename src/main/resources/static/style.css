@@ -1614,7 +1614,52 @@ body {
 }
 .card-tag.official { color: #7a8190; }
 
+.card-meta-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-top: 6px;
+  margin-bottom: 2px;
+}
+
+.card-stock {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--muted);
+  white-space: nowrap;
+}
+
+.card-stock.low {
+  color: #ffb400;
+}
+
 .card-img-wrap { position: relative; }
+
+/* Low Stock badge shown on items where quantity < 5 */
+.low-stock-badge {
+  position: absolute;
+  top: 8px;
+  left: 8px;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 4px 9px;
+  border-radius: 6px;
+  background: rgba(255, 107, 107, 0.92);
+  color: #fff;
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.3px;
+  text-transform: uppercase;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.45);
+  backdrop-filter: blur(4px);
+  z-index: 2;
+}
+
+.card.is-low-stock {
+  border-color: rgba(255, 107, 107, 0.28);
+}
 
 /* the report flag on a card — shown to all signed-in users */
 .card-flag {
@@ -1778,3 +1823,917 @@ body.can-report .card-flag { display: grid; }
   .topbar { flex-wrap: wrap; }
   .topbar-search { order: 3; flex-basis: 100%; max-width: none; margin: 12px 0 0; }
 }
+
+
+/* ═══════════════════════════════════════════════════════════════════
+   INDUSTRIAL HARDWARE UI, RECHARTS PRICE HISTORY, RIG BUILDER & ANIMATIONS
+   ═══════════════════════════════════════════════════════════════════ */
+
+.app {
+  padding-bottom: 215px;
+}
+
+/* --- Catalog Toolbar: Category Filter Tabs + Sort + Rig Builder --- */
+
+.catalog-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 10px 0 16px;
+  border-bottom: 1px solid var(--line);
+  margin-bottom: 14px;
+  flex-wrap: wrap;
+}
+
+.filter-bar {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  flex-wrap: wrap;
+}
+
+.filter-tab {
+  background: #14171e;
+  border: 1px solid var(--line);
+  color: var(--muted);
+  font-family: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  padding: 6px 9.5px;
+  border-radius: 8px;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background 0.16s ease, color 0.16s ease, border-color 0.16s ease, transform 0.12s ease;
+}
+
+.filter-tab:hover {
+  color: var(--text);
+  border-color: #363c4a;
+}
+
+.filter-tab.active {
+  background: rgba(var(--accent-rgb), 0.14);
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.toolbar-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-left: auto;
+}
+
+.sort-wrap {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  background: #14171e;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 0 10px;
+  height: 36px;
+  color: var(--muted);
+}
+
+.sort-wrap select {
+  background: transparent;
+  border: none;
+  color: var(--text);
+  font-family: inherit;
+  font-size: 12.5px;
+  font-weight: 600;
+  cursor: pointer;
+  outline: none;
+  padding-right: 4px;
+}
+
+.sort-wrap select option {
+  background: #181b22;
+  color: var(--text);
+}
+
+.rig-trigger-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  height: 36px;
+  padding: 0 13px;
+  border-radius: 8px;
+  border: 1px solid rgba(255, 210, 63, 0.35);
+  background: rgba(255, 210, 63, 0.08);
+  color: #ffd23f;
+  font-family: inherit;
+  font-size: 12.5px;
+  font-weight: 700;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background 0.18s ease, border-color 0.18s ease, transform 0.12s ease;
+}
+
+.rig-trigger-btn:hover {
+  background: rgba(255, 210, 63, 0.16);
+  border-color: #ffd23f;
+  transform: translateY(-1px);
+}
+
+.rig-trigger-btn.bundle-active {
+  background: linear-gradient(135deg, rgba(255, 210, 63, 0.22), rgba(45, 212, 191, 0.22));
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.rig-progress-text {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 11.5px;
+  font-weight: 700;
+  opacity: 0.9;
+}
+
+
+/* --- Tactile Glass & Brushed Metal Cards + Industrial Hardware SKU --- */
+
+.card {
+  position: relative;
+  border-top: 1px solid rgba(255, 255, 255, 0.13);
+  background:
+    radial-gradient(320px circle at var(--mouse-x, 50%) var(--mouse-y, 0%), rgba(45, 212, 191, 0.07), transparent 70%),
+    var(--card);
+}
+
+.card-img-wrap {
+  cursor: pointer;
+}
+
+.card-sku-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.card-sku {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 11px;
+  font-weight: 700;
+  color: #7c8596;
+  letter-spacing: 0.4px;
+}
+
+.card-specs-link {
+  background: none;
+  border: none;
+  color: var(--accent);
+  font-family: inherit;
+  font-size: 11.5px;
+  font-weight: 600;
+  cursor: pointer;
+  padding: 0;
+  white-space: nowrap;
+}
+
+.card-specs-link:hover {
+  text-decoration: underline;
+}
+
+.card-title-btn {
+  background: none;
+  border: none;
+  color: var(--text);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  padding: 0;
+  transition: color 0.15s ease;
+}
+
+.card-title-btn:hover {
+  color: var(--accent);
+}
+
+.card-price-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin: 6px 0 10px;
+}
+
+.card-price {
+  margin-bottom: 0;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--text);
+  font-variant-numeric: tabular-nums;
+}
+
+.chart-toggle-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 4px 9px;
+  border-radius: 6px;
+  border: 1px solid var(--line);
+  background: #13161c;
+  color: var(--muted);
+  font-family: inherit;
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: border-color 0.16s ease, color 0.16s ease, background 0.16s ease;
+}
+
+.chart-toggle-btn:hover,
+.chart-toggle-btn.active {
+  border-color: #ffd23f;
+  color: #ffd23f;
+  background: rgba(255, 210, 63, 0.09);
+}
+
+.card-chart-drawer {
+  background: #12151b;
+  border: 1px solid #252a35;
+  border-radius: 9px;
+  padding: 8px 8px 4px;
+  margin-bottom: 12px;
+  animation: sheet-in 0.18s ease;
+}
+
+.card-chart-drawer[hidden] {
+  display: none;
+}
+
+.card-chart-meta {
+  display: flex;
+  justify-content: space-between;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 10.5px;
+  color: var(--muted);
+  padding: 0 4px 4px;
+}
+
+.card-chart-meta b {
+  color: #ffd23f;
+}
+
+.card-chart-mount {
+  width: 100%;
+  min-height: 112px;
+}
+
+
+/* --- Low Stock Urgency Pulse & Staggered Grid Reveal --- */
+
+@keyframes lowStockUrgency {
+  0%, 100% { box-shadow: 0 4px 12px rgba(0, 0, 0, 0.45), 0 0 0 0 rgba(255, 107, 107, 0); }
+  50%      { box-shadow: 0 4px 14px rgba(255, 107, 107, 0.45), 0 0 0 4px rgba(255, 107, 107, 0.18); }
+}
+
+.low-stock-badge.critical {
+  animation: lowStockUrgency 2.8s ease-in-out infinite;
+}
+
+@keyframes cardStaggerIn {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.card.stagger-in {
+  animation: cardStaggerIn 0.22s cubic-bezier(0.16, 1, 0.3, 1) both;
+  animation-delay: calc(var(--stagger-idx, 0) * 22ms);
+}
+
+@keyframes restockFlash {
+  0%   { border-color: var(--success); box-shadow: 0 0 22px rgba(81, 207, 102, 0.4); }
+  100% { border-color: var(--line); box-shadow: none; }
+}
+
+.card.restock-flash {
+  animation: restockFlash 1.2s ease;
+}
+
+
+/* --- Promo Code Bar, Odometer Roll & Fly-to-Cart Pulse --- */
+
+.promo-bar-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 8px;
+  padding-bottom: 8px;
+  border-bottom: 1px dashed var(--line);
+  flex-wrap: wrap;
+}
+
+.promo-input-group {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+#promo-code-input {
+  background: #12151b;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  padding: 5px 10px;
+  color: var(--text);
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 12px;
+  width: 190px;
+  text-transform: uppercase;
+}
+
+#promo-code-input:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
+.promo-apply-btn {
+  background: #222631;
+  border: 1px solid var(--line);
+  color: var(--text);
+  border-radius: 7px;
+  padding: 5px 11px;
+  font-family: inherit;
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: border-color 0.15s, color 0.15s;
+}
+
+.promo-apply-btn:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.promo-status-note {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--accent);
+}
+
+.promo-status-note.error {
+  color: var(--danger);
+}
+
+.order-line.discount-line {
+  color: #ffd23f;
+  font-weight: 600;
+}
+
+.order-line.discount-line[hidden] {
+  display: none;
+}
+
+.odometer-wrap {
+  display: inline-flex;
+  align-items: baseline;
+  font-family: 'JetBrains Mono', monospace;
+  font-variant-numeric: tabular-nums;
+  overflow: hidden;
+}
+
+@keyframes odometerDigitRoll {
+  0% {
+    transform: translateY(-100%);
+    opacity: 0.15;
+    color: #ffd23f;
+  }
+  70% {
+    transform: translateY(8%);
+    opacity: 1;
+  }
+  100% {
+    transform: translateY(0);
+    opacity: 1;
+  }
+}
+
+.odo-digit {
+  display: inline-block;
+  white-space: pre;
+}
+
+.odo-digit.roll {
+  animation: odometerDigitRoll 0.24s cubic-bezier(0.16, 1, 0.3, 1) both;
+  animation-delay: calc(var(--digit-idx, 0) * 18ms);
+}
+
+@keyframes badgeSpring {
+  0%   { transform: scale(1); }
+  45%  { transform: scale(1.32); }
+  100% { transform: scale(1); }
+}
+
+.badge.badge-spring {
+  animation: badgeSpring 0.28s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+@keyframes orderBarPulse {
+  0%   { border-color: #ffd23f; box-shadow: 0 -4px 24px rgba(255, 210, 63, 0.25); }
+  100% { border-color: var(--line); box-shadow: none; }
+}
+
+.order-bar.bar-pulse {
+  animation: orderBarPulse 0.65s ease;
+}
+
+
+/* --- Thermal Printer Slot & Paper Feed Animation --- */
+
+.printer-housing {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  overflow: hidden;
+  padding-top: 4px;
+}
+
+.printer-bezel {
+  width: 376px;
+  max-width: 94vw;
+  background: linear-gradient(180deg, #232834 0%, #161922 100%);
+  border: 1px solid #323846;
+  border-bottom: none;
+  border-radius: 12px 12px 0 0;
+  padding: 7px 14px 5px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 10px;
+  letter-spacing: 0.8px;
+  color: #8e96a8;
+  z-index: 3;
+}
+
+.printer-bezel-status {
+  color: var(--accent);
+  font-weight: 700;
+}
+
+.printer-slot {
+  width: 376px;
+  max-width: 94vw;
+  height: 14px;
+  background: #07080b;
+  border: 1px solid #2b303c;
+  border-radius: 0 0 6px 6px;
+  box-shadow: inset 0 4px 8px rgba(0, 0, 0, 0.95), 0 6px 16px rgba(0, 0, 0, 0.55);
+  z-index: 2;
+  margin-bottom: -5px;
+}
+
+@keyframes thermalPaperFeed {
+  0% {
+    transform: translateY(-88%);
+    opacity: 0.15;
+  }
+  45% {
+    transform: translateY(-22%);
+    opacity: 0.92;
+  }
+  75% {
+    transform: translateY(-4%);
+    opacity: 1;
+  }
+  100% {
+    transform: translateY(0);
+    opacity: 1;
+  }
+}
+
+.receipt-paper.thermal-feed {
+  transform-origin: top center;
+  animation: thermalPaperFeed 0.62s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+
+/* --- Slide-Over Side Drawers (Rig Builder & Product Spec Sheet) --- */
+
+.drawer-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 75;
+  display: none;
+  justify-content: flex-end;
+  background: rgba(5, 7, 11, 0.72);
+  backdrop-filter: blur(5px);
+  -webkit-backdrop-filter: blur(5px);
+}
+
+.drawer-overlay.open {
+  display: flex;
+  animation: fadeIn 0.18s ease;
+}
+
+.side-drawer {
+  width: 440px;
+  max-width: 94vw;
+  height: 100vh;
+  background: #151820;
+  border-left: 1px solid var(--line);
+  padding: 24px 22px 32px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  box-shadow: -20px 0 50px rgba(0, 0, 0, 0.6);
+  animation: drawerSlideIn 0.22s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+@keyframes drawerSlideIn {
+  from { transform: translateX(100%); }
+  to   { transform: translateX(0); }
+}
+
+.drawer-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  padding-bottom: 14px;
+  border-bottom: 1px solid var(--line);
+}
+
+.drawer-head .modal-close {
+  position: static;
+}
+
+.drawer-kicker {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--accent);
+  letter-spacing: 0.5px;
+  text-transform: uppercase;
+}
+
+.drawer-title {
+  font-size: 20px;
+  font-weight: 800;
+  margin-top: 2px;
+}
+
+/* Rig Builder Banner & Slots */
+.rig-banner {
+  background: #101319;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  padding: 14px 16px;
+}
+
+.rig-banner.unlocked {
+  border-color: var(--accent);
+  background: rgba(45, 212, 191, 0.07);
+}
+
+.rig-banner-top {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.rig-banner-title {
+  font-size: 13.5px;
+  font-weight: 700;
+  color: #ffd23f;
+}
+
+.rig-banner.unlocked .rig-banner-title {
+  color: var(--accent);
+}
+
+.rig-banner-fraction {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.rig-meter-track {
+  height: 7px;
+  background: #222631;
+  border-radius: 999px;
+  overflow: hidden;
+  margin-bottom: 10px;
+}
+
+.rig-meter-fill {
+  height: 100%;
+  background: linear-gradient(90deg, #ffd23f, var(--accent));
+  border-radius: 999px;
+  transition: width 0.25s ease;
+}
+
+.rig-banner-sub {
+  font-size: 12px;
+  color: var(--muted);
+  line-height: 1.45;
+}
+
+.rig-slots-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.rig-slot-card {
+  background: #101319;
+  border: 1px solid var(--line);
+  border-radius: 11px;
+  padding: 12px 14px;
+}
+
+.rig-slot-card.filled {
+  border-color: rgba(45, 212, 191, 0.45);
+}
+
+.rig-slot-top {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 6px;
+}
+
+.rig-slot-name {
+  font-size: 13.5px;
+  font-weight: 700;
+}
+
+.rig-slot-state {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 11px;
+  color: var(--muted);
+}
+
+.rig-slot-card.filled .rig-slot-state {
+  color: var(--accent);
+}
+
+.rig-slot-picked,
+.rig-slot-empty {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  font-size: 12.5px;
+  color: var(--muted);
+}
+
+.rig-slot-picked span {
+  color: var(--text);
+  font-weight: 600;
+}
+
+.rig-slot-action {
+  border-radius: 7px;
+  padding: 5px 10px;
+  font-family: inherit;
+  font-size: 11.5px;
+  font-weight: 700;
+  cursor: pointer;
+  white-space: nowrap;
+  border: 1px solid var(--line);
+  background: #181b22;
+  color: var(--text);
+}
+
+.rig-slot-action.add:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.rig-slot-action.remove:hover {
+  border-color: var(--danger);
+  color: var(--danger);
+}
+
+/* Spec Drawer */
+.spec-drawer-body {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.spec-hero-row {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+
+.spec-hero-img {
+  width: 84px;
+  height: 84px;
+  border-radius: 10px;
+  object-fit: cover;
+  border: 1px solid var(--line);
+  background: #101319;
+  flex-shrink: 0;
+}
+
+.spec-category-line {
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.spec-price-line {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 22px;
+  font-weight: 800;
+  color: var(--text);
+  margin: 2px 0;
+}
+
+.spec-stock-line {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--accent);
+}
+
+.spec-stock-line.low {
+  color: #ffb400;
+}
+
+.spec-desc {
+  font-size: 13px;
+  color: var(--muted);
+  line-height: 1.5;
+}
+
+.spec-section {
+  background: #101319;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  padding: 14px;
+}
+
+.spec-section-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  margin-bottom: 10px;
+}
+
+.spec-section-title {
+  font-size: 12.5px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+  color: var(--text);
+}
+
+.spec-section-note {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 11px;
+  color: var(--accent);
+}
+
+.spec-price-stats {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 8px;
+  margin-bottom: 10px;
+}
+
+.spec-stat-cell {
+  background: #161a22;
+  border: 1px solid #232834;
+  border-radius: 8px;
+  padding: 7px 9px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.spec-stat-label {
+  font-size: 10.5px;
+  color: var(--muted);
+}
+
+.spec-stat-val {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--text);
+}
+
+.drawer-chart-box {
+  width: 100%;
+  min-height: 170px;
+}
+
+.spec-table {
+  display: flex;
+  flex-direction: column;
+}
+
+.spec-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 8px 0;
+  border-bottom: 1px solid #1e232d;
+  font-size: 12.5px;
+}
+
+.spec-row:last-child {
+  border-bottom: none;
+  padding-bottom: 0;
+}
+
+.spec-row span:first-child {
+  color: var(--muted);
+}
+
+.spec-row span:last-child {
+  font-weight: 600;
+  text-align: right;
+}
+
+.spec-row .mono {
+  font-family: 'JetBrains Mono', monospace;
+}
+
+.spec-actions-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding-top: 6px;
+}
+
+.spec-qty-control {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.restock-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 9px 14px;
+  border-radius: 9px;
+  border: 1px solid var(--line);
+  background: #1b202a;
+  color: var(--text);
+  font-family: inherit;
+  font-size: 12.5px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: border-color 0.16s, color 0.16s;
+}
+
+.restock-btn:hover {
+  border-color: var(--success);
+  color: var(--success);
+}
+
+/* Live Activity Toast */
+.activity-toast {
+  position: fixed;
+  bottom: 165px;
+  right: 24px;
+  z-index: 65;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  background: #151922;
+  border: 1px solid var(--accent);
+  color: var(--text);
+  padding: 10px 15px;
+  border-radius: 10px;
+  font-size: 12.5px;
+  font-weight: 600;
+  box-shadow: 0 12px 30px rgba(0, 0, 0, 0.5);
+  opacity: 0;
+  transform: translateY(8px);
+  transition: opacity 0.2s ease, transform 0.2s ease;
+}
+
+.activity-toast.visible {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+.activity-toast[hidden] {
+  display: none;
+}
+
+.activity-toast-icon {
+  color: var(--accent);
+  display: inline-flex;
+}
+
