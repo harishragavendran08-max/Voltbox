@@ -231,13 +231,66 @@ function loadMe() {
     .then(function (data) {
       me = data;
       cart = data.cart || {};
+      if (data.cartDetails) {
+        window.serverCartState = data.cartDetails;
+      }
       paintProfile();
       fetchProducts();
+      fetchCart();
+      fetchInventorySummary();
       if (window.onMeLoaded) window.onMeLoaded();
     })
     .catch(function (err) {
       console.error("couldn't load your account:", err);
     });
+}
+
+function fetchCart(promoOverride) {
+  var code = promoOverride !== undefined ? promoOverride : activePromoCode;
+  var url = "/api/cart" + (code ? ("?promoCode=" + encodeURIComponent(code)) : "");
+  return api(url, { method: "GET" })
+    .then(function (res) {
+      if (!res.ok) return null;
+      return res.json();
+    })
+    .then(function (data) {
+      if (!data) return null;
+      var serverCart = data.cart || data;
+      if (serverCart && typeof serverCart === "object") {
+        window.serverCartState = serverCart;
+      }
+      if (data.rawCart && typeof data.rawCart === "object") {
+        cart = data.rawCart;
+      } else if (serverCart && serverCart.rawMap && typeof serverCart.rawMap === "object") {
+        cart = serverCart.rawMap;
+      }
+      if (products.length > 0) {
+        for (var i = 0; i < products.length; i++) {
+          refreshCard(products[i].id);
+        }
+        recalc(false);
+      }
+      return serverCart;
+    })
+    .catch(function (err) {
+      console.error("couldn't fetch cart from /api/cart:", err);
+      return null;
+    });
+}
+
+function fetchInventorySummary() {
+  return fetch("/api/inventory")
+    .then(function (res) {
+      if (!res.ok) return null;
+      return res.json();
+    })
+    .then(function (summary) {
+      if (summary && summary.ok) {
+        window.voltboxInventorySummary = summary;
+      }
+      return summary;
+    })
+    .catch(function () { return null; });
 }
 
 function paintProfile() {
@@ -381,14 +434,23 @@ function getPriceHistoryFor(p) {
 
 // ── fetch the product list from our backend ──
 
-function fetchProducts() {
-  fetch("/api/products")
+function fetchProducts(filterParams) {
+  var queryParts = [];
+  if (filterParams && typeof filterParams === "object") {
+    if (filterParams.category) queryParts.push("category=" + encodeURIComponent(filterParams.category));
+    if (filterParams.group) queryParts.push("group=" + encodeURIComponent(filterParams.group));
+    if (filterParams.search) queryParts.push("search=" + encodeURIComponent(filterParams.search));
+    if (filterParams.lowStock) queryParts.push("lowStock=true");
+  }
+  var endpoint = "/api/products" + (queryParts.length > 0 ? ("?" + queryParts.join("&")) : "");
+
+  return fetch(endpoint)
     .then(function (res) {
       if (!res.ok) throw new Error("server returned " + res.status);
       return res.json();
     })
     .then(function (data) {
-      products = data;
+      products = Array.isArray(data) ? data.map(normalizeProductEntity) : [];
       // Expand the first product's Recharts price history on initial load so users see it immediately
       if (products.length > 0 && Object.keys(expandedCharts).length === 0) {
         expandedCharts[products[0].id] = true;
@@ -399,6 +461,7 @@ function fetchProducts() {
         var current = findProductById(activeSpecProductId);
         if (current) populateSpecDrawer(current);
       }
+      return products;
     })
     .catch(function (err) {
       console.error("couldn't load products:", err);
@@ -406,7 +469,20 @@ function fetchProducts() {
         loadingEl.innerHTML =
           '<p style="color:#ff6b6b;">couldn\'t load products — is the server running?</p>';
       }
+      return [];
     });
+}
+
+function normalizeProductEntity(p) {
+  if (!p || typeof p !== "object") return p;
+  if (!p.title && p.name) p.title = p.name;
+  if (!p.name && p.title) p.name = p.title;
+  var stockVal = typeof p.stockQuantity === "number" ? p.stockQuantity
+    : (typeof p.quantity === "number" ? p.quantity : (typeof p.stock === "number" ? p.stock : 10));
+  p.stockQuantity = stockVal;
+  p.quantity = stockVal;
+  p.stock = stockVal;
+  return p;
 }
 
 
@@ -451,6 +527,7 @@ function cardTag(p) {
 var LOW_STOCK_LIMIT = 5;
 
 function getProductStock(p) {
+  if (typeof p.stockQuantity === "number" && !isNaN(p.stockQuantity)) return p.stockQuantity;
   if (typeof p.quantity === "number" && !isNaN(p.quantity)) return p.quantity;
   if (typeof p.stock === "number" && !isNaN(p.stock)) return p.stock;
   return 10;
@@ -710,6 +787,31 @@ function openSpecDrawer(productId) {
   specDrawerOverlayEl.classList.add("open");
   specDrawerOverlayEl.setAttribute("aria-hidden", "false");
   document.body.classList.add("no-scroll");
+
+  // Fetch live product + inventory entity state from Spring Boot ProductController
+  fetch("/api/products/" + productId + "/inventory")
+    .then(function (res) {
+      if (!res.ok) return null;
+      return res.json();
+    })
+    .then(function (payload) {
+      if (!payload || !payload.product) return;
+      var liveProduct = normalizeProductEntity(payload.product);
+      if (payload.inventory) {
+        liveProduct.inventory = payload.inventory;
+      }
+      for (var i = 0; i < products.length; i++) {
+        if (products[i].id === liveProduct.id) {
+          products[i] = liveProduct;
+          break;
+        }
+      }
+      refreshCard(liveProduct.id);
+      if (activeSpecProductId === liveProduct.id) {
+        populateSpecDrawer(liveProduct);
+      }
+    })
+    .catch(function () {});
 }
 
 function closeSpecDrawer() {
@@ -788,14 +890,16 @@ function populateSpecDrawer(p) {
 }
 
 function restockProduct(productId) {
-  api("/api/products/" + productId + "/restock", {
+  api("/api/products/" + productId + "/inventory", {
     method: "POST",
-    body: JSON.stringify({ amount: 3 })
+    body: JSON.stringify({ delta: 3, amount: 3, reason: "Spec Drawer Bench Restock" })
   })
     .then(function (r) { return r.json(); })
-    .then(function (updated) {
+    .then(function (payload) {
+      var updated = (payload && payload.product) ? payload.product : payload;
       if (updated && updated.id) {
-        onProductRestocked(updated);
+        onProductRestocked(normalizeProductEntity(updated));
+        fetchInventorySummary();
       }
     })
     .catch(function (err) {
@@ -805,6 +909,7 @@ function restockProduct(productId) {
 
 window.onProductRestocked = function (updated) {
   if (!updated || !updated.id) return;
+  updated = normalizeProductEntity(updated);
   for (var i = 0; i < products.length; i++) {
     if (products[i].id === updated.id) {
       products[i] = updated;
@@ -1024,12 +1129,25 @@ function applyPromoCode() {
     activePromoCode = null;
     showPromoNote("Promo cleared.", false);
     recalc();
+    fetchCart(null);
     return;
   }
   if (raw in PROMO_MAP) {
     activePromoCode = raw;
     showPromoNote("Applied " + PROMO_MAP[raw].label, false);
     recalc();
+    api("/api/cart/promo", {
+      method: "POST",
+      body: JSON.stringify({ promoCode: raw })
+    })
+      .then(function (r) { return r.ok ? r.json() : null; })
+      .then(function (data) {
+        if (data && data.cart) {
+          window.serverCartState = data.cart;
+          recalc(false);
+        }
+      })
+      .catch(function () {});
   } else {
     showPromoNote("Unknown code — try VOLT10 or BUILDER5", true);
   }
@@ -1078,9 +1196,19 @@ function queueCartSave() {
 }
 
 function saveCart() {
-  api("/api/cart", { method: "PUT", body: JSON.stringify(cart) })
+  var url = "/api/cart" + (activePromoCode ? ("?promoCode=" + encodeURIComponent(activePromoCode)) : "");
+  return api(url, { method: "PUT", body: JSON.stringify(cart) })
+    .then(function (r) { return r.ok ? r.json() : null; })
+    .then(function (data) {
+      if (data && data.cart) {
+        window.serverCartState = data.cart;
+      }
+      fetchInventorySummary();
+      return data;
+    })
     .catch(function (err) {
       console.error("couldn't save the cart:", err);
+      return null;
     });
 }
 

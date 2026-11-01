@@ -154,6 +154,7 @@ public class Store {
         return u;
     }
 
+    public synchronized List<User> getUsers() { return users; }
     public synchronized List<Product> getProducts() { return products; }
     public synchronized Product findProduct(int id) {
         for (Product p : products) if (p.id == id) return p;

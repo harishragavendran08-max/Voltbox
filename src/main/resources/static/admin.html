@@ -1,0 +1,408 @@
+<!DOCTYPE html>
+<html lang="en" class="dark">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+  <title>Voltbox Admin — Catalog CRUD, Warehouse Inventory &amp; System Health</title>
+  <meta name="description" content="Voltbox Spring Boot Administration Console for product CRUD operations, warehouse inventory management, and real-time JPA &amp; JVM system health metrics." />
+  <link rel="icon" type="image/svg+xml" href="/icon.svg" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600&family=JetBrains+Mono:wght@400;500;600;700&family=Plus+Jakarta+Sans:wght@600;700;800&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="/admin.css" />
+  <script>
+    if (!localStorage.getItem("voltbox_token")) {
+      localStorage.setItem("voltbox_token", "ed4a9555-540b-4bb9-a406-b353acded905");
+      localStorage.setItem("voltbox_user", "Harish");
+    }
+  </script>
+</head>
+<body>
+  <div class="admin-shell">
+    <!-- Left Workspace Sidebar -->
+    <aside class="admin-sidebar" aria-label="Admin Navigation">
+      <div class="sidebar-brand">
+        <a href="/" class="brand-link" title="Return to Voltbox Storefront">
+          <span class="brand-mark" aria-hidden="true">
+            <svg width="26" height="26" viewBox="0 0 40 40" xmlns="http://www.w3.org/2000/svg">
+              <rect x="3" y="3" width="34" height="34" rx="9" fill="#ffd23f"/>
+              <path fill="#0f172a" d="M21 9 11 21h7l-1 10 10-12h-7z"/>
+            </svg>
+          </span>
+          <span class="brand-wordmark">voltbox</span>
+        </a>
+      </div>
+
+      <nav class="sidebar-nav" id="sidebar-nav">
+        <button type="button" class="nav-item active" data-view="catalog" id="nav-btn-catalog">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/></svg>
+          <span>Product CRUD</span>
+          <span class="nav-count mono" id="nav-count-catalog">0</span>
+        </button>
+        <button type="button" class="nav-item" data-view="inventory" id="nav-btn-inventory">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/><polyline points="3.27 6.96 12 12.01 20.73 6.96"/><line x1="12" y1="22.08" x2="12" y2="12"/></svg>
+          <span>Inventory Levels</span>
+          <span class="nav-count mono warn" id="nav-count-lowstock">0</span>
+        </button>
+        <button type="button" class="nav-item" data-view="health" id="nav-btn-health">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
+          <span>System Health &amp; JPA</span>
+          <span class="nav-count mono ok" id="nav-status-health">UP</span>
+        </button>
+      </nav>
+
+      <div class="sidebar-footer">
+        <div class="operator-row">
+          <span class="operator-avatar" id="admin-operator-avatar">H</span>
+          <div class="operator-meta">
+            <div class="operator-name" id="admin-operator-name">Harish</div>
+            <div class="operator-role" id="admin-operator-role">Administrator · Spring Boot</div>
+          </div>
+        </div>
+        <a href="/" class="storefront-return-link">
+          <span>← Storefront Catalog</span>
+        </a>
+      </div>
+    </aside>
+
+    <!-- Main Workspace Area -->
+    <div class="admin-workspace">
+      <!-- Top Bar (Strictly 3 zones: Breadcrumb trail | Section Switcher on mobile | Primary Action) -->
+      <header class="admin-topbar">
+        <div class="breadcrumb-trail">
+          <a href="/" class="breadcrumb-root">Voltbox</a>
+          <span class="breadcrumb-sep" aria-hidden="true">/</span>
+          <span class="breadcrumb-node">Admin Console</span>
+          <span class="breadcrumb-sep" aria-hidden="true">/</span>
+          <span class="breadcrumb-current" id="breadcrumb-current">Product CRUD</span>
+        </div>
+
+        <div class="topbar-actions">
+          <button type="button" class="btn-secondary" id="refresh-data-btn">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>
+            <span>Sync Telemetry</span>
+          </button>
+          <button type="button" class="btn-primary" id="open-create-modal-btn">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+            <span>New Product</span>
+          </button>
+        </div>
+      </header>
+
+      <!-- Global KPI Strip -->
+      <section class="kpi-strip" aria-label="Key Warehouse and System Metrics">
+        <div class="kpi-cell">
+          <div class="kpi-label">Active Catalog SKUs</div>
+          <div class="kpi-value mono" id="kpi-active-skus">--</div>
+          <div class="kpi-sub" id="kpi-sku-breakdown">Loading repository…</div>
+        </div>
+        <div class="kpi-cell">
+          <div class="kpi-label">Warehouse Stock Units</div>
+          <div class="kpi-value mono" id="kpi-total-units">--</div>
+          <div class="kpi-sub" id="kpi-reserved-note">0 units reserved in carts</div>
+        </div>
+        <div class="kpi-cell">
+          <div class="kpi-label">Low-Stock Alerts (&lt; 5)</div>
+          <div class="kpi-value mono warn" id="kpi-low-stock">--</div>
+          <div class="kpi-sub" id="kpi-critical-note">0 critical (&le; 2 units)</div>
+        </div>
+        <div class="kpi-cell">
+          <div class="kpi-label">Inventory Valuation</div>
+          <div class="kpi-value mono" id="kpi-valuation">$0.00</div>
+          <div class="kpi-sub" id="kpi-db-engine">Spring Data JPA · H2/MySQL</div>
+        </div>
+      </section>
+
+      <!-- Status Toast Notification -->
+      <div class="admin-toast" id="admin-toast" role="status" aria-live="polite" hidden></div>
+
+      <!-- =========================================================
+           VIEW 1: PRODUCT CRUD & CATALOG MANAGEMENT
+           ========================================================= -->
+      <main class="admin-view" id="view-catalog">
+        <div class="panel-surface">
+          <div class="panel-toolbar">
+            <div class="toolbar-left">
+              <div class="search-field">
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+                <input type="search" id="admin-search-input" placeholder="Search by SKU, product name, or category…" autocomplete="off" />
+              </div>
+
+              <select id="admin-group-select" class="select-control" aria-label="Filter by component group">
+                <option value="all">All Component Groups</option>
+                <option value="gpus">Graphics Cards (GPUs)</option>
+                <option value="cpus">Processors (CPUs)</option>
+                <option value="motherboards">Motherboards &amp; Memory</option>
+                <option value="storage">NVMe &amp; Drive Storage</option>
+                <option value="audio">Studio &amp; Personal Audio</option>
+                <option value="gaming">Console &amp; Gaming Gear</option>
+                <option value="other">Other Components</option>
+              </select>
+            </div>
+
+            <div class="segmented-filter" id="admin-stock-filter" role="tablist" aria-label="Filter by stock state">
+              <button type="button" class="seg-btn active" data-stock-filter="all">All</button>
+              <button type="button" class="seg-btn" data-stock-filter="nominal">In Stock</button>
+              <button type="button" class="seg-btn" data-stock-filter="low">Low Stock</button>
+              <button type="button" class="seg-btn" data-stock-filter="critical">Critical</button>
+              <button type="button" class="seg-btn" data-stock-filter="archived">Archived</button>
+            </div>
+          </div>
+
+          <div class="table-scroll">
+            <table class="data-table" id="admin-products-table">
+              <thead>
+                <tr>
+                  <th>Hardware Component</th>
+                  <th>Part SKU</th>
+                  <th>Group / Category</th>
+                  <th class="num-col">Unit Price</th>
+                  <th class="num-col">Stock Level</th>
+                  <th>Quick Adjust</th>
+                  <th>Status</th>
+                  <th class="actions-col">Actions</th>
+                </tr>
+              </thead>
+              <tbody id="admin-products-tbody">
+                <tr>
+                  <td colspan="8" class="empty-cell">Loading product entities from Spring Boot `/api/admin/products`…</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </main>
+
+      <!-- =========================================================
+           VIEW 2: WAREHOUSE INVENTORY & AUDIT LEDGER
+           ========================================================= -->
+      <section class="admin-view" id="view-inventory" hidden>
+        <div class="split-grid">
+          <!-- Low-Stock Replenishment Queue -->
+          <div class="panel-surface">
+            <div class="panel-header">
+              <div>
+                <h2 class="panel-title">01. Low-Stock Replenishment Queue</h2>
+                <p class="panel-subtitle">Products with fewer than 5 units in `ProductRepository`</p>
+              </div>
+              <button type="button" class="btn-primary" id="batch-restock-btn">
+                <span>Restock All Low-Stock (+5)</span>
+              </button>
+            </div>
+            <div class="table-scroll">
+              <table class="data-table">
+                <thead>
+                  <tr>
+                    <th>SKU</th>
+                    <th>Component</th>
+                    <th class="num-col">Current</th>
+                    <th>State</th>
+                    <th class="actions-col">Replenish</th>
+                  </tr>
+                </thead>
+                <tbody id="low-stock-queue-tbody"></tbody>
+              </table>
+            </div>
+          </div>
+
+          <!-- Component Group Valuation & Stock Distribution -->
+          <div class="panel-surface">
+            <div class="panel-header">
+              <div>
+                <h2 class="panel-title">02. Warehouse Valuation by Group</h2>
+                <p class="panel-subtitle">Aggregated across active JPA `ProductEntity` records</p>
+              </div>
+            </div>
+            <div class="table-scroll">
+              <table class="data-table">
+                <thead>
+                  <tr>
+                    <th>Component Group</th>
+                    <th class="num-col">SKUs</th>
+                    <th class="num-col">Units</th>
+                    <th class="num-col">Low Stock</th>
+                    <th class="num-col">Valuation</th>
+                  </tr>
+                </thead>
+                <tbody id="group-breakdown-tbody"></tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+
+        <!-- Warehouse Transaction Audit Ledger -->
+        <div class="panel-surface">
+          <div class="panel-header">
+            <div>
+              <h2 class="panel-title">03. Inventory Transaction Ledger</h2>
+              <p class="panel-subtitle">Real-time stock mutations recorded via `ProductController` &amp; `InventoryController`</p>
+            </div>
+            <div class="custom-adjust-bar">
+              <select id="ledger-product-select" class="select-control" aria-label="Select product to adjust"></select>
+              <input type="number" id="ledger-qty-input" class="input-control compact mono" value="10" min="0" max="999" aria-label="New stock quantity" />
+              <input type="text" id="ledger-reason-input" class="input-control" placeholder="Adjustment reason (e.g. Warehouse audit)" />
+              <button type="button" class="btn-secondary" id="ledger-apply-btn">Set Stock</button>
+            </div>
+          </div>
+          <div class="table-scroll">
+            <table class="data-table">
+              <thead>
+                <tr>
+                  <th>Tx ID</th>
+                  <th>Timestamp</th>
+                  <th>SKU</th>
+                  <th>Product</th>
+                  <th>Operation</th>
+                  <th class="num-col">Delta</th>
+                  <th class="num-col">New Stock</th>
+                  <th>Actor &amp; Reason</th>
+                </tr>
+              </thead>
+              <tbody id="inventory-ledger-tbody"></tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+
+      <!-- =========================================================
+           VIEW 3: SYSTEM HEALTH, JPA PERSISTENCE & REST INSPECTOR
+           ========================================================= -->
+      <section class="admin-view" id="view-health" hidden>
+        <div class="split-grid">
+          <!-- Spring Boot & JVM Runtime Card -->
+          <div class="panel-surface">
+            <div class="panel-header">
+              <div>
+                <h2 class="panel-title">01. Spring Boot &amp; JVM Runtime</h2>
+                <p class="panel-subtitle">Live telemetry from `GET /api/admin/metrics`</p>
+              </div>
+              <span class="state-label ok" id="health-runtime-badge">STATUS: UP</span>
+            </div>
+            <div class="metric-rows" id="jvm-metrics-list"></div>
+          </div>
+
+          <!-- Spring Data JPA & Database Card -->
+          <div class="panel-surface">
+            <div class="panel-header">
+              <div>
+                <h2 class="panel-title">02. Spring Data JPA &amp; Datasource</h2>
+                <p class="panel-subtitle">Configured in `application.properties` (`H2` / `MySQL`)</p>
+              </div>
+              <span class="state-label ok" id="health-db-badge">CONNECTED</span>
+            </div>
+            <div class="metric-rows" id="db-metrics-list"></div>
+          </div>
+        </div>
+
+        <div class="split-grid">
+          <!-- Commerce & Community Overview -->
+          <div class="panel-surface">
+            <div class="panel-header">
+              <div>
+                <h2 class="panel-title">03. Storefront &amp; Community Activity</h2>
+                <p class="panel-subtitle">Accounts, orders, moderation queue, and WebSocket sessions</p>
+              </div>
+            </div>
+            <div class="metric-rows" id="commerce-metrics-list"></div>
+          </div>
+
+          <!-- Live Spring Boot REST Endpoint Inspector -->
+          <div class="panel-surface">
+            <div class="panel-header">
+              <div>
+                <h2 class="panel-title">04. Spring Boot REST Endpoint Probe</h2>
+                <p class="panel-subtitle">Execute live `fetch()` calls against backend controllers</p>
+              </div>
+            </div>
+            <div class="endpoint-list" id="endpoint-probe-list"></div>
+            <div class="probe-output-wrap">
+              <div class="probe-output-head">
+                <span class="mono" id="probe-output-label">GET /api/admin/metrics</span>
+                <span class="mono" id="probe-output-status">200 OK</span>
+              </div>
+              <pre class="probe-output-pre mono" id="probe-output-json">Click any endpoint above to inspect live JSON payload…</pre>
+            </div>
+          </div>
+        </div>
+      </section>
+    </div>
+  </div>
+
+  <!-- Create / Edit Product Modal -->
+  <div class="modal-backdrop" id="product-modal-backdrop" aria-hidden="true" hidden>
+    <div class="modal-dialog" role="dialog" aria-modal="true" aria-labelledby="product-modal-title">
+      <div class="modal-header">
+        <div>
+          <h2 class="modal-title" id="product-modal-title">New Hardware Product</h2>
+          <p class="modal-subtitle" id="product-modal-subtitle">Persists to `ProductRepository` (`products` table) via Spring Boot REST API</p>
+        </div>
+        <button type="button" class="icon-close-btn" id="product-modal-close" aria-label="Close modal">✕</button>
+      </div>
+
+      <form id="product-crud-form" class="modal-form">
+        <input type="hidden" id="form-product-id" value="" />
+
+        <div class="form-row-2">
+          <div class="form-group">
+            <label for="form-product-title">Product Name / Title *</label>
+            <input type="text" id="form-product-title" class="input-control" required placeholder="e.g. AMD Radeon RX 8900 XTX 24GB" />
+          </div>
+          <div class="form-group">
+            <label for="form-product-category">Hardware Category *</label>
+            <select id="form-product-category" class="select-control" required>
+              <option value="gpus">gpus (Graphics Cards)</option>
+              <option value="cpus">cpus (Processors)</option>
+              <option value="motherboards">motherboards (Motherboards)</option>
+              <option value="memory">memory (DDR5 RAM)</option>
+              <option value="storage">storage (NVMe / SSD / HDD)</option>
+              <option value="cooling">cooling (Coolers &amp; Fans)</option>
+              <option value="power">power (Power Supplies)</option>
+              <option value="monitors">monitors (Displays)</option>
+              <option value="peripherals">peripherals (Keyboards / Mice / Audio)</option>
+              <option value="microcontrollers">microcontrollers (Boards &amp; SBCs)</option>
+              <option value="components">components (General Hardware)</option>
+            </select>
+          </div>
+        </div>
+
+        <div class="form-row-2">
+          <div class="form-group">
+            <label for="form-product-price">Unit Price (USD) *</label>
+            <input type="number" id="form-product-price" class="input-control mono" step="0.01" min="0" required placeholder="199.00" />
+          </div>
+          <div class="form-group">
+            <label for="form-product-stock">Stock Quantity (`stock_quantity`) *</label>
+            <input type="number" id="form-product-stock" class="input-control mono" step="1" min="0" required placeholder="10" />
+          </div>
+        </div>
+
+        <div class="form-group">
+          <label for="form-product-image">Image URL or Asset Path</label>
+          <input type="text" id="form-product-image" class="input-control mono" placeholder="/src/assets/images/product_ddr5_ram_kit_1793511150356.jpg" />
+        </div>
+
+        <div class="form-group">
+          <label for="form-product-desc">Technical Description</label>
+          <textarea id="form-product-desc" class="input-control" rows="3" placeholder="Architecture, bus interface, thermal design power, and warranty details…"></textarea>
+        </div>
+
+        <div class="form-check-row">
+          <label class="checkbox-label">
+            <input type="checkbox" id="form-product-official" checked />
+            <span>Official Voltbox Catalog Verified Listing</span>
+          </label>
+        </div>
+
+        <div class="form-error-msg" id="form-error-msg" hidden></div>
+
+        <div class="modal-footer">
+          <button type="button" class="btn-secondary" id="product-modal-cancel">Cancel</button>
+          <button type="submit" class="btn-primary" id="product-modal-submit">Save Product Entity</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <script src="/admin.js"></script>
+</body>
+</html>

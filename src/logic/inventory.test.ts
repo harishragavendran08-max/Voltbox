@@ -20,6 +20,11 @@ import {
   computeCardParallaxTilt,
   sanitizeChatMessage,
   classifyDeviceViewport,
+  buildInventoryItem,
+  buildInventorySummary,
+  buildCartEntity,
+  toProductJpaEntity,
+  computeSystemHealthMetrics,
 } from './inventory';
 
 test('LOW_STOCK_THRESHOLD is 5', () => {
@@ -250,3 +255,111 @@ test('classifyDeviceViewport adapts layout across iOS/Android mobile, iPad table
   assert.equal(desktop.showBottomAppDock, false);
   assert.equal(desktop.columnsSuggested, 4);
 });
+
+test('buildInventoryItem and buildInventorySummary compute warehouse stock, cart reservations, and low-stock status', () => {
+  const catalog = [
+    { id: 19, title: 'Nvidia RTX 5090', category: 'gpus', price: 200, quantity: 2 },
+    { id: 20, title: 'AMD RYZEN 9', category: 'cpus', price: 180, quantity: 10 },
+  ];
+
+  const rtxInv = buildInventoryItem(catalog[0], 1);
+  assert.equal(rtxInv.sku, 'VB-GPU-019');
+  assert.equal(rtxInv.lowStock, true);
+  assert.equal(rtxInv.criticalStock, true);
+  assert.equal(rtxInv.stockStatus, 'CRITICAL');
+
+  const summary = buildInventorySummary(catalog, [{ '20': 3 }], []);
+  assert.equal(summary.ok, true);
+  assert.equal(summary.totalSkus, 2);
+  assert.equal(summary.totalUnitsInStock, 12);
+  assert.equal(summary.reservedUnitsInCarts, 3);
+  assert.equal(summary.lowStockCount, 1);
+  assert.equal(summary.totalInventoryValue, 2200);
+});
+
+test('buildCartEntity constructs enriched Cart with CartItem line items, Rig Builder bundle status, and promo discounts', () => {
+  const catalog = [
+    { id: 19, title: 'Nvidia RTX 5090', category: 'gpus', image: '/gpu.png', price: 200, quantity: 2 },
+    { id: 20, title: 'AMD RYZEN 9', category: 'cpus', image: '/cpu.png', price: 180, quantity: 12 },
+    { id: 21, title: 'MSI MotherBoard B570', category: 'motherboards', image: '/mb.png', price: 150, quantity: 6 },
+  ];
+
+  const cartEntity = buildCartEntity(
+    catalog,
+    { '19': 1, '20': 1, '21': 1 },
+    'harish@voltbox.test',
+    'VOLT10'
+  );
+
+  assert.equal(cartEntity.userEmail, 'harish@voltbox.test');
+  assert.equal(cartEntity.items.length, 3);
+  assert.equal(cartEntity.count, 3);
+  assert.equal(cartEntity.subtotal, 530);
+  assert.equal(cartEntity.rigBundle.qualifiesForBundle, true);
+  assert.equal(cartEntity.rigDiscount, 26.5);
+  assert.equal(cartEntity.promoDiscount, 53);
+  assert.equal(cartEntity.discountTotal, 79.5);
+  assert.equal(cartEntity.appliedPromo, 'VOLT10');
+});
+
+test('toProductJpaEntity maps Product JPA entity fields (id, sku, name, title, price, stockQuantity, quantity, stock, category)', () => {
+  const jpaEntity = toProductJpaEntity({
+    id: 19,
+    title: 'Nvidia RTX 5090',
+    price: 200,
+    quantity: 2,
+    category: 'memory',
+  });
+  assert.equal(jpaEntity.id, 19);
+  assert.equal(jpaEntity.sku, 'VB-GPU-019');
+  assert.equal(jpaEntity.name, 'Nvidia RTX 5090');
+  assert.equal(jpaEntity.title, 'Nvidia RTX 5090');
+  assert.equal(jpaEntity.price, 200);
+  assert.equal(jpaEntity.stockQuantity, 2);
+  assert.equal(jpaEntity.quantity, 2);
+  assert.equal(jpaEntity.stock, 2);
+  assert.equal(jpaEntity.lowStock, true);
+  assert.equal(jpaEntity.category, 'memory');
+  assert.equal(jpaEntity.componentGroup, 'gpus');
+  assert.equal(jpaEntity.priceHistory.length, 6);
+  assert.equal(jpaEntity.specs.sku, 'VB-GPU-019');
+});
+
+test('computeSystemHealthMetrics aggregates catalog valuation, stock health, commerce metrics, and Spring Boot JVM/DB status', () => {
+  const health = computeSystemHealthMetrics({
+    products: [
+      { id: 19, title: 'Nvidia RTX 5090', category: 'gpus', price: 200, stockQuantity: 2, official: true, takenDown: false },
+      { id: 20, title: 'AMD Ryzen 9', category: 'cpus', price: 180, stockQuantity: 10, official: true, takenDown: false },
+      { id: 21, title: 'Old Archive Board', category: 'motherboards', price: 90, stockQuantity: 0, official: false, takenDown: true },
+    ],
+    users: [
+      { role: 'moderator', cart: { '20': 2 }, orders: [{ total: 560.5 }] },
+      { role: 'contributor', cart: {}, orders: [] },
+    ],
+    openReportsCount: 1,
+    pendingApplicationsCount: 2,
+    activeWebSocketClients: 3,
+    uptimeSeconds: 7200,
+    heapUsedMb: 128,
+    heapMaxMb: 512,
+  });
+
+  assert.equal(health.ok, true);
+  assert.equal(health.status, 'UP');
+  assert.equal(health.database.status, 'CONNECTED');
+  assert.equal(health.jvm.heapUtilizationPct, 25);
+  assert.equal(health.catalog.totalProducts, 3);
+  assert.equal(health.catalog.activeProducts, 2);
+  assert.equal(health.catalog.takenDownProducts, 1);
+  assert.equal(health.catalog.totalUnitsInStock, 12);
+  assert.equal(health.catalog.reservedUnitsInCarts, 2);
+  assert.equal(health.catalog.lowStockCount, 1);
+  assert.equal(health.catalog.totalInventoryValuation, 2200);
+  assert.equal(health.commerce.totalUsers, 2);
+  assert.equal(health.commerce.totalOrders, 1);
+  assert.equal(health.commerce.totalRevenue, 560.5);
+});
+
+
+
+

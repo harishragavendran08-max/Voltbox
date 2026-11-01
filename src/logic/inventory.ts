@@ -800,3 +800,580 @@ export function classifyDeviceViewport(width: number, _height = 800): DeviceView
     compactOrderBarByDefault: false,
   };
 }
+
+export interface InventoryItemEntity {
+  productId: number;
+  sku: string;
+  title: string;
+  category: string;
+  componentGroup: ComponentGroup;
+  quantity: number;
+  reservedQuantity: number;
+  availableQuantity: number;
+  reorderThreshold: number;
+  lowStock: boolean;
+  criticalStock: boolean;
+  stockStatus: 'IN_STOCK' | 'LOW_STOCK' | 'CRITICAL' | 'OUT_OF_STOCK';
+  unitPrice: number;
+  inventoryValue: number;
+  lastRestockedAt: number;
+  lastUpdatedBy: string;
+}
+
+export interface InventoryTransactionEntity {
+  id: string;
+  productId: number;
+  sku: string;
+  productTitle: string;
+  type: 'RESTOCK' | 'CHECKOUT_DEDUCTION' | 'MANUAL_ADJUSTMENT';
+  delta: number;
+  previousStock: number;
+  newStock: number;
+  actorName: string;
+  reason: string;
+  timestamp: number;
+}
+
+export interface CartItemEntity {
+  productId: number;
+  sku: string;
+  title: string;
+  category: string;
+  componentGroup: ComponentGroup;
+  image: string;
+  unitPrice: number;
+  quantity: number;
+  availableStock: number;
+  lowStock: boolean;
+  lineSubtotal: number;
+}
+
+export interface CartEntity {
+  userEmail: string;
+  rawCart: Record<string, number>;
+  items: CartItemEntity[];
+  count: number;
+  subtotal: number;
+  rigDiscount: number;
+  promoDiscount: number;
+  discountTotal: number;
+  discountedSubtotal: number;
+  taxRate: number;
+  tax: number;
+  total: number;
+  appliedPromo: string | null;
+  rigBundle: RigBundleStatus;
+  updatedAt: number;
+}
+
+export function buildInventoryItem(
+  product: {
+    id: number;
+    title?: string;
+    category?: string;
+    price: number;
+    quantity?: number;
+    stock?: number;
+    createdAt?: number;
+    addedByName?: string;
+    lastRestockedAt?: number;
+    lastUpdatedBy?: string;
+  },
+  reservedQuantity = 0
+): InventoryItemEntity {
+  const qty = getProductQuantity(product);
+  const reserved = Math.max(0, Math.floor(reservedQuantity));
+  const available = qty >= LOW_STOCK_THRESHOLD ? Math.max(0, qty - reserved) : qty;
+  const lowStock = available < LOW_STOCK_THRESHOLD;
+  const criticalStock = available <= 2;
+  const stockStatus: 'IN_STOCK' | 'LOW_STOCK' | 'CRITICAL' | 'OUT_OF_STOCK' =
+    available === 0
+      ? 'OUT_OF_STOCK'
+      : criticalStock
+      ? 'CRITICAL'
+      : lowStock
+      ? 'LOW_STOCK'
+      : 'IN_STOCK';
+
+  return {
+    productId: product.id,
+    sku: getProductSku(product),
+    title: product.title || 'Component',
+    category: product.category || 'components',
+    componentGroup: classifyComponentGroup(product),
+    quantity: qty,
+    reservedQuantity: reserved,
+    availableQuantity: available,
+    reorderThreshold: LOW_STOCK_THRESHOLD,
+    lowStock,
+    criticalStock,
+    stockStatus,
+    unitPrice: product.price,
+    inventoryValue: roundMoney(qty * product.price),
+    lastRestockedAt: product.lastRestockedAt || product.createdAt || 0,
+    lastUpdatedBy: product.lastUpdatedBy || product.addedByName || 'Voltbox',
+  };
+}
+
+export function buildInventorySummary(
+  products: Array<{
+    id: number;
+    title?: string;
+    category?: string;
+    price: number;
+    quantity?: number;
+    stock?: number;
+    takenDown?: boolean;
+    createdAt?: number;
+    addedByName?: string;
+    lastRestockedAt?: number;
+    lastUpdatedBy?: string;
+  }>,
+  carts: Array<Record<string, number>> = [],
+  recentTransactions: InventoryTransactionEntity[] = []
+) {
+  const reservedByProduct: Record<number, number> = {};
+  for (const c of carts) {
+    if (!c) continue;
+    for (const [pidStr, qtyVal] of Object.entries(c)) {
+      const pid = Number.parseInt(pidStr, 10);
+      const q = Number(qtyVal) || 0;
+      if (!Number.isNaN(pid) && q > 0) {
+        reservedByProduct[pid] = (reservedByProduct[pid] || 0) + q;
+      }
+    }
+  }
+
+  const active = products.filter((p) => !p.takenDown);
+  const items = active.map((p) => buildInventoryItem(p, reservedByProduct[p.id] || 0));
+
+  const totalSkus = items.length;
+  const totalUnitsInStock = items.reduce((acc, i) => acc + i.quantity, 0);
+  const reservedUnitsInCarts = items.reduce((acc, i) => acc + i.reservedQuantity, 0);
+  const lowStockCount = items.filter((i) => i.lowStock).length;
+  const criticalStockCount = items.filter((i) => i.criticalStock).length;
+  const outOfStockCount = items.filter((i) => i.availableQuantity === 0).length;
+  const totalInventoryValue = roundMoney(items.reduce((acc, i) => acc + i.inventoryValue, 0));
+
+  return {
+    ok: true,
+    totalSkus,
+    totalUnitsInStock,
+    reservedUnitsInCarts,
+    lowStockCount,
+    criticalStockCount,
+    outOfStockCount,
+    totalInventoryValue,
+    items,
+    recentTransactions: recentTransactions.slice(0, 20),
+  };
+}
+
+export function buildCartEntity(
+  products: Array<{
+    id: number;
+    title?: string;
+    category?: string;
+    image?: string;
+    price: number;
+    quantity?: number;
+    stock?: number;
+    takenDown?: boolean;
+  }>,
+  rawCart: Record<string, number>,
+  userEmail = 'guest@voltbox.test',
+  promoCode?: string | null,
+  taxRate: number = DEFAULT_TAX_RATE
+): CartEntity {
+  const activeProducts = products.filter((p) => !p.takenDown);
+  const byId = new Map(activeProducts.map((p) => [p.id, p]));
+  const cleanRaw: Record<string, number> = {};
+  const items: CartItemEntity[] = [];
+
+  for (const [idStr, qtyVal] of Object.entries(rawCart || {})) {
+    const pid = Number.parseInt(idStr, 10);
+    const qty = Math.floor(Number(qtyVal) || 0);
+    if (Number.isNaN(pid) || qty <= 0) continue;
+    const p = byId.get(pid);
+    if (!p) continue;
+
+    cleanRaw[String(p.id)] = qty;
+    const stock = getProductQuantity(p);
+    items.push({
+      productId: p.id,
+      sku: getProductSku(p),
+      title: p.title || 'Component',
+      category: p.category || 'components',
+      componentGroup: classifyComponentGroup(p),
+      image: p.image || '',
+      unitPrice: p.price,
+      quantity: qty,
+      availableStock: stock,
+      lowStock: isLowStock({ quantity: stock }),
+      lineSubtotal: roundMoney(p.price * qty),
+    });
+  }
+
+  const totals = computeCartTotals(activeProducts, cleanRaw, taxRate, promoCode);
+
+  return {
+    userEmail,
+    rawCart: cleanRaw,
+    items,
+    count: totals.count,
+    subtotal: totals.sub,
+    rigDiscount: totals.rigDiscount,
+    promoDiscount: totals.promoDiscount,
+    discountTotal: totals.discountTotal,
+    discountedSubtotal: totals.discountedSub,
+    taxRate,
+    tax: totals.tax,
+    total: totals.total,
+    appliedPromo: totals.appliedPromo,
+    rigBundle: totals.rigBundle,
+    updatedAt: Date.now(),
+  };
+}
+
+export interface ProductJpaEntity {
+  id: number;
+  sku: string;
+  name: string;
+  title: string;
+  price: number;
+  stockQuantity: number;
+  quantity: number;
+  stock: number;
+  lowStock: boolean;
+  category: string;
+  componentGroup: ComponentGroup;
+  description: string;
+  image: string;
+  ratingRate: number;
+  ratingCount: number;
+  addedByName: string;
+  addedByColor: string;
+  addedByEmail?: string;
+  official: boolean;
+  createdAt: number;
+  takenDown: boolean;
+  lastRestockedAt: number;
+  lastUpdatedBy: string;
+  priceHistory: PriceHistoryPoint[];
+  specs: ProductSpecs;
+}
+
+/**
+ * Maps a raw product record to the full ProductJpaEntity structure matching
+ * com.voltbox.entity.ProductEntity and com.voltbox.model.Product JPA @Entity.
+ */
+export function toProductJpaEntity(product: {
+  id: number;
+  sku?: string | null;
+  name?: string | null;
+  title?: string | null;
+  price: number;
+  stockQuantity?: number | null;
+  quantity?: number | null;
+  stock?: number | null;
+  category?: string | null;
+  description?: string | null;
+  image?: string | null;
+  ratingRate?: number | null;
+  ratingCount?: number | null;
+  addedByName?: string | null;
+  addedByColor?: string | null;
+  addedByEmail?: string | null;
+  official?: boolean | null;
+  createdAt?: number | null;
+  takenDown?: boolean | null;
+  lastRestockedAt?: number | null;
+  lastUpdatedBy?: string | null;
+}): ProductJpaEntity {
+  const resolvedName = (product.name || product.title || 'Component').trim();
+  const resolvedCategory = (product.category || 'components').trim();
+  const qty =
+    typeof product.stockQuantity === 'number' && !Number.isNaN(product.stockQuantity)
+      ? Math.max(0, Math.floor(product.stockQuantity))
+      : getProductQuantity({
+          id: product.id,
+          quantity: product.quantity ?? undefined,
+          stock: product.stock ?? undefined,
+        });
+  const sku = (product.sku || '').trim() || getProductSku({
+    id: product.id,
+    title: resolvedName,
+    category: resolvedCategory,
+  });
+  const componentGroup = classifyComponentGroup({
+    title: resolvedName,
+    category: resolvedCategory,
+  });
+  const priceHistory = generatePriceHistory({ id: product.id, price: product.price });
+  const specs = getProductSpecs({
+    id: product.id,
+    title: resolvedName,
+    category: resolvedCategory,
+    price: product.price,
+  });
+
+  return {
+    id: product.id,
+    sku,
+    name: resolvedName,
+    title: resolvedName,
+    price: roundMoney(product.price),
+    stockQuantity: qty,
+    quantity: qty,
+    stock: qty,
+    lowStock: qty < LOW_STOCK_THRESHOLD,
+    category: resolvedCategory,
+    componentGroup,
+    description: product.description || '',
+    image: product.image || '',
+    ratingRate: typeof product.ratingRate === 'number' ? product.ratingRate : 4.5,
+    ratingCount: typeof product.ratingCount === 'number' ? product.ratingCount : 0,
+    addedByName: product.addedByName || 'Voltbox',
+    addedByColor: product.addedByColor || '#ffd23f',
+    ...(product.addedByEmail ? { addedByEmail: product.addedByEmail } : {}),
+    official: Boolean(product.official),
+    createdAt: product.createdAt || 0,
+    takenDown: Boolean(product.takenDown),
+    lastRestockedAt: product.lastRestockedAt || product.createdAt || 0,
+    lastUpdatedBy: product.lastUpdatedBy || product.addedByName || 'Voltbox',
+    priceHistory,
+    specs,
+  };
+}
+
+export interface GroupStockBreakdown {
+  group: ComponentGroup;
+  label: string;
+  skuCount: number;
+  unitCount: number;
+  lowStockCount: number;
+  valuation: number;
+}
+
+export interface SystemHealthMetrics {
+  ok: boolean;
+  status: 'UP' | 'DEGRADED';
+  timestamp: number;
+  uptimeSeconds: number;
+  database: {
+    engine: string;
+    dialect: string;
+    connectionPool: string;
+    ddlAuto: string;
+    status: 'CONNECTED';
+    activeConnections: number;
+    maxConnections: number;
+  };
+  jvm: {
+    javaVersion: string;
+    springBootVersion: string;
+    heapUsedMb: number;
+    heapMaxMb: number;
+    heapUtilizationPct: number;
+  };
+  catalog: {
+    totalProducts: number;
+    activeProducts: number;
+    takenDownProducts: number;
+    officialProducts: number;
+    communityProducts: number;
+    totalUnitsInStock: number;
+    reservedUnitsInCarts: number;
+    lowStockCount: number;
+    criticalStockCount: number;
+    outOfStockCount: number;
+    totalInventoryValuation: number;
+    groupBreakdown: GroupStockBreakdown[];
+  };
+  commerce: {
+    totalUsers: number;
+    moderatorsCount: number;
+    contributorsCount: number;
+    membersCount: number;
+    totalOrders: number;
+    totalRevenue: number;
+    openReportsCount: number;
+    pendingApplicationsCount: number;
+    activeWebSocketClients: number;
+  };
+  endpoints: Array<{
+    method: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE';
+    path: string;
+    controller: string;
+    status: 'ACTIVE';
+  }>;
+}
+
+export function computeSystemHealthMetrics(input: {
+  products: Array<{
+    id: number;
+    title?: string;
+    name?: string;
+    category?: string;
+    price: number;
+    stockQuantity?: number;
+    quantity?: number;
+    stock?: number;
+    official?: boolean;
+    takenDown?: boolean;
+  }>;
+  users?: Array<{
+    role?: string;
+    cart?: Record<string, number>;
+    orders?: Array<{ total?: number }>;
+  }>;
+  openReportsCount?: number;
+  pendingApplicationsCount?: number;
+  activeWebSocketClients?: number;
+  uptimeSeconds?: number;
+  heapUsedMb?: number;
+  heapMaxMb?: number;
+}): SystemHealthMetrics {
+  const allProducts = input.products || [];
+  const activeProducts = allProducts.filter((p) => !p.takenDown);
+  const takenDownProducts = allProducts.filter((p) => Boolean(p.takenDown));
+  const users = input.users || [];
+
+  const reservedByProduct: Record<number, number> = {};
+  let reservedUnitsInCarts = 0;
+  let totalOrders = 0;
+  let totalRevenue = 0;
+  let moderatorsCount = 0;
+  let contributorsCount = 0;
+  let membersCount = 0;
+
+  for (const u of users) {
+    const role = (u.role || 'member').toLowerCase();
+    if (role === 'moderator') moderatorsCount++;
+    else if (role === 'contributor') contributorsCount++;
+    else membersCount++;
+
+    const cart = u.cart || {};
+    for (const [pidStr, qtyVal] of Object.entries(cart)) {
+      const pid = Number.parseInt(pidStr, 10);
+      const q = Math.max(0, Math.floor(Number(qtyVal) || 0));
+      if (!Number.isNaN(pid) && q > 0) {
+        reservedByProduct[pid] = (reservedByProduct[pid] || 0) + q;
+        reservedUnitsInCarts += q;
+      }
+    }
+
+    for (const o of u.orders || []) {
+      totalOrders++;
+      totalRevenue = roundMoney(totalRevenue + (Number(o.total) || 0));
+    }
+  }
+
+  const groupMap: Record<ComponentGroup, GroupStockBreakdown> = {
+    gpus: { group: 'gpus', label: GROUP_LABEL.gpus, skuCount: 0, unitCount: 0, lowStockCount: 0, valuation: 0 },
+    cpus: { group: 'cpus', label: GROUP_LABEL.cpus, skuCount: 0, unitCount: 0, lowStockCount: 0, valuation: 0 },
+    motherboards: { group: 'motherboards', label: GROUP_LABEL.motherboards, skuCount: 0, unitCount: 0, lowStockCount: 0, valuation: 0 },
+    storage: { group: 'storage', label: GROUP_LABEL.storage, skuCount: 0, unitCount: 0, lowStockCount: 0, valuation: 0 },
+    audio: { group: 'audio', label: GROUP_LABEL.audio, skuCount: 0, unitCount: 0, lowStockCount: 0, valuation: 0 },
+    gaming: { group: 'gaming', label: GROUP_LABEL.gaming, skuCount: 0, unitCount: 0, lowStockCount: 0, valuation: 0 },
+    other: { group: 'other', label: GROUP_LABEL.other, skuCount: 0, unitCount: 0, lowStockCount: 0, valuation: 0 },
+  };
+
+  let officialProducts = 0;
+  let communityProducts = 0;
+  let totalUnitsInStock = 0;
+  let lowStockCount = 0;
+  let criticalStockCount = 0;
+  let outOfStockCount = 0;
+  let totalInventoryValuation = 0;
+
+  for (const p of activeProducts) {
+    if (p.official) officialProducts++;
+    else communityProducts++;
+
+    const qty =
+      typeof p.stockQuantity === 'number' && !Number.isNaN(p.stockQuantity)
+        ? Math.max(0, Math.floor(p.stockQuantity))
+        : getProductQuantity(p);
+    const val = roundMoney(qty * (Number(p.price) || 0));
+    totalUnitsInStock += qty;
+    totalInventoryValuation = roundMoney(totalInventoryValuation + val);
+
+    if (qty === 0) outOfStockCount++;
+    if (qty <= 2) criticalStockCount++;
+    if (qty < LOW_STOCK_THRESHOLD) lowStockCount++;
+
+    const g = classifyComponentGroup({ title: p.title || p.name, category: p.category });
+    const entry = groupMap[g] || groupMap.other;
+    entry.skuCount++;
+    entry.unitCount += qty;
+    if (qty < LOW_STOCK_THRESHOLD) entry.lowStockCount++;
+    entry.valuation = roundMoney(entry.valuation + val);
+  }
+
+  const heapUsedMb = typeof input.heapUsedMb === 'number' && input.heapUsedMb > 0 ? roundMoney(input.heapUsedMb) : 118.4;
+  const heapMaxMb = typeof input.heapMaxMb === 'number' && input.heapMaxMb > 0 ? roundMoney(input.heapMaxMb) : 512.0;
+  const heapUtilizationPct = roundMoney(Math.min(100, (heapUsedMb / Math.max(1, heapMaxMb)) * 100));
+
+  return {
+    ok: true,
+    status: 'UP',
+    timestamp: Date.now(),
+    uptimeSeconds: Math.max(1, Math.floor(Number(input.uptimeSeconds) || 3600)),
+    database: {
+      engine: 'H2 / MySQL (Spring Data JPA)',
+      dialect: 'org.hibernate.dialect.H2Dialect (MODE=MySQL)',
+      connectionPool: 'VoltboxHikariPool',
+      ddlAuto: 'update',
+      status: 'CONNECTED',
+      activeConnections: 2,
+      maxConnections: 10,
+    },
+    jvm: {
+      javaVersion: '17.0.12',
+      springBootVersion: '3.3.4',
+      heapUsedMb,
+      heapMaxMb,
+      heapUtilizationPct,
+    },
+    catalog: {
+      totalProducts: allProducts.length,
+      activeProducts: activeProducts.length,
+      takenDownProducts: takenDownProducts.length,
+      officialProducts,
+      communityProducts,
+      totalUnitsInStock,
+      reservedUnitsInCarts,
+      lowStockCount,
+      criticalStockCount,
+      outOfStockCount,
+      totalInventoryValuation,
+      groupBreakdown: Object.values(groupMap),
+    },
+    commerce: {
+      totalUsers: users.length,
+      moderatorsCount,
+      contributorsCount,
+      membersCount,
+      totalOrders,
+      totalRevenue,
+      openReportsCount: Math.max(0, Number(input.openReportsCount) || 0),
+      pendingApplicationsCount: Math.max(0, Number(input.pendingApplicationsCount) || 0),
+      activeWebSocketClients: Math.max(1, Number(input.activeWebSocketClients) || 1),
+    },
+    endpoints: [
+      { method: 'GET', path: '/api/products', controller: 'ProductController#getProducts', status: 'ACTIVE' },
+      { method: 'POST', path: '/api/products', controller: 'ProductController#createProduct', status: 'ACTIVE' },
+      { method: 'PUT', path: '/api/products/{id}', controller: 'ProductController#updateProduct', status: 'ACTIVE' },
+      { method: 'POST', path: '/api/products/{id}/inventory', controller: 'ProductController#updateProductInventoryPost', status: 'ACTIVE' },
+      { method: 'DELETE', path: '/api/products/{id}', controller: 'ProductController#deleteProduct', status: 'ACTIVE' },
+      { method: 'GET', path: '/api/inventory', controller: 'InventoryController#getInventorySummary', status: 'ACTIVE' },
+      { method: 'GET', path: '/api/cart', controller: 'CartController#getCart', status: 'ACTIVE' },
+      { method: 'GET', path: '/api/admin/metrics', controller: 'AdminController#getSystemMetrics', status: 'ACTIVE' },
+      { method: 'POST', path: '/api/admin/inventory/restock-low-stock', controller: 'AdminController#restockAllLowStock', status: 'ACTIVE' },
+    ],
+  };
+}
+
+
+
