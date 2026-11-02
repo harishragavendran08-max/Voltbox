@@ -80,19 +80,15 @@
 
       <div class="topbar-left">
         <h1 class="logo">
-          <span class="logo-mark" aria-hidden="true"><svg width="30" height="30" viewBox="0 0 40 40" xmlns="http://www.w3.org/2000/svg"><defs><linearGradient id="vbLogo" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#ffd23f"/><stop offset="1" stop-color="#ffb400"/></linearGradient></defs><rect x="3" y="3" width="34" height="34" rx="10" fill="url(#vbLogo)"/><svg x="9" y="9" width="22" height="22" viewBox="0 0 24 24"><path fill="#1a1d23" d="M13 2 3 14h7l-1 8 10-12h-7z"/></svg></svg></span>
+          <span class="logo-mark" aria-hidden="true"><svg width="30" height="30" viewBox="0 0 40 40" xmlns="http://www.w3.org/2000/svg"><defs><linearGradient id="vbLogo" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#3b82f6"/><stop offset="1" stop-color="#1d4ed8"/></linearGradient></defs><rect x="3" y="3" width="34" height="34" rx="10" fill="url(#vbLogo)"/><svg x="9" y="9" width="22" height="22" viewBox="0 0 24 24"><path fill="#ffffff" d="M13 2 3 14h7l-1 8 10-12h-7z"/></svg></svg></span>
           voltbox
         </h1>
-        <!-- the donate button lives here (added lower in the file's flow) -->
-        <button class="donate-btn" id="donate-btn" aria-label="Donate">
-          <span data-icon="heart" data-icon-size="16"></span> Donate
-        </button>
       </div>
 
       <!-- search — filters the grid live as you type. see filterProducts() in app.js -->
       <div class="topbar-search">
         <span class="search-icon" data-icon="search" data-icon-size="17"></span>
-        <input id="product-search" type="search" placeholder="Search parts…"
+        <input id="product-search" type="search" placeholder="Search parts, GPUs, CPUs…"
                autocomplete="off" spellcheck="false" aria-label="Search products" />
         <button class="search-scan-qr-btn" id="search-scan-qr-btn" type="button"
                 aria-label="Scan Product QR Code" title="Scan other products' QR codes with camera">
@@ -103,34 +99,21 @@
 
       <div class="topbar-right">
 
-        <!-- Background FX Engine Switcher (Quantum / Overclock / Cyber) -->
-        <button class="topbar-pill-btn fx-mode-btn" id="bg-fx-btn" type="button"
-                aria-label="Switch background visual engine" title="Switch Holographic Background Engine">
-          <span data-icon="layers" data-icon-size="14"></span>
-          <span id="bg-fx-label">FX: Quantum</span>
-        </button>
-
-        <!-- Install Web App Button (iOS / Android / iPad / Desktop PWA) -->
-        <button class="topbar-pill-btn pwa-install-btn" id="pwa-install-btn" type="button"
-                aria-label="Install Voltbox Web App">
-          <span data-icon="smartphone" data-icon-size="14"></span>
-          <span class="pwa-btn-text">Install App</span>
-        </button>
-
-        <!-- Switch User / Admin Login Link -->
-        <a href="login.html?switch=1" class="topbar-pill-btn role-status-pill" id="topbar-role-badge"
-           title="User Login / Admin Login" style="text-decoration:none;">
-          <span class="led-dot emerald" id="topbar-role-led"></span>
-          <span id="topbar-role-label">Admin</span>
-        </a>
-
         <!-- Dedicated /admin Console Link (Visible only for Administrators) -->
-        <a href="/admin" class="topbar-pill-btn" id="admin-console-link"
+        <a href="/admin" class="topbar-pill-btn admin-pill" id="admin-console-link"
            aria-label="Open Dedicated Admin Console" title="Open Spring Boot Admin Console (/admin)"
-           style="text-decoration:none;">
+           style="text-decoration:none;" hidden>
           <span data-icon="shield" data-icon-size="14"></span>
-          <span>Admin</span>
+          <span class="admin-pill-text">Admin</span>
         </a>
+
+        <!-- Side-by-Side Product Comparison Trigger Button -->
+        <button class="topbar-pill-btn compare-pill-btn" id="topbar-compare-btn" type="button"
+                aria-label="Side-by-side product comparison" title="Compare hardware components side-by-side">
+          <span data-icon="sliders" data-icon-size="14"></span>
+          <span class="compare-btn-text">Compare</span>
+          <span class="compare-badge" id="compare-badge" hidden>0</span>
+        </button>
 
         <!-- Real-Time Bench Messenger Button -->
         <button class="icon-btn messenger-trigger-btn" id="messenger-btn" type="button"
@@ -141,7 +124,7 @@
 
         <!-- ── the admin / community panel — what's inside depends on your
              role (member, contributor, or moderator). built by community.js ── -->
-        <div class="drop" id="admin-drop">
+        <div class="drop" id="admin-drop" hidden>
           <button class="icon-btn" id="admin-btn" aria-haspopup="true" aria-expanded="false"
                   aria-label="Community">
             <span data-icon="shield"></span>
@@ -278,10 +261,35 @@
             <div class="sheet-divider"></div>
 
             <div class="profile-actions-stack">
-              <a href="login.html?switch=1" class="sheet-btn ghost wide" id="switch-account-btn" style="display:block;text-align:center;text-decoration:none;margin-bottom:8px;">
-                User / Admin Login
+              <!-- Switch User / Admin Login Link -->
+              <a href="login.html?switch=1" class="sheet-btn ghost wide" id="topbar-role-badge"
+                 title="User Login / Admin Login" style="display:flex;align-items:center;justify-content:center;gap:8px;text-decoration:none;margin-bottom:8px;">
+                <span class="led-dot emerald" id="topbar-role-led"></span>
+                <span id="topbar-role-label">Switch to Admin</span>
               </a>
-              <button class="sheet-btn ghost wide" id="logout-btn">Sign out</button>
+
+              <!-- Install Web App Button -->
+              <button class="sheet-btn ghost wide" id="pwa-install-btn" type="button"
+                      aria-label="Install Voltbox Web App" style="display:flex;align-items:center;justify-content:center;gap:8px;margin-bottom:8px;">
+                <span data-icon="smartphone" data-icon-size="14"></span>
+                <span class="pwa-btn-text">Install Voltbox App</span>
+              </button>
+
+              <!-- Background Theme Switcher -->
+              <button class="sheet-btn ghost wide" id="bg-fx-btn" type="button"
+                      aria-label="Switch background theme" style="display:flex;align-items:center;justify-content:center;gap:8px;margin-bottom:8px;">
+                <span data-icon="layers" data-icon-size="14"></span>
+                <span id="bg-fx-label">Theme: Obsidian</span>
+              </button>
+
+              <!-- Support & Donate Button -->
+              <button class="sheet-btn ghost wide" id="donate-btn" type="button"
+                      aria-label="Donate" style="display:flex;align-items:center;justify-content:center;gap:8px;margin-bottom:8px;">
+                <span data-icon="heart" data-icon-size="14"></span>
+                <span>Support Voltbox (Donate)</span>
+              </button>
+
+              <button class="sheet-btn ghost wide danger" id="logout-btn" style="margin-top:4px;">Sign out</button>
             </div>
           </div>
         </div>
@@ -417,7 +425,7 @@
 
   <!-- PC Build / Compatibility Bundle Mode ("Rig Builder") Drawer -->
   <div class="drawer-overlay" id="rig-drawer-overlay" aria-hidden="true">
-    <aside class="side-drawer" id="rig-drawer" role="dialog" aria-modal="true" aria-label="PC Rig Builder">
+    <aside class="side-drawer momentum-drawer" id="rig-drawer" data-momentum-drawer="rig" role="dialog" aria-modal="true" aria-label="PC Rig Builder">
       <div class="drawer-head">
         <div>
           <div class="drawer-kicker">Compatibility &amp; Bundle Checklist</div>
@@ -441,13 +449,13 @@
         </p>
       </div>
 
-      <div class="rig-slots-list" id="rig-slots-list"></div>
+      <div class="rig-slots-list momentum-scroll-body" id="rig-slots-list" data-momentum-scroll="true"></div>
     </aside>
   </div>
 
   <!-- Product Quick-View & Spec Sheet Drawer (with Recharts Price History Chart) -->
   <div class="drawer-overlay" id="spec-drawer-overlay" aria-hidden="true">
-    <aside class="side-drawer spec-drawer" id="spec-drawer" role="dialog" aria-modal="true" aria-label="Product Specifications and Price History">
+    <aside class="side-drawer spec-drawer momentum-drawer" id="spec-drawer" data-momentum-drawer="spec" role="dialog" aria-modal="true" aria-label="Product Specifications and Price History">
       <div class="drawer-head">
         <div>
           <div class="drawer-kicker" id="spec-drawer-sku">VB-PRT-000</div>
@@ -464,7 +472,7 @@
         </div>
       </div>
 
-      <div class="spec-drawer-body" id="spec-drawer-body">
+      <div class="spec-drawer-body momentum-scroll-body" id="spec-drawer-body" data-momentum-scroll="true">
         <!-- Product QR Code & Share Card -->
         <div class="spec-share-card" id="spec-share-card" hidden>
           <div class="spec-share-head">
@@ -483,24 +491,6 @@
             </div>
             <div class="spec-share-details">
               <span class="spec-share-note">Scan this branded QR code with any smartphone camera to open this hardware component's direct specs and live warehouse stock.</span>
-              <!-- Voltbox QR Branding Color Switcher -->
-              <div class="spec-qr-theme-row">
-                <span class="spec-qr-theme-label">BRAND PALETTE:</span>
-                <div class="spec-qr-theme-pills" id="spec-qr-theme-pills">
-                  <button type="button" class="spec-qr-theme-pill active" data-theme="gold" title="Voltbox Signature Gold">
-                    <span class="theme-dot" style="background:#ffd23f;"></span> Gold
-                  </button>
-                  <button type="button" class="spec-qr-theme-pill" data-theme="amber" title="Electric Amber">
-                    <span class="theme-dot" style="background:#f59e0b;"></span> Amber
-                  </button>
-                  <button type="button" class="spec-qr-theme-pill" data-theme="cyber" title="Quantum Cyan">
-                    <span class="theme-dot" style="background:#2dd4bf;"></span> Cyan
-                  </button>
-                  <button type="button" class="spec-qr-theme-pill" data-theme="classic" title="High Contrast Paper">
-                    <span class="theme-dot" style="background:#ffffff; border:1px solid #94a3b8;"></span> Paper
-                  </button>
-                </div>
-              </div>
               <div class="spec-share-url-row">
                 <input type="text" class="spec-share-url-input" id="spec-share-url-input" readonly aria-label="Product direct URL" />
                 <button type="button" class="spec-share-copy-btn" id="spec-share-copy-btn" title="Copy product URL to clipboard">
@@ -549,6 +539,15 @@
           <div class="spec-table" id="spec-table-rows"></div>
         </div>
 
+        <!-- Bench Compatibility, Thermal Telemetry & Package Box Contents -->
+        <div class="spec-section" id="spec-bench-telemetry-section">
+          <div class="spec-section-head">
+            <span class="spec-section-title">Bench Telemetry &amp; Compatibility</span>
+            <span class="spec-section-note" id="spec-bench-status-note">QA Passed</span>
+          </div>
+          <div class="spec-table" id="spec-bench-rows"></div>
+        </div>
+
         <!-- Contiguous Purchase & Live Restock Actions -->
         <div class="spec-actions-bar" id="spec-actions-bar"></div>
       </div>
@@ -556,52 +555,405 @@
   </div>
 
   <div class="modal-overlay" id="checkout-overlay" aria-hidden="true">
-    <div class="modal-card" id="checkout-card" role="dialog" aria-modal="true" aria-label="Checkout">
+    <div class="modal-card checkout-modal-card" id="checkout-card" role="dialog" aria-modal="true" aria-label="Checkout">
       <button class="modal-close" id="checkout-close" aria-label="Close"><span data-icon="x" data-icon-size="18"></span></button>
 
       <div id="checkout-form">
-        <h2 class="modal-title">Where's this headed?</h2>
-        <p class="modal-text">Fill this in and we'll ring it up — nothing here is a real charge.</p>
+        <div class="checkout-modal-head">
+          <span class="checkout-kicker">VOLTBOX SECURE CHECKOUT</span>
+          <h2 class="modal-title">Shipping &amp; Payment Options</h2>
+          <p class="modal-text">Review your items and choose UPI, Credit Card, Debit Card, NetBanking, or No-Cost EMI.</p>
+        </div>
 
-        <label class="field">
-          <span class="field-label">Name</span>
-          <input id="checkout-name" type="text" autocomplete="name" placeholder="Your name" />
-        </label>
-        <label class="field">
-          <span class="field-label">Shipping address</span>
-          <textarea id="checkout-address" rows="2" placeholder="Street, city, postcode"></textarea>
-        </label>
+        <!-- Cart Items Preview with Real Product Photos -->
+        <div class="checkout-items-preview" id="checkout-items-preview" data-testid="checkout-items-preview"></div>
 
-        <p class="modal-text small">
-          Card details — <strong>this is a demo, nothing here is real or saved.</strong>
-          Any numbers work.
-        </p>
-        <label class="field">
-          <span class="field-label">Card number</span>
-          <input id="checkout-card-number" type="text" inputmode="numeric" autocomplete="off"
-                 maxlength="19" placeholder="4242 4242 4242 4242" />
-        </label>
-        <div class="admin-row2">
+        <div class="checkout-shipping-grid">
           <label class="field">
-            <span class="field-label">Expiry</span>
-            <input id="checkout-card-expiry" type="text" inputmode="numeric" autocomplete="off"
-                   maxlength="5" placeholder="MM/YY" />
+            <span class="field-label">Recipient Name</span>
+            <input id="checkout-name" type="text" autocomplete="name" placeholder="Your name" />
           </label>
           <label class="field">
-            <span class="field-label">CVV</span>
-            <input id="checkout-card-cvv" type="text" inputmode="numeric" autocomplete="off"
-                   maxlength="4" placeholder="123" />
+            <span class="field-label">Shipping Address</span>
+            <textarea id="checkout-address" rows="2" placeholder="Street, city, state, postcode"></textarea>
           </label>
         </div>
 
+        <!-- Multi-Method Payment Selector Tabs -->
+        <div class="payment-gateway-section">
+          <div class="payment-section-top">
+            <span class="field-label">Select Payment Method</span>
+            <span class="payment-security-badge">256-Bit SSL · Demo Gateway</span>
+          </div>
+
+          <!-- Prominent 'Pay via UPI' Quick-Action Banner & Button -->
+          <div class="upi-quick-action-strip">
+            <div class="upi-quick-action-info">
+              <span class="upi-quick-kicker">INSTANT 0% FEE</span>
+              <span class="upi-quick-sub">Google Pay · PhonePe · Paytm · BHIM QR</span>
+            </div>
+            <button type="button" class="pay-via-upi-quick-btn" id="pay-via-upi-quick-btn" data-testid="pay-via-upi-btn" aria-label="Pay via UPI">
+              <span data-icon="qr-code" data-icon-size="16"></span>
+              <span>Pay via UPI</span>
+            </button>
+          </div>
+
+          <div class="payment-method-tabs" id="checkout-payment-tabs" role="tablist" aria-label="Payment Methods">
+            <button type="button" class="pay-method-tab active" role="tab" aria-selected="true" data-pay-method="upi">
+              <span class="pay-tab-badge">UPI</span>
+              <span>UPI / QR</span>
+            </button>
+            <button type="button" class="pay-method-tab" role="tab" aria-selected="false" data-pay-method="credit_card">
+              <span class="pay-tab-badge">CC</span>
+              <span>Credit Card</span>
+            </button>
+            <button type="button" class="pay-method-tab" role="tab" aria-selected="false" data-pay-method="debit_card">
+              <span class="pay-tab-badge">DC</span>
+              <span>Debit Card</span>
+            </button>
+            <button type="button" class="pay-method-tab" role="tab" aria-selected="false" data-pay-method="netbanking">
+              <span class="pay-tab-badge">NB</span>
+              <span>NetBanking</span>
+            </button>
+            <button type="button" class="pay-method-tab" role="tab" aria-selected="false" data-pay-method="emi">
+              <span class="pay-tab-badge">0%</span>
+              <span>No-Cost EMI</span>
+            </button>
+          </div>
+
+          <!-- 1. UPI Instant Pay Panel (GPay, PhonePe, Paytm, BHIM + VPA / Live QR) -->
+          <div class="payment-panel" id="pay-panel-upi" data-pay-panel="upi">
+            <div class="upi-apps-row" id="upi-apps-row" role="group" aria-label="Select UPI App">
+              <button type="button" class="upi-app-chip active" data-upi-app="GPay">
+                <span class="upi-app-dot gpay">G</span> Google Pay
+              </button>
+              <button type="button" class="upi-app-chip" data-upi-app="PhonePe">
+                <span class="upi-app-dot phonepe">P</span> PhonePe
+              </button>
+              <button type="button" class="upi-app-chip" data-upi-app="Paytm">
+                <span class="upi-app-dot paytm">₹</span> Paytm
+              </button>
+              <button type="button" class="upi-app-chip" data-upi-app="BHIM">
+                <span class="upi-app-dot bhim">B</span> BHIM UPI
+              </button>
+            </div>
+
+            <div class="upi-mode-switch">
+              <button type="button" class="upi-mode-btn active" id="upi-mode-vpa-btn" data-upi-mode="vpa">Enter UPI ID (VPA)</button>
+              <button type="button" class="upi-mode-btn" id="upi-mode-qr-btn" data-upi-mode="qr">Scan Dynamic UPI QR</button>
+            </div>
+
+            <div class="upi-vpa-box" id="upi-vpa-box">
+              <div class="upi-vpa-input-row">
+                <input id="checkout-upi-id" type="text" autocomplete="off" value="harish@okaxis" placeholder="yourname@okaxis / @ybl / @paytm" aria-label="UPI ID" />
+                <button type="button" class="upi-verify-btn" id="upi-verify-btn">Verify ID</button>
+              </div>
+              <div class="upi-verified-note" id="upi-verified-note">✓ Verified VPA · Instant 0% Fee UPI Transfer</div>
+            </div>
+
+            <div class="upi-qr-box" id="upi-qr-box" hidden>
+              <div class="upi-qr-visual" id="checkout-upi-qr-mount"></div>
+              <div class="upi-qr-meta">
+                <strong>Scan with any UPI App</strong>
+                <span>GPay · PhonePe · Paytm · Cred · BHIM</span>
+                <code id="checkout-upi-qr-amount">$0.00</code>
+                <button type="button" class="upi-open-overlay-link" id="upi-open-qr-overlay-btn">
+                  Open Interactive QR Overlay &rarr;
+                </button>
+              </div>
+            </div>
+          </div>
+
+          <!-- 2 & 3. Credit Card & Debit Card Panel -->
+          <div class="payment-panel" id="pay-panel-card" data-pay-panel="card" hidden>
+            <div class="card-network-bar" id="card-network-bar">
+              <span class="card-type-Dynamic" id="checkout-card-mode-label">Credit Card Networks:</span>
+              <div class="card-network-chips" id="card-network-chips">
+                <button type="button" class="card-net-chip active" data-net="Visa" data-sample="4242 4242 4242 4242">Visa</button>
+                <button type="button" class="card-net-chip" data-net="Mastercard" data-sample="5412 7534 8899 1023">Mastercard</button>
+                <button type="button" class="card-net-chip" data-net="RuPay" data-sample="6521 8800 1122 8821">RuPay</button>
+                <button type="button" class="card-net-chip" data-net="Amex" data-sample="3782 8224 6310 005">Amex</button>
+              </div>
+            </div>
+
+            <label class="field">
+              <span class="field-label">Card number</span>
+              <input id="checkout-card-number" type="text" inputmode="numeric" autocomplete="off"
+                     maxlength="19" value="4242 4242 4242 4242" placeholder="4242 4242 4242 4242" />
+            </label>
+            <div class="admin-row2">
+              <label class="field">
+                <span class="field-label">Expiry</span>
+                <input id="checkout-card-expiry" type="text" inputmode="numeric" autocomplete="off"
+                       maxlength="5" value="08/29" placeholder="MM/YY" />
+              </label>
+              <label class="field">
+                <span class="field-label">CVV</span>
+                <input id="checkout-card-cvv" type="text" inputmode="numeric" autocomplete="off"
+                       maxlength="4" value="842" placeholder="123" />
+              </label>
+            </div>
+            <div class="card-perks-note" id="checkout-card-perks-note">
+              ✓ Instant 3D Secure / OTP Auto-Verification enabled for demo checkout.
+            </div>
+          </div>
+
+          <!-- 4. NetBanking & Wallets Panel -->
+          <div class="payment-panel" id="pay-panel-netbanking" data-pay-panel="netbanking" hidden>
+            <div class="netbanking-grid" id="netbanking-grid">
+              <button type="button" class="bank-option-btn active" data-bank="HDFC Bank">HDFC Bank</button>
+              <button type="button" class="bank-option-btn" data-bank="ICICI Bank">ICICI Bank</button>
+              <button type="button" class="bank-option-btn" data-bank="State Bank of India">SBI NetBanking</button>
+              <button type="button" class="bank-option-btn" data-bank="Axis Bank">Axis Bank</button>
+              <button type="button" class="bank-option-btn" data-bank="Apple Pay / Google Wallet">Apple / Google Wallet</button>
+              <button type="button" class="bank-option-btn" data-bank="Amazon Pay Balance">Amazon Pay</button>
+            </div>
+          </div>
+
+          <!-- 5. No-Cost EMI & Pay Later Panel -->
+          <div class="payment-panel" id="pay-panel-emi" data-pay-panel="emi" hidden>
+            <div class="emi-plans-list" id="checkout-emi-plans"></div>
+          </div>
+        </div>
+
         <p class="modal-msg" id="checkout-msg" hidden></p>
-        <button class="modal-btn solid" id="checkout-pay">Pay Now</button>
+        <div class="checkout-primary-actions">
+          <button type="button" class="modal-btn upi-cta-secondary" id="checkout-pay-via-upi-btn" aria-label="Pay via UPI QR">
+            <span data-icon="qr-code" data-icon-size="16"></span>
+            <span>Pay via UPI</span>
+          </button>
+          <button class="modal-btn solid" id="checkout-pay">Pay Now</button>
+        </div>
       </div>
 
-      <!-- shown in place of the form for a beat once the fake charge "goes through" -->
-      <div class="pay-success" id="checkout-success" hidden>
-        <div class="pay-success-tick"><span data-icon="check" data-icon-size="30"></span></div>
-        <p class="pay-success-text">Payment successful</p>
+      <!-- Interactive UPI QR Code Overlay (Google Pay, PhonePe, Paytm, BHIM) -->
+      <div class="upi-qr-overlay" id="upi-qr-overlay" data-testid="upi-qr-overlay" role="region" aria-label="UPI QR Payment Overlay" hidden>
+        <div class="upi-qr-overlay-head">
+          <div>
+            <span class="upi-overlay-kicker">NPCI UNIFIED PAYMENTS INTERFACE</span>
+            <h3 class="upi-overlay-title">Scan &amp; Pay via UPI</h3>
+          </div>
+          <button type="button" class="upi-overlay-close-btn" id="upi-qr-overlay-close" aria-label="Back to Checkout">
+            <span data-icon="x" data-icon-size="16"></span>
+            <span>Back</span>
+          </button>
+        </div>
+
+        <!-- App Switcher for Google Pay, PhonePe, Paytm, BHIM -->
+        <div class="upi-overlay-app-tabs" id="upi-overlay-app-tabs" role="tablist" aria-label="Choose UPI App">
+          <button type="button" class="upi-overlay-app-tab active" role="tab" aria-selected="true" data-upi-overlay-app="GPay">
+            <span class="upi-app-dot gpay">G</span>
+            <span class="upi-overlay-app-name">Google Pay</span>
+          </button>
+          <button type="button" class="upi-overlay-app-tab" role="tab" aria-selected="false" data-upi-overlay-app="PhonePe">
+            <span class="upi-app-dot phonepe">P</span>
+            <span class="upi-overlay-app-name">PhonePe</span>
+          </button>
+          <button type="button" class="upi-overlay-app-tab" role="tab" aria-selected="false" data-upi-overlay-app="Paytm">
+            <span class="upi-app-dot paytm">₹</span>
+            <span class="upi-overlay-app-name">Paytm</span>
+          </button>
+          <button type="button" class="upi-overlay-app-tab" role="tab" aria-selected="false" data-upi-overlay-app="BHIM">
+            <span class="upi-app-dot bhim">B</span>
+            <span class="upi-overlay-app-name">BHIM</span>
+          </button>
+        </div>
+
+        <!-- QR Code + Order Amount & Merchant VPA Card -->
+        <div class="upi-overlay-qr-stage">
+          <div class="upi-overlay-qr-frame" id="upi-overlay-qr-frame">
+            <div class="upi-overlay-qr-mount" id="upi-overlay-qr-mount" data-testid="upi-overlay-qr-mount"></div>
+            <div class="upi-overlay-app-pill" id="upi-overlay-app-pill">Google Pay QR</div>
+          </div>
+
+          <div class="upi-overlay-payment-details">
+            <div class="upi-overlay-amount-row">
+              <span class="upi-overlay-amount-label">Payable Total</span>
+              <strong class="upi-overlay-amount-usd" id="upi-overlay-amount-usd">$0.00</strong>
+              <span class="upi-overlay-amount-inr" id="upi-overlay-amount-inr">≈ ₹0</span>
+            </div>
+
+            <div class="upi-overlay-vpa-card">
+              <div class="upi-overlay-vpa-meta">
+                <span class="upi-overlay-vpa-label">Merchant VPA</span>
+                <code class="upi-overlay-vpa-code" id="upi-overlay-merchant-vpa">voltbox.gpay@okaxis</code>
+              </div>
+              <button type="button" class="upi-overlay-copy-btn" id="upi-overlay-copy-vpa-btn" aria-label="Copy Merchant UPI ID">
+                <span data-icon="copy" data-icon-size="13"></span>
+                <span id="upi-overlay-copy-label">Copy</span>
+              </button>
+            </div>
+
+            <div class="upi-overlay-timer-row">
+              <span class="led-dot emerald" id="upi-overlay-status-led"></span>
+              <span class="upi-overlay-status-text" id="upi-overlay-status-text">Awaiting scan or collect approval…</span>
+              <span class="upi-overlay-timer" id="upi-overlay-timer">05:00</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Simulated Real Payment Request Collect Input -->
+        <div class="upi-collect-request-bar">
+          <input type="text" id="upi-overlay-payer-vpa" value="harish@okaxis" placeholder="Enter your UPI ID (e.g. harish@okaxis)" aria-label="Your UPI ID for Collect Request" />
+          <button type="button" class="upi-send-collect-btn" id="upi-send-collect-btn">
+            Send Request
+          </button>
+        </div>
+
+        <!-- Live 3-Step Payment Request Workflow Tracker -->
+        <div class="upi-workflow-steps" id="upi-workflow-steps" data-testid="upi-workflow-steps">
+          <div class="upi-wf-step active" data-wf-step="1">
+            <span class="upi-wf-dot">1</span>
+            <span class="upi-wf-text" id="upi-wf-text-1">Dynamic Google Pay QR &amp; Collect Intent Generated</span>
+          </div>
+          <div class="upi-wf-step" data-wf-step="2">
+            <span class="upi-wf-dot">2</span>
+            <span class="upi-wf-text" id="upi-wf-text-2">Waiting for approval in Google Pay (harish@okaxis)</span>
+          </div>
+          <div class="upi-wf-step" data-wf-step="3">
+            <span class="upi-wf-dot">3</span>
+            <span class="upi-wf-text" id="upi-wf-text-3">NPCI UPI Verified · Instant Settlement</span>
+          </div>
+        </div>
+
+        <div class="upi-overlay-footer-actions">
+          <button type="button" class="modal-btn solid upi-confirm-pay-btn" id="upi-overlay-confirm-pay-btn" data-testid="upi-overlay-confirm-btn">
+            <span data-icon="check" data-icon-size="16"></span>
+            <span id="upi-overlay-confirm-label">Simulate Scan &amp; Complete Payment</span>
+          </button>
+        </div>
+      </div>
+
+      <!-- Professional Physics-Based Confirmation Animation -->
+      <div class="pay-success physics-confirmation" id="checkout-success" data-testid="checkout-success" hidden>
+        <!-- Confetti & Sparks Physics Canvas -->
+        <div class="physics-particle-field" id="physics-particle-field" aria-hidden="true"></div>
+
+        <!-- Sonar Ripple Shockwaves -->
+        <div class="pay-sonar-wrap" aria-hidden="true">
+          <div class="pay-sonar-wave wave-1"></div>
+          <div class="pay-sonar-wave wave-2"></div>
+          <div class="pay-sonar-wave wave-3"></div>
+        </div>
+
+        <!-- Elastic Spring Checkmark Badge -->
+        <div class="pay-spring-badge" id="pay-spring-badge">
+          <svg class="pay-spring-svg" viewBox="0 0 72 72" width="72" height="72">
+            <circle class="pay-spring-circle" cx="36" cy="36" r="32" />
+            <path class="pay-spring-check" d="M22 36 L32 46 L50 26" fill="none" />
+          </svg>
+        </div>
+
+        <div class="pay-success-text-wrap">
+          <h3 class="pay-success-heading">Payment Verified</h3>
+          <p class="pay-success-sub" id="pay-success-sub">Transaction approved via NPCI &amp; 256-bit SSL gateway</p>
+        </div>
+
+        <!-- Order Settlement Card -->
+        <div class="pay-settlement-card">
+          <div class="settlement-row">
+            <span class="settlement-label">Order Ref</span>
+            <strong class="settlement-val" id="pay-success-order-id">VB-0000</strong>
+          </div>
+          <div class="settlement-row">
+            <span class="settlement-label">Amount Settled</span>
+            <strong class="settlement-val emerald" id="pay-success-amount">$0.00</strong>
+          </div>
+          <div class="settlement-row">
+            <span class="settlement-label">Payment Rail</span>
+            <span class="settlement-rail-badge" id="pay-success-rail">UPI / Instant</span>
+          </div>
+          <div class="settlement-row">
+            <span class="settlement-label">Correlation ID</span>
+            <code class="settlement-trace" id="pay-success-trace">req-live</code>
+          </div>
+        </div>
+
+        <div class="pay-success-actions">
+          <button type="button" class="modal-btn solid print-bill-now-btn" id="pay-success-view-bill-btn">
+            <span data-icon="printer" data-icon-size="15"></span>
+            <span>View Thermal Bill Now</span>
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Floating Comparison Dock (Slides up when 1+ products are selected for comparison) -->
+  <aside class="compare-dock" id="compare-dock" aria-label="Product comparison selection dock" hidden>
+    <div class="compare-dock-inner">
+      <div class="compare-dock-left">
+        <div class="compare-dock-icon">
+          <span data-icon="sliders" data-icon-size="16"></span>
+        </div>
+        <div class="compare-dock-info">
+          <div class="compare-dock-heading">
+            <span class="compare-dock-title">Hardware Compare</span>
+            <span class="compare-dock-counter" id="compare-dock-count">0/4 selected</span>
+          </div>
+          <div class="compare-dock-thumbnails" id="compare-dock-thumbnails"></div>
+        </div>
+      </div>
+      <div class="compare-dock-actions">
+        <button type="button" class="compare-dock-btn ghost" id="compare-dock-clear-btn" title="Clear comparison selection">
+          Clear
+        </button>
+        <button type="button" class="compare-dock-btn primary" id="compare-dock-launch-btn">
+          <span data-icon="sliders" data-icon-size="14"></span>
+          <span id="compare-dock-launch-text">Compare (0)</span>
+        </button>
+      </div>
+    </div>
+  </aside>
+
+  <!-- Side-by-Side Product Comparison Modal -->
+  <div class="modal-overlay compare-overlay" id="compare-overlay" aria-hidden="true">
+    <div class="modal-card compare-modal-card" id="compare-card" role="dialog" aria-modal="true" aria-label="Hardware Benchmark and Side-by-Side Comparison">
+      <div class="compare-modal-topbar">
+        <div class="compare-modal-heading">
+          <div class="compare-kicker-row">
+            <span class="compare-kicker">VOLTBOX BENCHMARK MATRIX</span>
+            <span class="compare-count-tag" id="compare-modal-count-tag">Comparing 0 Components</span>
+          </div>
+          <h2 class="modal-title compare-modal-title">Side-by-Side Component Comparison</h2>
+          <p class="modal-text compare-modal-sub">Compare architectural specs, real-time prices, 6-month historical stability, TDP thermal requirements, and stock availability.</p>
+        </div>
+
+        <div class="compare-modal-tools">
+          <label class="compare-toggle-label" for="compare-diff-toggle">
+            <input type="checkbox" id="compare-diff-toggle" class="compare-toggle-checkbox" />
+            <span class="compare-toggle-custom"></span>
+            <span class="compare-toggle-text">Highlight Differences Only</span>
+          </label>
+          <div class="compare-add-part-wrap">
+            <select id="compare-add-part-select" class="compare-add-select" aria-label="Add another part to compare">
+              <option value="">+ Add Component…</option>
+            </select>
+          </div>
+          <button type="button" class="compare-tool-btn ghost" id="compare-modal-clear-btn" title="Reset comparison selection">Clear All</button>
+          <button class="modal-close" id="compare-close" aria-label="Close Comparison"><span data-icon="x" data-icon-size="18"></span></button>
+        </div>
+      </div>
+
+      <!-- Comparative Summary & Advantage Banner -->
+      <div class="compare-summary-strip" id="compare-summary-strip">
+        <div class="compare-summary-badge" id="compare-summary-badge">
+          <span data-icon="cpu" data-icon-size="14"></span>
+          <span id="compare-summary-text">Select at least 2 components to evaluate side-by-side spec trade-offs.</span>
+        </div>
+        <div class="compare-summary-actions">
+          <button type="button" class="compare-add-all-cart-btn" id="compare-add-all-cart-btn">
+            <span data-icon="cart" data-icon-size="14"></span>
+            <span>Add All to Cart</span>
+          </button>
+        </div>
+      </div>
+
+      <!-- Scrollable Comparative Matrix Table Container -->
+      <div class="compare-table-viewport momentum-scroll-body" id="compare-table-viewport">
+        <div id="compare-table-container">
+          <!-- Populated dynamically by app.js -->
+        </div>
       </div>
     </div>
   </div>
@@ -697,54 +1049,90 @@
 
   <!-- Real-Time Hardware Bench Messenger Drawer (WebSocket + Spring Boot /api/messages) -->
   <div class="drawer-overlay" id="messenger-overlay" aria-hidden="true">
-    <aside class="side-drawer messenger-drawer" id="messenger-drawer" role="dialog" aria-modal="true" aria-label="Voltbox Bench Messenger">
+    <aside class="side-drawer messenger-drawer momentum-drawer" id="messenger-drawer" data-momentum-drawer="messenger" role="dialog" aria-modal="true" aria-label="Voltbox Live Concierge & Community">
       <div class="drawer-head messenger-head">
-        <div>
-          <div class="drawer-kicker">
-            <span class="led-dot emerald"></span>
-            <span>LIVE WEBSOCKET // BENCH MESSENGER</span>
+        <div class="messenger-brand-wrap">
+          <div class="messenger-brand-icon" aria-hidden="true">
+            <span data-icon="cpu" data-icon-size="18"></span>
           </div>
-          <h2 class="drawer-title">Hardware Messenger</h2>
+          <div>
+            <h2 class="drawer-title messenger-title">Voltbox Engineering Terminal</h2>
+            <div class="messenger-subtitle">
+              <span class="led-dot emerald"></span>
+              <span>Lead Hardware Architects · Live Bench Support</span>
+            </div>
+          </div>
         </div>
         <div class="messenger-head-right">
-          <span class="messenger-online-tag" id="messenger-online-pill">1 online</span>
+          <span class="messenger-online-tag" id="messenger-online-pill">8 Engineers Online</span>
           <button class="modal-close" id="messenger-close" aria-label="Close Messenger">
             <span data-icon="x" data-icon-size="18"></span>
           </button>
         </div>
       </div>
 
-      <!-- Channel Switcher Tabs -->
-      <div class="messenger-channels" id="messenger-channels" role="tablist" aria-label="Messenger channels">
-        <button type="button" class="msg-channel-btn active" data-channel="general" role="tab" aria-selected="true">#general</button>
-        <button type="button" class="msg-channel-btn" data-channel="rig-builds" role="tab" aria-selected="false">#rig-builds</button>
-        <button type="button" class="msg-channel-btn" data-channel="price-drops" role="tab" aria-selected="false">#price-drops</button>
+      <!-- Engineering Security & Telemetry Banner -->
+      <div class="messenger-telemetry-strip" id="messenger-telemetry-strip">
+        <span class="telemetry-item"><span class="led-dot emerald"></span> STATUS: ACTIVE</span>
+        <span class="telemetry-item">LATENCY: 38ms</span>
+        <span class="telemetry-item">SECURE: TLS 1.3</span>
+      </div>
+
+      <!-- Segmented Channel Switcher Tabs -->
+      <div class="messenger-channels-wrap">
+        <div class="messenger-channels" id="messenger-channels" role="tablist" aria-label="Messenger channels">
+          <button type="button" class="msg-channel-btn active" data-channel="engineering-desk" role="tab" aria-selected="true">
+            <span data-icon="cpu" data-icon-size="13"></span>
+            <span>#engineering-desk</span>
+          </button>
+          <button type="button" class="msg-channel-btn" data-channel="rig-builds" role="tab" aria-selected="false">
+            <span data-icon="layers" data-icon-size="13"></span>
+            <span>#rig-builds</span>
+          </button>
+          <button type="button" class="msg-channel-btn" data-channel="stock-radar" role="tab" aria-selected="false">
+            <span data-icon="refresh" data-icon-size="13"></span>
+            <span>#stock-radar</span>
+          </button>
+          <button type="button" class="msg-channel-btn" data-channel="vip-concierge" role="tab" aria-selected="false">
+            <span data-icon="shield" data-icon-size="13"></span>
+            <span>#vip-concierge</span>
+          </button>
+        </div>
       </div>
 
       <!-- Quick-Prompt Hardware Discussion Chips -->
       <div class="messenger-quick-chips" id="messenger-quick-chips">
-        <button type="button" class="msg-quick-chip" data-prompt="Does the Intel Core Ultra 9 pair well with the RTX 5090?">Intel Ultra 9 + RTX 5090?</button>
-        <button type="button" class="msg-quick-chip" data-prompt="Just unlocked the 5% Rig Bundle + VOLT10 promo code!">5% Rig Bundle + VOLT10</button>
-        <button type="button" class="msg-quick-chip" data-prompt="Any restock update on the Aethel VX-1 OLED Handheld?">OLED Handheld Restock?</button>
+        <button type="button" class="msg-quick-chip" data-prompt="Bottleneck check: Does the Intel Core Ultra 9 pair with the RTX 5090?">⚡ Ultra 9 + RTX 5090 Pairing</button>
+        <button type="button" class="msg-quick-chip" data-prompt="VRM Thermal headroom on ROG X870E under sustained workloads?">🔥 VRM Thermals</button>
+        <button type="button" class="msg-quick-chip" data-prompt="Any restock update on the Aethel VX-1 OLED Handheld?">🚀 OLED Handheld Restock?</button>
+        <button type="button" class="msg-quick-chip" data-prompt="Just unlocked the 5% Rig Bundle + VOLT10 promo code!">💡 5% Rig Bundle + VOLT10</button>
       </div>
 
       <!-- Scrollable Real-Time Message Feed -->
-      <div class="messenger-feed" id="messenger-feed" data-testid="messenger-feed" aria-live="polite"></div>
+      <div class="messenger-feed momentum-scroll-body" id="messenger-feed" data-testid="messenger-feed" data-momentum-scroll="true" aria-live="polite"></div>
+
+      <!-- Typing Indicator -->
+      <div class="messenger-typing-bar" id="messenger-typing-bar" hidden>
+        <span class="typing-dot"></span>
+        <span class="typing-dot"></span>
+        <span class="typing-dot"></span>
+        <span class="typing-text" id="messenger-typing-text">Lead Hardware Architect is typing…</span>
+      </div>
 
       <!-- Message Composer with Hardware Part Attachment Selector -->
       <form class="messenger-composer" id="messenger-form" autocomplete="off">
         <div class="messenger-attach-row">
           <label class="msg-attach-label" for="chat-product-select">
             <span data-icon="cpu" data-icon-size="13"></span>
-            <span>Attach Part:</span>
+            <span>Embed Hardware Spec</span>
           </label>
           <select id="chat-product-select" aria-label="Attach hardware component to message">
-            <option value="">None (Text message only)</option>
+            <option value="">+ Embed Hardware Component (optional)</option>
           </select>
         </div>
         <div class="messenger-input-row">
           <input id="chat-input" type="text" maxlength="420"
-                 placeholder="Message #general or share a PC build…"
+                 placeholder="Message #engineering-desk or ask for a rig check…"
                  aria-label="Message text" autocomplete="off" />
           <button type="submit" class="messenger-send-btn" id="chat-send-btn" aria-label="Send message">
             <span data-icon="send" data-icon-size="15"></span>

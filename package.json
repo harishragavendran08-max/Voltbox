@@ -6,6 +6,7 @@
   "scripts": {
     "dev": "tsx server.ts",
     "build": "tsc --noEmit && esbuild src/client/price-chart.tsx --bundle --format=iife --minify --outfile=src/main/resources/static/recharts-bundle.js && esbuild src/client/qr-code.ts --bundle --format=iife --minify --outfile=src/main/resources/static/qr-bundle.js",
+    "lint": "tsc --noEmit",
     "start": "tsx server.ts",
     "test": "tsx --test src/logic/inventory.test.ts"
   },

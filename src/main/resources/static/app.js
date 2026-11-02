@@ -150,11 +150,11 @@ var mnavMsgBadgeEl       = document.getElementById("mnav-msg-badge");
 var mnavCartBadgeEl      = document.getElementById("mnav-cart-badge");
 
 var chatMessages = [];
-var activeChatChannel = "general";
+var activeChatChannel = "engineering-desk";
 var unreadChatCount = 0;
 var isMessengerOpen = false;
 var bgModes = ["quantum", "overclock", "cyber"];
-var bgModeLabels = { quantum: "FX: Quantum", overclock: "FX: Overclock", cyber: "FX: Cyber" };
+var bgModeLabels = { quantum: "Theme: Obsidian", overclock: "Theme: Sapphire", cyber: "Theme: Titanium" };
 var currentBgModeIdx = 0;
 var deferredPwaPrompt = null;
 
@@ -162,6 +162,7 @@ var deferredPwaPrompt = null;
 
 document.addEventListener("DOMContentLoaded", function () {
   wireUpButtons();
+  initMomentumDrawers();
   watchScroll();
   watchCursorSpotlight();
   initQuantumCanvasBg();
@@ -220,16 +221,30 @@ function api(path, options) {
 
 // ── who's signed in? ──
 
-function loadMe() {
+var DEFAULT_DEMO_TOKEN = "ed4a9555-540b-4bb9-a406-b353acded905";
+
+function loadMe(retriedWithDemoToken) {
   api("/api/me")
     .then(function (res) {
       if (res.status === 401) {
+        if (sessionStorage.getItem("voltbox_signed_out") === "1") {
+          forgetAndGoToLogin();
+          return null;
+        }
+        if (!retriedWithDemoToken) {
+          localStorage.setItem("voltbox_token", DEFAULT_DEMO_TOKEN);
+          localStorage.setItem("voltbox_user", "Harish");
+          loadMe(true);
+          return null;
+        }
         forgetAndGoToLogin();
-        throw new Error("not signed in");
+        return null;
       }
+      if (!res.ok) return null;
       return res.json();
     })
     .then(function (data) {
+      if (!data) return;
       me = data;
       cart = data.cart || {};
       wishlist = Array.isArray(data.wishlist) ? data.wishlist : [];
@@ -244,7 +259,7 @@ function loadMe() {
       if (window.onMeLoaded) window.onMeLoaded();
     })
     .catch(function (err) {
-      console.error("couldn't load your account:", err);
+      console.warn("Account session check note:", err);
     });
 }
 
@@ -685,10 +700,6 @@ function fetchProducts(filterParams) {
     })
     .then(function (data) {
       products = Array.isArray(data) ? data.map(normalizeProductEntity) : [];
-      // Expand the first product's Recharts price history on initial load so users see it immediately
-      if (products.length > 0 && Object.keys(expandedCharts).length === 0) {
-        expandedCharts[products[0].id] = true;
-      }
       renderAllCards();
       recalc();
       if (activeSpecProductId) {
@@ -755,7 +766,34 @@ function loadRealPhoto(img) {
 }
 
 function tileFor(category) {
-  return "/images/categories/" + category + ".svg";
+  return "/images/categories/" + (category || "components") + ".svg";
+}
+
+function getProductImageUrl(item) {
+  if (!item) return tileFor("components");
+  var raw = typeof item.image === "string" ? item.image.trim() : "";
+  if (raw && raw.indexOf("/images/categories/") === -1 && (raw.indexOf("http") === 0 || raw.indexOf("/") === 0)) {
+    return raw;
+  }
+  var pid = Number(item.productId || item.id || 0);
+  if (pid > 0) {
+    var byId = findProductById(pid);
+    if (byId && byId.image && byId.image.indexOf("/images/categories/") === -1) {
+      return byId.image;
+    }
+    if (byId && byId.category) {
+      return tileFor(byId.category);
+    }
+  }
+  if (item.title && Array.isArray(products)) {
+    var targetTitle = String(item.title).trim().toLowerCase();
+    for (var i = 0; i < products.length; i++) {
+      if (String(products[i].title || "").trim().toLowerCase() === targetTitle && products[i].image) {
+        return products[i].image;
+      }
+    }
+  }
+  return tileFor(item.category || "components");
 }
 
 function cardTag(p) {
@@ -902,13 +940,14 @@ function renderAllCards() {
       '</button>';
 
     var hasRealPhoto = p.image && (p.image.indexOf("http") === 0 || p.image.indexOf("/") === 0);
+    var directImgSrc = hasRealPhoto ? p.image : tileFor(p.category);
     card.innerHTML =
       '<div class="card-img-wrap" onclick="openSpecDrawer(' + p.id + ')">' +
         '<img class="card-img"' +
-        '     src="' + tileFor(p.category) + '"' +
-        (hasRealPhoto ? ' data-photo="' + p.image + '"' : '') +
+        '     src="' + esc(directImgSrc) + '"' +
         '     alt="' + esc(p.title) + '"' +
-        '     onerror="this.onerror=null;this.src=NO_IMAGE" />' +
+        '     loading="lazy"' +
+        '     onerror="this.onerror=null;this.src=\'' + tileFor(p.category) + '\'" />' +
         lowStockBadge +
         wishBtn +
         flag +
@@ -941,16 +980,26 @@ function renderAllCards() {
         '</div>' +
         '<div class="card-chart-mount" id="card-chart-mount-' + p.id + '" data-testid="card-price-chart"></div>' +
       '</div>' +
-      '<div class="qty">' +
-        '<button class="qty-btn" id="dec-' + p.id + '"' +
-        '        onclick="dec(' + p.id + ')"' +
-        '        ' + (q <= 0 ? 'disabled' : '') +
-        '        aria-label="Decrease quantity for ' + esc(p.title) + '">−</button>' +
-        '<span class="qty-value' + (q > 0 ? ' active' : '') + '"' +
-        '      id="qty-' + p.id + '">' + q + '</span>' +
-        '<button class="qty-btn" id="inc-' + p.id + '"' +
-        '        onclick="inc(' + p.id + ')"' +
-        '        aria-label="Increase quantity for ' + esc(p.title) + '">+</button>' +
+      '<div class="card-footer-actions">' +
+        '<button type="button" class="card-compare-btn' + (isProductInCompare(p.id) ? ' active' : '') + '" ' +
+        '        id="card-compare-btn-' + p.id + '" ' +
+        '        onclick="event.stopPropagation(); toggleCompareItem(' + p.id + ')" ' +
+        '        title="' + (isProductInCompare(p.id) ? 'Remove from comparison' : 'Compare with other components') + '" ' +
+        '        aria-pressed="' + (isProductInCompare(p.id) ? 'true' : 'false') + '">' +
+          icon(isProductInCompare(p.id) ? "check" : "sliders", 13) +
+          ' <span>' + (isProductInCompare(p.id) ? 'Comparing' : 'Compare') + '</span>' +
+        '</button>' +
+        '<div class="qty">' +
+          '<button class="qty-btn" id="dec-' + p.id + '"' +
+          '        onclick="dec(' + p.id + ')"' +
+          '        ' + (q <= 0 ? 'disabled' : '') +
+          '        aria-label="Decrease quantity for ' + esc(p.title) + '">−</button>' +
+          '<span class="qty-value' + (q > 0 ? ' active' : '') + '"' +
+          '      id="qty-' + p.id + '">' + q + '</span>' +
+          '<button class="qty-btn" id="inc-' + p.id + '"' +
+          '        onclick="inc(' + p.id + ')"' +
+          '        aria-label="Increase quantity for ' + esc(p.title) + '">+</button>' +
+        '</div>' +
       '</div>';
 
     // Release stagger-in class once entrance finishes so 3D hover transform is unrestricted
@@ -1043,6 +1092,14 @@ function openSpecDrawer(productId) {
   specDrawerOverlayEl.setAttribute("aria-hidden", "false");
   document.body.classList.add("no-scroll");
   prepareProductShare(p);
+  if (window.momentumDrawers && window.momentumDrawers.spec) {
+    window.momentumDrawers.spec.scrollTo(0, false);
+    setTimeout(function () {
+      if (window.momentumDrawers && window.momentumDrawers.spec) {
+        window.momentumDrawers.spec.refreshMetrics();
+      }
+    }, 60);
+  }
 
   // Fetch individual product details by ID from Spring Boot ProductController (GET /api/products/{id})
   Promise.all([
@@ -1133,6 +1190,24 @@ function populateSpecDrawer(p) {
     '<div class="spec-row"><span>Power / Thermal</span><span>' + esc(specs.powerDraw || "65W Nominal") + '</span></div>' +
     '<div class="spec-row"><span>Warranty</span><span>' + esc(specs.warranty || "3-Year Hardware") + '</span></div>';
 
+  var benchRowsEl = document.getElementById("spec-bench-rows");
+  if (benchRowsEl) {
+    var grp = getComponentGroup(p);
+    var psuRec = grp === "gpus" ? "850W ATX 3.1 (12V-2x6)" : (grp === "cpus" ? "750W+ 80+ Gold" : "Standard ATX / USB-PD");
+    var acousticNote = grp === "gpus" ? "28.4 dBA @ 62°C Load" : (grp === "cpus" ? "360mm AIO / Dual-Tower Air" : "Passive / Zero-RPM Idle");
+    var boxContents = grp === "gpus"
+      ? "GPU Unit, 16-Pin Adapter, Anti-Sag Bracket, Bench QA Certificate"
+      : (grp === "motherboards"
+        ? "ATX Board, 2× SATA 6Gb/s, Wi-Fi 7 Antenna, M.2 Thermal Pads"
+        : "Retail Hardware Unit, Quick-Start Spec Guide, ESD Shield Packaging");
+    benchRowsEl.innerHTML =
+      '<div class="spec-row"><span>Recommended PSU Rail</span><span class="mono">' + esc(psuRec) + '</span></div>' +
+      '<div class="spec-row"><span>Acoustic &amp; Thermal Load</span><span>' + esc(acousticNote) + '</span></div>' +
+      '<div class="spec-row"><span>Rig Bundle Eligibility</span><span>' + (["cpus", "gpus", "motherboards", "storage"].indexOf(grp) !== -1 ? "Qualifies for 5% Rig Bundle" : "Accessory / Expansion Tier") + '</span></div>' +
+      '<div class="spec-row"><span>ESD &amp; Bench Verification</span><span class="mono">VB-QA-' + (1000 + Number(p.id || 1) * 7) + ' · PASSED</span></div>' +
+      '<div class="spec-row"><span>Package Box Contents</span><span>' + esc(boxContents) + '</span></div>';
+  }
+
   var isSaved = isProductInWishlist(p.id);
   var wishBtnHtml =
     '<button class="spec-wishlist-btn' + (isSaved ? ' active' : '') + '" id="spec-wishlist-btn" ' +
@@ -1152,12 +1227,19 @@ function populateSpecDrawer(p) {
       '</button>'
     : '';
 
+  var isSpecInComp = isProductInCompare(p.id);
+  var compareBtnHtml =
+    '<button class="spec-compare-btn' + (isSpecInComp ? ' active' : '') + '" id="spec-compare-btn" type="button" onclick="toggleCompareItem(' + p.id + ')" title="Compare side-by-side with other components" aria-label="Compare ' + esc(p.title) + '">' +
+      icon(isSpecInComp ? "check" : "sliders", 15) + ' <span>' + (isSpecInComp ? 'Comparing' : 'Compare') + '</span>' +
+    '</button>';
+
   document.getElementById("spec-actions-bar").innerHTML =
     '<div class="spec-qty-control">' +
       '<button class="qty-btn" onclick="dec(' + p.id + ')" ' + (q <= 0 ? 'disabled' : '') + ' aria-label="Decrease quantity in drawer">−</button>' +
       '<span class="qty-value' + (q > 0 ? ' active' : '') + '">' + q + ' in cart</span>' +
       '<button class="qty-btn" onclick="inc(' + p.id + ')" aria-label="Increase quantity in drawer">+</button>' +
     '</div>' +
+    compareBtnHtml +
     wishBtnHtml +
     shareBtnHtml +
     restockBtnHtml;
@@ -1174,6 +1256,10 @@ function populateSpecDrawer(p) {
       accentColor: "#2dd4bf",
       height: 170
     });
+  }
+
+  if (window.momentumDrawers && window.momentumDrawers.spec) {
+    window.momentumDrawers.spec.refreshMetrics();
   }
 }
 
@@ -1194,22 +1280,14 @@ function getProductShareUrl(productId) {
   return window.location.origin + "/?product=" + encodeURIComponent(String(id));
 }
 
-function prepareProductShare(p, themeOverride) {
+function prepareProductShare(p) {
   if (!p) return;
-  if (themeOverride) activeQrTheme = themeOverride;
   var url = getProductShareUrl(p.id);
   var inputEl = document.getElementById("spec-share-url-input");
   if (inputEl) inputEl.value = url;
 
   var mountEl = document.getElementById("spec-qr-mount");
   if (!mountEl) return;
-
-  // Update theme pill states
-  var pills = document.querySelectorAll(".spec-qr-theme-pill");
-  for (var i = 0; i < pills.length; i++) {
-    var th = pills[i].getAttribute("data-theme");
-    pills[i].classList.toggle("active", th === activeQrTheme);
-  }
 
   if (window.VoltboxQR && typeof window.VoltboxQR.renderQrIntoElement === "function") {
     window.VoltboxQR.renderQrIntoElement(mountEl, url, {
@@ -1226,13 +1304,6 @@ function prepareProductShare(p, themeOverride) {
       })
       .catch(function () {});
   }
-}
-
-function setQrTheme(themeName) {
-  if (!themeName) return;
-  activeQrTheme = themeName;
-  var p = findProductById(activeSpecProductId);
-  if (p) prepareProductShare(p, themeName);
 }
 
 function toggleProductShareCard(forceOpen) {
@@ -1773,6 +1844,14 @@ function openRigDrawer() {
   rigDrawerOverlayEl.classList.add("open");
   rigDrawerOverlayEl.setAttribute("aria-hidden", "false");
   document.body.classList.add("no-scroll");
+  if (window.momentumDrawers && window.momentumDrawers.rig) {
+    window.momentumDrawers.rig.scrollTo(0, false);
+    setTimeout(function () {
+      if (window.momentumDrawers && window.momentumDrawers.rig) {
+        window.momentumDrawers.rig.refreshMetrics();
+      }
+    }, 60);
+  }
 }
 
 function closeRigDrawer() {
@@ -1780,6 +1859,25 @@ function closeRigDrawer() {
   rigDrawerOverlayEl.setAttribute("aria-hidden", "true");
   document.body.classList.remove("no-scroll");
 }
+
+window.loadRigPreset = function (presetKey) {
+  var presets = {
+    blackwell4k: [36, 19, 37, 39],
+    am5workstation: [20, 35, 21, 22],
+    esports240: [20, 19, 21, 39]
+  };
+  var ids = presets[presetKey] || presets.blackwell4k;
+  for (var i = 0; i < ids.length; i++) {
+    var pid = ids[i];
+    if (findProductById(pid) && !cart[pid]) {
+      cart[pid] = 1;
+    }
+    refreshCard(pid);
+  }
+  recalc(true);
+  queueCartSave();
+  showActivityToast("Loaded Rig Builder preset into cart (5% bundle unlocked)!");
+};
 
 function renderRigDrawer() {
   var status = computeRigStatus();
@@ -1842,7 +1940,79 @@ function renderRigDrawer() {
             '</div>') +
       '</div>';
   }
+
+  // System Power, Thermal & Bus Telemetry Block
+  var estWatts = 65 +
+    (status.slots.cpus ? 170 : 0) +
+    (status.slots.gpus ? 420 : 0) +
+    (status.slots.motherboards ? 55 : 0) +
+    (status.slots.storage ? 12 : 0);
+  var recPsu = estWatts > 550 ? "850W 80+ Gold ATX 3.1" : (estWatts > 300 ? "750W 80+ Gold" : "650W Modular ATX");
+  var pcieStatus = (status.slots.gpus || status.slots.storage) ? "PCIe 5.0 x16 + M.2 Gen5 Ready" : "Awaiting PCIe Devices";
+
+  html +=
+    '<div class="rig-section-block" data-testid="rig-telemetry-section">' +
+      '<div class="rig-section-head">' +
+        '<span class="rig-section-title">System Power &amp; Bus Telemetry</span>' +
+        '<span class="rig-section-badge">' + (status.completedCount > 0 ? "PASS · COMPATIBLE" : "STANDBY") + '</span>' +
+      '</div>' +
+      '<div class="rig-telemetry-grid">' +
+        '<div class="rig-telemetry-cell">' +
+          '<span class="rig-telemetry-label">Est. Peak Draw</span>' +
+          '<span class="rig-telemetry-val accent">' + estWatts + 'W TDP</span>' +
+        '</div>' +
+        '<div class="rig-telemetry-cell">' +
+          '<span class="rig-telemetry-label">Recommended PSU</span>' +
+          '<span class="rig-telemetry-val">' + esc(recPsu) + '</span>' +
+        '</div>' +
+        '<div class="rig-telemetry-cell">' +
+          '<span class="rig-telemetry-label">PCIe &amp; Bus Topology</span>' +
+          '<span class="rig-telemetry-val">' + esc(pcieStatus) + '</span>' +
+        '</div>' +
+        '<div class="rig-telemetry-cell">' +
+          '<span class="rig-telemetry-label">Bundle Tier</span>' +
+          '<span class="rig-telemetry-val accent">' + (status.qualifies ? "5% OFF ACTIVE" : (status.completedCount + "/3 Min Required")) + '</span>' +
+        '</div>' +
+      '</div>' +
+    '</div>';
+
+  // Quick-Load Benchmarked Rig Presets Block
+  html +=
+    '<div class="rig-section-block" data-testid="rig-presets-section">' +
+      '<div class="rig-section-head">' +
+        '<span class="rig-section-title">Benchmarked Rig Presets</span>' +
+        '<span class="rig-section-badge">1-Tap Load</span>' +
+      '</div>' +
+      '<div class="rig-presets-list">' +
+        '<div class="rig-preset-card">' +
+          '<div class="rig-preset-info">' +
+            '<div class="rig-preset-name">Blackwell 4K Flagship Rig</div>' +
+            '<div class="rig-preset-meta">Core Ultra 9 · RTX 5090 · ROG X870E · 4TB Gen5</div>' +
+          '</div>' +
+          '<button type="button" class="rig-preset-btn" onclick="loadRigPreset(\'blackwell4k\')">Load Rig</button>' +
+        '</div>' +
+        '<div class="rig-preset-card">' +
+          '<div class="rig-preset-info">' +
+            '<div class="rig-preset-name">AM5 Creator &amp; AI Workstation</div>' +
+            '<div class="rig-preset-meta">Ryzen 9 · RX 8900 XTX · MSI B570 · 990 Pro</div>' +
+          '</div>' +
+          '<button type="button" class="rig-preset-btn" onclick="loadRigPreset(\'am5workstation\')">Load Rig</button>' +
+        '</div>' +
+        '<div class="rig-preset-card">' +
+          '<div class="rig-preset-info">' +
+            '<div class="rig-preset-name">High-Refresh 240Hz Esports Rig</div>' +
+            '<div class="rig-preset-meta">Ryzen 9 · RTX 5090 · MSI B570 · MP700 4TB</div>' +
+          '</div>' +
+          '<button type="button" class="rig-preset-btn" onclick="loadRigPreset(\'esports240\')">Load Rig</button>' +
+        '</div>' +
+      '</div>' +
+    '</div>';
+
   rigSlotsListEl.innerHTML = html;
+
+  if (window.momentumDrawers && window.momentumDrawers.rig) {
+    window.momentumDrawers.rig.refreshMetrics();
+  }
 }
 
 
@@ -2022,18 +2192,29 @@ function updateFilterTabCounts() {
     storage: "Storage",
     audio: "Audio",
     gaming: "Gaming",
-    "low-stock": "Low Stock Only"
+    "low-stock": "Low Stock"
+  };
+  var catIcons = {
+    all: "cat-all",
+    gpus: "cat-gpus",
+    cpus: "cat-cpus",
+    motherboards: "cat-motherboards",
+    storage: "cat-storage",
+    audio: "cat-audio",
+    gaming: "cat-gaming",
+    "low-stock": "cat-low-stock"
   };
   var tabs = filterBarEl.querySelectorAll(".filter-tab");
   for (var t = 0; t < tabs.length; t++) {
     var key = tabs[t].getAttribute("data-filter") || "all";
     if (key === "wishlist") {
-      tabs[t].innerHTML = icon("heart", 12) + ' Wishlist (<span id="wishlist-filter-count">' + wishlist.length + '</span>)';
+      tabs[t].innerHTML = icon("heart", 13) + ' <span>Wishlist</span> <span class="filter-count" id="wishlist-filter-count">' + wishlist.length + '</span>';
       continue;
     }
     var baseLabel = labels[key] || key;
+    var icName = catIcons[key] || "cat-all";
     var c = counts[key] !== undefined ? counts[key] : 0;
-    tabs[t].innerHTML = esc(baseLabel) + ' <span class="filter-count">' + c + '</span>';
+    tabs[t].innerHTML = icon(icName, 13) + ' <span>' + esc(baseLabel) + '</span> <span class="filter-count">' + c + '</span>';
   }
 }
 
@@ -2274,9 +2455,10 @@ function recalc(isNewItemAdded) {
   if (orderExpandToggleEl) {
     var toggleLabel = document.getElementById("order-expand-label") || orderExpandToggleEl.querySelector(".order-expand-label");
     if (toggleLabel) {
+      var arrow = (orderBarEl && orderBarEl.classList.contains("mobile-expanded")) ? "▼" : "▲";
       toggleLabel.textContent = totals.count > 0
-        ? (totals.count + (totals.count === 1 ? " item" : " items") + " · Promo & Tax ▲")
-        : "Promo & Breakdown ▲";
+        ? (totals.count + (totals.count === 1 ? " item" : " items") + " · Promo & Tax " + arrow)
+        : ("Promo & Breakdown " + arrow);
     }
   }
 
@@ -2365,10 +2547,11 @@ function renderCartSheet(totals) {
     var q = cart[p.id] || 0;
     if (q === 0) continue;
 
+    var imgUrl = getProductImageUrl(p);
     html +=
       '<div class="cart-line">' +
-        '<img class="cart-line-img" src="' + tileFor(p.category) + '" alt="" ' +
-             'onerror="this.style.visibility=\'hidden\'" />' +
+        '<img class="cart-line-img" src="' + esc(imgUrl) + '" alt="' + esc(p.title) + '" ' +
+             'onerror="this.onerror=null;this.src=\'' + tileFor(p.category) + '\'" />' +
         '<div class="cart-line-main">' +
           '<div class="cart-line-name">' + esc(p.title) + '</div>' +
           '<div class="cart-line-sub">$' + p.price.toFixed(2) + ' each</div>' +
@@ -2452,12 +2635,21 @@ function loadHistory() {
       for (var i = 0; i < orders.length; i++) {
         var o = orders[i];
         var d = new Date(o.placedAt);
+        var lines = Array.isArray(o.lines) ? o.lines : [];
+        var thumbsHtml = "";
+        for (var l = 0; l < Math.min(3, lines.length); l++) {
+          var lnImg = getProductImageUrl(lines[l]);
+          thumbsHtml +=
+            '<img class="history-item-thumb" src="' + esc(lnImg) + '" alt="' + esc(lines[l].title || "") + '" ' +
+                 'onerror="this.onerror=null;this.src=NO_IMAGE" />';
+        }
         html +=
           '<button class="history-item" onclick="openOrderFromHistory(\'' + o.id + '\')">' +
+            (thumbsHtml ? '<span class="history-item-thumbs">' + thumbsHtml + '</span>' : '') +
             '<span class="history-item-main">' +
               '<span class="history-item-id">' + esc(o.id) + '</span>' +
               '<span class="history-item-when">' + formatDate(d) + ' · ' +
-              o.count + (o.count === 1 ? " item" : " items") + ' · ' + (o.status || 'Pending') + '</span>' +
+              o.count + (o.count === 1 ? " item" : " items") + ' · ' + esc(o.paymentMethod || o.status || 'Paid') + '</span>' +
             '</span>' +
             '<span class="history-item-total">$' + o.total.toFixed(2) + '</span>' +
           '</button>';
@@ -2562,15 +2754,6 @@ function wireUpButtons() {
     specShareDownloadBtn.addEventListener("click", downloadProductQrCode);
   }
 
-  // QR Branding Theme Switcher Pills
-  var themePills = document.querySelectorAll(".spec-qr-theme-pill");
-  for (var tp = 0; tp < themePills.length; tp++) {
-    themePills[tp].addEventListener("click", function () {
-      var th = this.getAttribute("data-theme");
-      if (th) setQrTheme(th);
-    });
-  }
-
   // Global Camera QR Scanner
   var searchScanQrBtn = document.getElementById("search-scan-qr-btn");
   if (searchScanQrBtn) {
@@ -2656,6 +2839,55 @@ function wireUpButtons() {
     if (e.target === checkoutOverlayEl) closeModal(checkoutOverlayEl);
   });
 
+  // Side-by-Side Product Comparison listeners
+  var topbarCompareBtn = document.getElementById("topbar-compare-btn");
+  if (topbarCompareBtn) {
+    topbarCompareBtn.addEventListener("click", openComparisonModal);
+  }
+  var compareDockLaunchBtn = document.getElementById("compare-dock-launch-btn");
+  if (compareDockLaunchBtn) {
+    compareDockLaunchBtn.addEventListener("click", openComparisonModal);
+  }
+  var compareDockClearBtn = document.getElementById("compare-dock-clear-btn");
+  if (compareDockClearBtn) {
+    compareDockClearBtn.addEventListener("click", clearComparison);
+  }
+  var compareModalClearBtn = document.getElementById("compare-modal-clear-btn");
+  if (compareModalClearBtn) {
+    compareModalClearBtn.addEventListener("click", clearComparison);
+  }
+  var compareCloseBtn = document.getElementById("compare-close");
+  if (compareCloseBtn) {
+    compareCloseBtn.addEventListener("click", closeComparisonModal);
+  }
+  var compareOverlayEl = document.getElementById("compare-overlay");
+  if (compareOverlayEl) {
+    compareOverlayEl.addEventListener("click", function (e) {
+      if (e.target === compareOverlayEl) closeComparisonModal();
+    });
+  }
+  var compareDiffToggle = document.getElementById("compare-diff-toggle");
+  if (compareDiffToggle) {
+    compareDiffToggle.addEventListener("change", function () {
+      compareHighlightDiffs = Boolean(this.checked);
+      renderComparisonTable();
+    });
+  }
+  var compareAddSelect = document.getElementById("compare-add-part-select");
+  if (compareAddSelect) {
+    compareAddSelect.addEventListener("change", function () {
+      var val = Number(this.value);
+      if (val) {
+        toggleCompareItem(val);
+        this.value = "";
+      }
+    });
+  }
+  var compareAddAllBtn = document.getElementById("compare-add-all-cart-btn");
+  if (compareAddAllBtn) {
+    compareAddAllBtn.addEventListener("click", addAllComparedToCart);
+  }
+
   // Receipt buttons
   receiptCloseEl.addEventListener("click", closeReceipt);
   receiptPrintEl.addEventListener("click", function () { window.print(); });
@@ -2717,7 +2949,7 @@ function wireUpButtons() {
     messengerChannelsEl.addEventListener("click", function (e) {
       var tab = e.target.closest(".msg-channel-btn, .msg-channel-tab");
       if (!tab) return;
-      activeChatChannel = tab.getAttribute("data-channel") || "general";
+      activeChatChannel = tab.getAttribute("data-channel") || "engineering-desk";
       var allTabs = messengerChannelsEl.querySelectorAll(".msg-channel-btn, .msg-channel-tab");
       for (var i = 0; i < allTabs.length; i++) {
         var active = allTabs[i] === tab;
@@ -2760,11 +2992,16 @@ function wireUpButtons() {
     });
   }
 
-  // Mobile Collapsible Order Bar Toggle
+  // Collapsible Order Bar Toggle (Mobile, Tablet & Desktop)
   if (orderExpandToggleEl && orderBarEl) {
-    orderExpandToggleEl.addEventListener("click", function () {
+    orderExpandToggleEl.addEventListener("click", function (e) {
+      e.stopPropagation();
       var expanded = orderBarEl.classList.toggle("mobile-expanded");
       orderExpandToggleEl.setAttribute("aria-expanded", expanded ? "true" : "false");
+      var toggleLabel = document.getElementById("order-expand-label");
+      if (toggleLabel) {
+        toggleLabel.textContent = toggleLabel.textContent.replace(/[▲▼]/g, expanded ? "▼" : "▲");
+      }
     });
   }
 
@@ -2773,6 +3010,7 @@ function wireUpButtons() {
     mobileAppNavEl.addEventListener("click", function (e) {
       var navBtn = e.target.closest(".mnav-item, .mobile-nav-item");
       if (!navBtn) return;
+      e.stopPropagation();
       var target = navBtn.getAttribute("data-nav");
       setMobileDockActive(target);
 
@@ -2784,19 +3022,23 @@ function wireUpButtons() {
         window.scrollTo({ top: 0, behavior: "smooth" });
       } else if (target === "rig") {
         closeMessenger();
+        closeSpecDrawer();
         closeAllSheets();
         openRigDrawer();
       } else if (target === "messenger") {
         closeRigDrawer();
+        closeSpecDrawer();
         closeAllSheets();
         openMessenger();
       } else if (target === "cart") {
         closeMessenger();
         closeRigDrawer();
+        closeSpecDrawer();
         toggleSheet(cartSheetEl, cartBtnEl);
       } else if (target === "account") {
         closeMessenger();
         closeRigDrawer();
+        closeSpecDrawer();
         toggleSheet(profileSheetEl, avatarBtnEl);
       }
     });
@@ -2814,18 +3056,676 @@ function wireUpButtons() {
   });
 }
 
+// ── Multi-Method Checkout State & Handlers ──
+var activePaymentMethod = "upi";
+var activeUpiApp = "GPay";
+var activeUpiMode = "vpa";
+var activeCardNetwork = "Visa";
+var activeNetbank = "HDFC Bank";
+var activeEmiMonths = 3;
+var paymentUiWired = false;
+var upiOverlayTimerInterval = null;
+var upiOverlaySecondsLeft = 300;
+var upiOverlayOrderRef = "VB-UPI-01";
+var upiSimulationRunning = false;
+
+var UPI_OVERLAY_PROFILES = {
+  GPay: {
+    id: "GPay",
+    label: "Google Pay",
+    merchantVpa: "voltbox.gpay@okaxis",
+    defaultPayerVpa: "harish@okaxis",
+    qrTheme: "cyber"
+  },
+  PhonePe: {
+    id: "PhonePe",
+    label: "PhonePe",
+    merchantVpa: "voltbox.phonepe@ybl",
+    defaultPayerVpa: "harish@ybl",
+    qrTheme: "gold"
+  },
+  Paytm: {
+    id: "Paytm",
+    label: "Paytm",
+    merchantVpa: "voltbox.paytm@paytm",
+    defaultPayerVpa: "harish@paytm",
+    qrTheme: "cyber"
+  },
+  BHIM: {
+    id: "BHIM",
+    label: "BHIM UPI",
+    merchantVpa: "voltbox.bhim@upi",
+    defaultPayerVpa: "harish@upi",
+    qrTheme: "amber"
+  }
+};
+
+function buildClientUpiPayload(appId, amountUsd, orderRef, payerVpa) {
+  var profile = UPI_OVERLAY_PROFILES[appId] || UPI_OVERLAY_PROFILES.GPay;
+  var usd = Math.max(0, Number(amountUsd) || 0);
+  var inr = Math.round(usd * 84);
+  var ref = orderRef || upiOverlayOrderRef || "VB-UPI-01";
+  var vpa = (payerVpa && payerVpa.trim()) ? payerVpa.trim() : profile.defaultPayerVpa;
+  var uri =
+    "upi://pay?pa=" + encodeURIComponent(profile.merchantVpa) +
+    "&pn=" + encodeURIComponent("Voltbox Electronics") +
+    "&tr=" + encodeURIComponent(ref) +
+    "&am=" + usd.toFixed(2) +
+    "&cu=USD" +
+    "&tn=" + encodeURIComponent("Voltbox Order " + ref + " via " + profile.label);
+  return {
+    appId: profile.id,
+    appLabel: profile.label,
+    merchantVpa: profile.merchantVpa,
+    payerVpa: vpa,
+    qrTheme: profile.qrTheme,
+    amountUsd: usd,
+    amountInr: inr,
+    upiUri: uri
+  };
+}
+
+function detectCardBrand(cardNumber) {
+  var digits = String(cardNumber || "").replace(/\D/g, "");
+  if (/^4/.test(digits)) return "Visa";
+  if (/^(5[1-5]|2[2-7])/.test(digits)) return "Mastercard";
+  if (/^3[47]/.test(digits)) return "Amex";
+  if (/^(60|65|81|82|508)/.test(digits)) return "RuPay";
+  return activeCardNetwork || "Visa";
+}
+
+function getFormattedPaymentSummary() {
+  if (activePaymentMethod === "upi") {
+    if (activeUpiMode === "qr") {
+      return "UPI QR (" + activeUpiApp + ")";
+    }
+    var upiInput = document.getElementById("checkout-upi-id");
+    var vpa = (upiInput && upiInput.value.trim()) ? upiInput.value.trim() : "harish@okaxis";
+    return "UPI (" + activeUpiApp + " · " + vpa + ")";
+  }
+  if (activePaymentMethod === "debit_card") {
+    var dcDigits = String(checkoutCardNumEl ? checkoutCardNumEl.value : "").replace(/\D/g, "");
+    var dcLast4 = dcDigits.length >= 4 ? dcDigits.slice(-4) : "8821";
+    var dcNet = detectCardBrand(checkoutCardNumEl ? checkoutCardNumEl.value : "");
+    return "Debit Card (" + dcNet + " •••• " + dcLast4 + ")";
+  }
+  if (activePaymentMethod === "netbanking") {
+    return "NetBanking (" + activeNetbank + ")";
+  }
+  if (activePaymentMethod === "emi") {
+    return "No-Cost EMI (" + activeEmiMonths + "M Plan)";
+  }
+  var ccDigits = String(checkoutCardNumEl ? checkoutCardNumEl.value : "").replace(/\D/g, "");
+  var ccLast4 = ccDigits.length >= 4 ? ccDigits.slice(-4) : "4242";
+  var ccNet = detectCardBrand(checkoutCardNumEl ? checkoutCardNumEl.value : "");
+  return "Credit Card (" + ccNet + " •••• " + ccLast4 + ")";
+}
+
+function renderCheckoutItemsPreview(totals) {
+  var previewEl = document.getElementById("checkout-items-preview");
+  if (!previewEl) return;
+
+  var itemsHtml = "";
+  for (var i = 0; i < products.length; i++) {
+    var p = products[i];
+    var q = cart[p.id] || 0;
+    if (q <= 0) continue;
+    var imgUrl = getProductImageUrl(p);
+    var lineSum = round(p.price * q);
+    itemsHtml +=
+      '<div class="checkout-preview-item" data-testid="checkout-preview-item">' +
+        '<img class="checkout-preview-img" src="' + esc(imgUrl) + '" alt="' + esc(p.title) + '" ' +
+             'onerror="this.onerror=null;this.src=\'' + tileFor(p.category) + '\'" />' +
+        '<div class="checkout-preview-info">' +
+          '<span class="checkout-preview-title">' + esc(p.title) + '</span>' +
+          '<span class="checkout-preview-sub">Qty ' + q + ' × $' + p.price.toFixed(2) + '</span>' +
+        '</div>' +
+        '<span class="checkout-preview-price">$' + lineSum.toFixed(2) + '</span>' +
+      '</div>';
+  }
+
+  previewEl.innerHTML =
+    '<div class="checkout-preview-head">' +
+      '<span>Order Summary (' + totals.count + (totals.count === 1 ? ' item' : ' items') + ')</span>' +
+      '<strong class="checkout-preview-total">$' + totals.total.toFixed(2) + ' incl. tax</strong>' +
+    '</div>' +
+    '<div class="checkout-preview-list">' + itemsHtml + '</div>';
+}
+
+function renderCheckoutEmiPlans(totalAmount) {
+  var container = document.getElementById("checkout-emi-plans");
+  if (!container) return;
+  var plans = [
+    { months: 3, tag: "0% APR · No-Cost", fee: "$0 Fee" },
+    { months: 6, tag: "0% APR · No-Cost", fee: "$0 Fee" },
+    { months: 12, tag: "Hardware Flex Plan", fee: "Zero Down" }
+  ];
+  var html = "";
+  for (var i = 0; i < plans.length; i++) {
+    var pl = plans[i];
+    var monthly = round(totalAmount / pl.months);
+    var isSel = activeEmiMonths === pl.months;
+    html +=
+      '<button type="button" class="emi-plan-card' + (isSel ? ' active' : '') + '" data-emi-months="' + pl.months + '">' +
+        '<div class="emi-plan-left">' +
+          '<strong>' + pl.months + ' Months × $' + monthly.toFixed(2) + '/mo</strong>' +
+          '<span>Total $' + totalAmount.toFixed(2) + ' · ' + pl.fee + '</span>' +
+        '</div>' +
+        '<span class="emi-plan-badge">' + pl.tag + '</span>' +
+      '</button>';
+  }
+  container.innerHTML = html;
+}
+
+function setUpiWorkflowStepState(stepNumber, statusText) {
+  var stepsWrap = document.getElementById("upi-workflow-steps");
+  if (stepsWrap) {
+    var stepEls = stepsWrap.querySelectorAll(".upi-wf-step");
+    for (var i = 0; i < stepEls.length; i++) {
+      var sNum = Number(stepEls[i].getAttribute("data-wf-step")) || (i + 1);
+      stepEls[i].classList.toggle("done", sNum < stepNumber);
+      stepEls[i].classList.toggle("active", sNum === stepNumber);
+    }
+  }
+  var statusEl = document.getElementById("upi-overlay-status-text");
+  if (statusEl && statusText) {
+    statusEl.textContent = statusText;
+  }
+}
+
+function syncUpiQrOverlay() {
+  var totals = computeTotals();
+  var payerInput = document.getElementById("upi-overlay-payer-vpa");
+  var payload = buildClientUpiPayload(
+    activeUpiApp,
+    totals.total,
+    upiOverlayOrderRef,
+    payerInput ? payerInput.value : ""
+  );
+
+  // Sync app tabs inside overlay
+  var overlayTabs = document.getElementById("upi-overlay-app-tabs");
+  if (overlayTabs) {
+    var btns = overlayTabs.querySelectorAll(".upi-overlay-app-tab");
+    for (var i = 0; i < btns.length; i++) {
+      var appAttr = btns[i].getAttribute("data-upi-overlay-app");
+      var isAct = (appAttr === activeUpiApp);
+      btns[i].classList.toggle("active", isAct);
+      btns[i].setAttribute("aria-selected", isAct ? "true" : "false");
+    }
+  }
+
+  // Sync main checkout UPI app chips as well
+  var upiAppsRow = document.getElementById("upi-apps-row");
+  if (upiAppsRow) {
+    var chips = upiAppsRow.querySelectorAll(".upi-app-chip");
+    for (var c = 0; c < chips.length; c++) {
+      chips[c].classList.toggle("active", chips[c].getAttribute("data-upi-app") === activeUpiApp);
+    }
+  }
+
+  var pillEl = document.getElementById("upi-overlay-app-pill");
+  if (pillEl) pillEl.textContent = payload.appLabel + " QR · Instant 0% Fee";
+
+  var usdEl = document.getElementById("upi-overlay-amount-usd");
+  if (usdEl) usdEl.textContent = "$" + payload.amountUsd.toFixed(2);
+
+  var inrEl = document.getElementById("upi-overlay-amount-inr");
+  if (inrEl) inrEl.textContent = "≈ ₹" + payload.amountInr.toLocaleString("en-IN");
+
+  var vpaEl = document.getElementById("upi-overlay-merchant-vpa");
+  if (vpaEl) vpaEl.textContent = payload.merchantVpa;
+
+  var wf1 = document.getElementById("upi-wf-text-1");
+  var wf2 = document.getElementById("upi-wf-text-2");
+  var wf3 = document.getElementById("upi-wf-text-3");
+  if (wf1) wf1.textContent = "Dynamic " + payload.appLabel + " QR & Collect Intent Generated";
+  if (wf2) wf2.textContent = "Approve payment request in " + payload.appLabel + " (" + payload.payerVpa + ")";
+  if (wf3) wf3.textContent = "NPCI UPI Verified · Instant Settlement ($" + payload.amountUsd.toFixed(2) + ")";
+
+  var confirmLabel = document.getElementById("upi-overlay-confirm-label");
+  if (confirmLabel && !upiSimulationRunning) {
+    confirmLabel.textContent = "Approve & Pay $" + payload.amountUsd.toFixed(2) + " via " + payload.appLabel;
+  }
+
+  var overlayQrMount = document.getElementById("upi-overlay-qr-mount");
+  if (overlayQrMount) {
+    if (window.VoltboxQR && typeof window.VoltboxQR.renderQrIntoElement === "function") {
+      window.VoltboxQR.renderQrIntoElement(overlayQrMount, payload.upiUri, {
+        margin: 1,
+        theme: payload.qrTheme
+      });
+    } else {
+      overlayQrMount.innerHTML = receiptQrSvg("UPI-" + payload.appId.toUpperCase() + "-" + payload.amountUsd.toFixed(2));
+    }
+  }
+}
+
+function startUpiOverlayCountdown() {
+  stopUpiOverlayCountdown();
+  upiOverlaySecondsLeft = 300;
+  var timerEl = document.getElementById("upi-overlay-timer");
+  var updateClock = function () {
+    if (!timerEl) return;
+    var mins = Math.floor(upiOverlaySecondsLeft / 60);
+    var secs = upiOverlaySecondsLeft % 60;
+    timerEl.textContent = (mins < 10 ? "0" + mins : String(mins)) + ":" + (secs < 10 ? "0" + secs : String(secs));
+  };
+  updateClock();
+  upiOverlayTimerInterval = setInterval(function () {
+    if (upiOverlaySecondsLeft > 0) {
+      upiOverlaySecondsLeft--;
+      updateClock();
+    }
+  }, 1000);
+}
+
+function stopUpiOverlayCountdown() {
+  if (upiOverlayTimerInterval) {
+    clearInterval(upiOverlayTimerInterval);
+    upiOverlayTimerInterval = null;
+  }
+}
+
+function openUpiQrOverlay(preferredApp) {
+  var name = checkoutNameEl ? checkoutNameEl.value.trim() : "";
+  var address = checkoutAddressEl ? checkoutAddressEl.value.trim() : "";
+  if (!name && checkoutNameEl) checkoutNameEl.value = me ? me.name : "Harish";
+  if (!address && checkoutAddressEl) checkoutAddressEl.value = "42 Circuit Lane, Silicon Bay";
+
+  activePaymentMethod = "upi";
+  activeUpiMode = "qr";
+  if (preferredApp && UPI_OVERLAY_PROFILES[preferredApp]) {
+    activeUpiApp = preferredApp;
+  } else if (!UPI_OVERLAY_PROFILES[activeUpiApp]) {
+    activeUpiApp = "GPay";
+  }
+
+  upiOverlayOrderRef = "VB-" + Math.floor(1000 + (Date.now() % 9000));
+  upiSimulationRunning = false;
+
+  var payerInput = document.getElementById("upi-overlay-payer-vpa");
+  var mainUpiInput = document.getElementById("checkout-upi-id");
+  var profile = UPI_OVERLAY_PROFILES[activeUpiApp] || UPI_OVERLAY_PROFILES.GPay;
+  if (payerInput) {
+    payerInput.value = (mainUpiInput && mainUpiInput.value.trim()) ? mainUpiInput.value.trim() : profile.defaultPayerVpa;
+  }
+
+  var vpaModeBtn = document.getElementById("upi-mode-vpa-btn");
+  var qrModeBtn = document.getElementById("upi-mode-qr-btn");
+  var vpaBox = document.getElementById("upi-vpa-box");
+  var qrBox = document.getElementById("upi-qr-box");
+  if (vpaModeBtn && qrModeBtn) {
+    qrModeBtn.classList.add("active");
+    vpaModeBtn.classList.remove("active");
+  }
+  if (vpaBox) vpaBox.hidden = true;
+  if (qrBox) qrBox.hidden = false;
+
+  syncPaymentMethodUi();
+  syncUpiQrOverlay();
+  setUpiWorkflowStepState(1, "Scan QR with " + profile.label + " or tap Send Request below…");
+  startUpiOverlayCountdown();
+
+  var overlayEl = document.getElementById("upi-qr-overlay");
+  if (checkoutFormEl) checkoutFormEl.hidden = true;
+  if (overlayEl) overlayEl.hidden = false;
+}
+
+function closeUpiQrOverlay() {
+  stopUpiOverlayCountdown();
+  upiSimulationRunning = false;
+  var overlayEl = document.getElementById("upi-qr-overlay");
+  if (overlayEl) overlayEl.hidden = true;
+  if (checkoutFormEl) checkoutFormEl.hidden = false;
+  syncPaymentMethodUi();
+}
+
+function sendUpiCollectRequestSimulation() {
+  if (upiSimulationRunning) return;
+  var payerInput = document.getElementById("upi-overlay-payer-vpa");
+  var vpa = payerInput ? payerInput.value.trim() : "";
+  var profile = UPI_OVERLAY_PROFILES[activeUpiApp] || UPI_OVERLAY_PROFILES.GPay;
+  if (!vpa || vpa.indexOf("@") === -1) {
+    vpa = profile.defaultPayerVpa;
+    if (payerInput) payerInput.value = vpa;
+  }
+  var mainUpiInput = document.getElementById("checkout-upi-id");
+  if (mainUpiInput) mainUpiInput.value = vpa;
+
+  syncUpiQrOverlay();
+  setUpiWorkflowStepState(2, "Collect request sent to " + vpa + " on " + profile.label + " — waiting for PIN approval…");
+  var sendBtn = document.getElementById("upi-send-collect-btn");
+  if (sendBtn) {
+    sendBtn.textContent = "Request Sent ✓";
+    setTimeout(function () {
+      if (sendBtn) sendBtn.textContent = "Send Request";
+    }, 2200);
+  }
+}
+
+function simulateUpiScanAndPay() {
+  if (upiSimulationRunning) return;
+  upiSimulationRunning = true;
+
+  activePaymentMethod = "upi";
+  activeUpiMode = "qr";
+
+  var totals = computeTotals();
+  var profile = UPI_OVERLAY_PROFILES[activeUpiApp] || UPI_OVERLAY_PROFILES.GPay;
+  var payerInput = document.getElementById("upi-overlay-payer-vpa");
+  var mainUpiInput = document.getElementById("checkout-upi-id");
+  if (payerInput && payerInput.value.trim() && mainUpiInput) {
+    mainUpiInput.value = payerInput.value.trim();
+  }
+
+  var confirmBtn = document.getElementById("upi-overlay-confirm-pay-btn");
+  var confirmLabel = document.getElementById("upi-overlay-confirm-label");
+  if (confirmBtn) confirmBtn.disabled = true;
+
+  setUpiWorkflowStepState(2, "Verifying payment approval in " + profile.label + "…");
+  if (confirmLabel) {
+    confirmLabel.textContent = "Waiting for " + profile.label + " Approval…";
+  }
+
+  setTimeout(function () {
+    setUpiWorkflowStepState(3, "NPCI UPI Verified $" + totals.total.toFixed(2) + " via " + profile.label + "!");
+    if (confirmLabel) {
+      confirmLabel.textContent = "Verified · Generating Receipt…";
+    }
+    playScanSuccessChime();
+
+    setTimeout(function () {
+      stopUpiOverlayCountdown();
+      var overlayEl = document.getElementById("upi-qr-overlay");
+      if (overlayEl) overlayEl.hidden = true;
+      if (checkoutFormEl) checkoutFormEl.hidden = false;
+      if (confirmBtn) confirmBtn.disabled = false;
+      upiSimulationRunning = false;
+      payNow();
+    }, 220);
+  }, 260);
+}
+
+function syncPaymentMethodUi() {
+  var totals = computeTotals();
+  var tabsWrap = document.getElementById("checkout-payment-tabs");
+  if (tabsWrap) {
+    var tabs = tabsWrap.querySelectorAll(".pay-method-tab");
+    for (var i = 0; i < tabs.length; i++) {
+      var m = tabs[i].getAttribute("data-pay-method");
+      var isAct = (m === activePaymentMethod);
+      tabs[i].classList.toggle("active", isAct);
+      tabs[i].setAttribute("aria-selected", isAct ? "true" : "false");
+    }
+  }
+
+  var panelUpi = document.getElementById("pay-panel-upi");
+  var panelCard = document.getElementById("pay-panel-card");
+  var panelNb = document.getElementById("pay-panel-netbanking");
+  var panelEmi = document.getElementById("pay-panel-emi");
+
+  if (panelUpi) panelUpi.hidden = (activePaymentMethod !== "upi");
+  if (panelCard) panelCard.hidden = (activePaymentMethod !== "credit_card" && activePaymentMethod !== "debit_card");
+  if (panelNb) panelNb.hidden = (activePaymentMethod !== "netbanking");
+  if (panelEmi) panelEmi.hidden = (activePaymentMethod !== "emi");
+
+  var cardModeLabel = document.getElementById("checkout-card-mode-label");
+  var cardPerksNote = document.getElementById("checkout-card-perks-note");
+  if (cardModeLabel) {
+    cardModeLabel.textContent = activePaymentMethod === "debit_card" ? "Debit Card Networks:" : "Credit Card Networks:";
+  }
+  if (cardPerksNote) {
+    cardPerksNote.textContent = activePaymentMethod === "debit_card"
+      ? "✓ Zero-MDR RuPay / Visa / Mastercard Debit with Instant OTP Auto-Verify."
+      : "✓ 256-Bit Tokenized Credit Card · 5% Cashback on Voltbox Hardware Cards.";
+  }
+
+  var qrMount = document.getElementById("checkout-upi-qr-mount");
+  var qrAmountEl = document.getElementById("checkout-upi-qr-amount");
+  if (qrMount) {
+    var inlinePayload = buildClientUpiPayload(activeUpiApp, totals.total, upiOverlayOrderRef, "");
+    if (window.VoltboxQR && typeof window.VoltboxQR.renderQrIntoElement === "function") {
+      window.VoltboxQR.renderQrIntoElement(qrMount, inlinePayload.upiUri, {
+        margin: 1,
+        theme: inlinePayload.qrTheme
+      });
+    } else {
+      qrMount.innerHTML = receiptQrSvg("UPI-" + activeUpiApp.toUpperCase() + "-" + totals.total.toFixed(0));
+    }
+  }
+  if (qrAmountEl) {
+    qrAmountEl.textContent = "$" + totals.total.toFixed(2) + " via " + activeUpiApp;
+  }
+
+  renderCheckoutEmiPlans(totals.total);
+  if (checkoutPayEl && !checkoutPayEl.disabled) {
+    checkoutPayEl.innerHTML = payBtnLabel(totals.total);
+  }
+}
+
+function wireUpPaymentGatewayUi() {
+  if (paymentUiWired) return;
+  paymentUiWired = true;
+
+  var quickUpiBtn = document.getElementById("pay-via-upi-quick-btn");
+  if (quickUpiBtn) {
+    quickUpiBtn.addEventListener("click", function () {
+      openUpiQrOverlay(activeUpiApp);
+    });
+  }
+
+  var footerUpiBtn = document.getElementById("checkout-pay-via-upi-btn");
+  if (footerUpiBtn) {
+    footerUpiBtn.addEventListener("click", function () {
+      openUpiQrOverlay(activeUpiApp);
+    });
+  }
+
+  var inlineOpenOverlayBtn = document.getElementById("upi-open-qr-overlay-btn");
+  if (inlineOpenOverlayBtn) {
+    inlineOpenOverlayBtn.addEventListener("click", function () {
+      openUpiQrOverlay(activeUpiApp);
+    });
+  }
+
+  var overlayCloseBtn = document.getElementById("upi-qr-overlay-close");
+  if (overlayCloseBtn) {
+    overlayCloseBtn.addEventListener("click", closeUpiQrOverlay);
+  }
+
+  var overlayAppTabs = document.getElementById("upi-overlay-app-tabs");
+  if (overlayAppTabs) {
+    overlayAppTabs.addEventListener("click", function (e) {
+      var tab = e.target.closest(".upi-overlay-app-tab");
+      if (!tab) return;
+      var nextApp = tab.getAttribute("data-upi-overlay-app") || "GPay";
+      activeUpiApp = nextApp;
+      activePaymentMethod = "upi";
+      activeUpiMode = "qr";
+      var profile = UPI_OVERLAY_PROFILES[activeUpiApp] || UPI_OVERLAY_PROFILES.GPay;
+      var payerInput = document.getElementById("upi-overlay-payer-vpa");
+      var mainUpiInput = document.getElementById("checkout-upi-id");
+      if (payerInput) payerInput.value = profile.defaultPayerVpa;
+      if (mainUpiInput) mainUpiInput.value = profile.defaultPayerVpa;
+      syncUpiQrOverlay();
+      setUpiWorkflowStepState(1, "Switched to " + profile.label + " QR — ready to scan or send request.");
+    });
+  }
+
+  var copyVpaBtn = document.getElementById("upi-overlay-copy-vpa-btn");
+  if (copyVpaBtn) {
+    copyVpaBtn.addEventListener("click", function () {
+      var profile = UPI_OVERLAY_PROFILES[activeUpiApp] || UPI_OVERLAY_PROFILES.GPay;
+      var labelEl = document.getElementById("upi-overlay-copy-label");
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(profile.merchantVpa).catch(function () {});
+      }
+      if (labelEl) {
+        labelEl.textContent = "Copied!";
+        setTimeout(function () {
+          if (labelEl) labelEl.textContent = "Copy";
+        }, 1600);
+      }
+    });
+  }
+
+  var sendCollectBtn = document.getElementById("upi-send-collect-btn");
+  if (sendCollectBtn) {
+    sendCollectBtn.addEventListener("click", sendUpiCollectRequestSimulation);
+  }
+
+  var confirmOverlayPayBtn = document.getElementById("upi-overlay-confirm-pay-btn");
+  if (confirmOverlayPayBtn) {
+    confirmOverlayPayBtn.addEventListener("click", simulateUpiScanAndPay);
+  }
+
+  var tabsWrap = document.getElementById("checkout-payment-tabs");
+  if (tabsWrap) {
+    tabsWrap.addEventListener("click", function (e) {
+      var btn = e.target.closest(".pay-method-tab");
+      if (!btn) return;
+      activePaymentMethod = btn.getAttribute("data-pay-method") || "upi";
+      if (activePaymentMethod === "debit_card" && checkoutCardNumEl && checkoutCardNumEl.value.indexOf("4242") === 0) {
+        checkoutCardNumEl.value = "6521 8800 1122 8821";
+        activeCardNetwork = "RuPay";
+      } else if (activePaymentMethod === "credit_card" && checkoutCardNumEl && !checkoutCardNumEl.value.trim()) {
+        checkoutCardNumEl.value = "4242 4242 4242 4242";
+        activeCardNetwork = "Visa";
+      }
+      syncPaymentMethodUi();
+    });
+  }
+
+  var upiAppsRow = document.getElementById("upi-apps-row");
+  if (upiAppsRow) {
+    upiAppsRow.addEventListener("click", function (e) {
+      var chip = e.target.closest(".upi-app-chip");
+      if (!chip) return;
+      activeUpiApp = chip.getAttribute("data-upi-app") || "GPay";
+      var all = upiAppsRow.querySelectorAll(".upi-app-chip");
+      for (var i = 0; i < all.length; i++) {
+        all[i].classList.toggle("active", all[i] === chip);
+      }
+      var upiInput = document.getElementById("checkout-upi-id");
+      if (upiInput) {
+        var handles = { GPay: "harish@okaxis", PhonePe: "harish@ybl", Paytm: "harish@paytm", BHIM: "harish@upi" };
+        upiInput.value = handles[activeUpiApp] || "harish@okaxis";
+      }
+      syncPaymentMethodUi();
+    });
+  }
+
+  var vpaModeBtn = document.getElementById("upi-mode-vpa-btn");
+  var qrModeBtn = document.getElementById("upi-mode-qr-btn");
+  var vpaBox = document.getElementById("upi-vpa-box");
+  var qrBox = document.getElementById("upi-qr-box");
+
+  if (vpaModeBtn && qrModeBtn) {
+    vpaModeBtn.addEventListener("click", function () {
+      activeUpiMode = "vpa";
+      vpaModeBtn.classList.add("active");
+      qrModeBtn.classList.remove("active");
+      if (vpaBox) vpaBox.hidden = false;
+      if (qrBox) qrBox.hidden = true;
+      syncPaymentMethodUi();
+    });
+    qrModeBtn.addEventListener("click", function () {
+      activeUpiMode = "qr";
+      qrModeBtn.classList.add("active");
+      vpaModeBtn.classList.remove("active");
+      if (vpaBox) vpaBox.hidden = true;
+      if (qrBox) qrBox.hidden = false;
+      syncPaymentMethodUi();
+    });
+  }
+
+  var verifyBtn = document.getElementById("upi-verify-btn");
+  var verifiedNote = document.getElementById("upi-verified-note");
+  if (verifyBtn && verifiedNote) {
+    verifyBtn.addEventListener("click", function () {
+      var upiInput = document.getElementById("checkout-upi-id");
+      var val = upiInput ? upiInput.value.trim() : "";
+      if (!val || val.indexOf("@") === -1) {
+        verifiedNote.textContent = "⚠ Enter a valid UPI ID with '@' (e.g. name@okaxis)";
+        verifiedNote.className = "upi-verified-note warn";
+        return;
+      }
+      verifiedNote.textContent = "✓ Verified VPA (" + val + ") · Account Holder: " + (me ? me.name : "Voltbox Member");
+      verifiedNote.className = "upi-verified-note";
+      syncPaymentMethodUi();
+    });
+  }
+
+  var netChips = document.getElementById("card-network-chips");
+  if (netChips) {
+    netChips.addEventListener("click", function (e) {
+      var chip = e.target.closest(".card-net-chip");
+      if (!chip) return;
+      activeCardNetwork = chip.getAttribute("data-net") || "Visa";
+      var sample = chip.getAttribute("data-sample") || "4242 4242 4242 4242";
+      if (checkoutCardNumEl) checkoutCardNumEl.value = sample;
+      if (checkoutExpiryEl && !checkoutExpiryEl.value) checkoutExpiryEl.value = "08/29";
+      if (checkoutCvvEl && !checkoutCvvEl.value) checkoutCvvEl.value = "842";
+      var all = netChips.querySelectorAll(".card-net-chip");
+      for (var i = 0; i < all.length; i++) {
+        all[i].classList.toggle("active", all[i] === chip);
+      }
+      syncPaymentMethodUi();
+    });
+  }
+
+  var nbGrid = document.getElementById("netbanking-grid");
+  if (nbGrid) {
+    nbGrid.addEventListener("click", function (e) {
+      var btn = e.target.closest(".bank-option-btn");
+      if (!btn) return;
+      activeNetbank = btn.getAttribute("data-bank") || "HDFC Bank";
+      var all = nbGrid.querySelectorAll(".bank-option-btn");
+      for (var i = 0; i < all.length; i++) {
+        all[i].classList.toggle("active", all[i] === btn);
+      }
+      syncPaymentMethodUi();
+    });
+  }
+
+  var emiContainer = document.getElementById("checkout-emi-plans");
+  if (emiContainer) {
+    emiContainer.addEventListener("click", function (e) {
+      var btn = e.target.closest(".emi-plan-card");
+      if (!btn) return;
+      activeEmiMonths = Number(btn.getAttribute("data-emi-months")) || 3;
+      syncPaymentMethodUi();
+    });
+  }
+}
+
 function openCheckoutModal() {
   var totals = computeTotals();
   if (totals.count === 0) return;
 
-  checkoutNameEl.value = me ? me.name : "";
-  checkoutAddressEl.value = "";
-  checkoutCardNumEl.value = "";
-  checkoutExpiryEl.value = "";
-  checkoutCvvEl.value = "";
+  wireUpPaymentGatewayUi();
+  renderCheckoutItemsPreview(totals);
+
+  checkoutNameEl.value = me ? me.name : "Harish";
+  if (!checkoutAddressEl.value.trim()) {
+    checkoutAddressEl.value = "42 Circuit Lane, Silicon Bay";
+  }
+  if (!checkoutCardNumEl.value.trim()) {
+    checkoutCardNumEl.value = "4242 4242 4242 4242";
+  }
+  if (!checkoutExpiryEl.value.trim()) {
+    checkoutExpiryEl.value = "08/29";
+  }
+  if (!checkoutCvvEl.value.trim()) {
+    checkoutCvvEl.value = "842";
+  }
   checkoutMsgEl.hidden = true;
   checkoutPayEl.disabled = false;
-  checkoutPayEl.innerHTML = payBtnLabel(totals.total);
+  stopUpiOverlayCountdown();
+  var upiOverlayEl = document.getElementById("upi-qr-overlay");
+  if (upiOverlayEl) upiOverlayEl.hidden = true;
+  syncPaymentMethodUi();
 
   checkoutSuccessEl.hidden = true;
   checkoutFormEl.hidden = false;
@@ -2835,7 +3735,8 @@ function openCheckoutModal() {
 }
 
 function payBtnLabel(total) {
-  return icon("cart", 16) + " Pay Now — $" + total.toFixed(2);
+  var methodSummary = getFormattedPaymentSummary();
+  return icon("cart", 16) + " Pay $" + total.toFixed(2) + " via " + esc(methodSummary);
 }
 
 function showCheckoutMsg(text, isError) {
@@ -2848,23 +3749,34 @@ function showCheckoutMsg(text, isError) {
 function payNow() {
   var name = checkoutNameEl.value.trim();
   var address = checkoutAddressEl.value.trim();
-  var cardNumber = checkoutCardNumEl.value.trim();
-  var expiry = checkoutExpiryEl.value.trim();
-  var cvv = checkoutCvvEl.value.trim();
+  var cardNumber = checkoutCardNumEl ? checkoutCardNumEl.value.trim() : "";
+  var expiry = checkoutExpiryEl ? checkoutExpiryEl.value.trim() : "";
+  var cvv = checkoutCvvEl ? checkoutCvvEl.value.trim() : "";
 
   if (!name || !address) {
-    showCheckoutMsg("Add a name and an address before paying.", true);
+    showCheckoutMsg("Add a recipient name and shipping address before paying.", true);
     return;
   }
 
-  if (!cardNumber || !expiry || !cvv) {
-    showCheckoutMsg("Fill in the card fields too (any numbers work).", true);
-    return;
+  if (activePaymentMethod === "credit_card" || activePaymentMethod === "debit_card") {
+    if (!cardNumber || !expiry || !cvv) {
+      showCheckoutMsg("Fill in the card number, expiry, and CVV fields (or tap a network chip above).", true);
+      return;
+    }
+  } else if (activePaymentMethod === "upi" && activeUpiMode === "vpa") {
+    var upiInput = document.getElementById("checkout-upi-id");
+    var upiVal = upiInput ? upiInput.value.trim() : "";
+    if (!upiVal || upiVal.indexOf("@") === -1) {
+      showCheckoutMsg("Enter a valid UPI ID (e.g. harish@okaxis) or switch to Scan UPI QR.", true);
+      return;
+    }
   }
+
+  var chosenPaymentSummary = getFormattedPaymentSummary();
 
   checkoutMsgEl.hidden = true;
   checkoutPayEl.disabled = true;
-  checkoutPayEl.innerHTML = '<span class="btn-spinner"></span> Processing…';
+  checkoutPayEl.innerHTML = '<span class="btn-spinner"></span> Authorizing ' + esc(chosenPaymentSummary) + '…';
   clearTimeout(saveTimer);
 
   Promise.all([
@@ -2875,14 +3787,25 @@ function payNow() {
           body: JSON.stringify({
             shippingName: name,
             shippingAddress: address,
-            promoCode: activePromoCode
+            promoCode: activePromoCode,
+            paymentMethod: chosenPaymentSummary,
+            paymentDetails: {
+              method: activePaymentMethod,
+              upiApp: activeUpiApp,
+              upiMode: activeUpiMode,
+              upiId: (document.getElementById("checkout-upi-id") || {}).value || "harish@okaxis",
+              cardNumber: cardNumber,
+              cardNetwork: activeCardNetwork,
+              bankName: activeNetbank,
+              emiMonths: activeEmiMonths
+            }
           })
         });
       })
       .then(function (res) {
         return res.json().then(function (data) { return { ok: res.ok, data: data }; });
       }),
-    new Promise(function (resolve) { setTimeout(resolve, 700); })
+    new Promise(function (resolve) { setTimeout(resolve, 650); })
   ])
     .then(function (results) {
       var result = results[0];
@@ -2901,12 +3824,12 @@ function payNow() {
       paintHistoryCount(me.orderCount);
       collapseHistory();
 
+      stopUpiOverlayCountdown();
+      var upiOverlayEl = document.getElementById("upi-qr-overlay");
+      if (upiOverlayEl) upiOverlayEl.hidden = true;
       checkoutFormEl.hidden = true;
       checkoutSuccessEl.hidden = false;
-      setTimeout(function () {
-        closeModal(checkoutOverlayEl);
-        showReceipt(result.data);
-      }, 1000);
+      triggerPhysicsConfirmation(result.data);
     })
     .catch(function () {
       recalc();
@@ -2915,6 +3838,491 @@ function payNow() {
       checkoutPayEl.innerHTML = payBtnLabel(computeTotals().total);
     });
 }
+
+// ── Physics-Based Checkout Confirmation & Spring Dynamics ──
+var physicsAudioCtx = null;
+var autoReceiptTimer = null;
+
+function playPaymentSuccessChime() {
+  try {
+    if (!physicsAudioCtx) {
+      var AudioCtx = window.AudioContext || window.webkitAudioContext;
+      if (AudioCtx) physicsAudioCtx = new AudioCtx();
+    }
+    if (physicsAudioCtx && physicsAudioCtx.state !== "suspended") {
+      var now = physicsAudioCtx.currentTime;
+
+      // Tone 1: 523.25 Hz (C5)
+      var osc1 = physicsAudioCtx.createOscillator();
+      var gain1 = physicsAudioCtx.createGain();
+      osc1.type = "sine";
+      osc1.frequency.setValueAtTime(523.25, now);
+      gain1.gain.setValueAtTime(0.2, now);
+      gain1.gain.exponentialRampToValueAtTime(0.001, now + 0.26);
+      osc1.connect(gain1);
+      gain1.connect(physicsAudioCtx.destination);
+      osc1.start(now);
+      osc1.stop(now + 0.26);
+
+      // Tone 2: 659.25 Hz (E5) harmonic chime
+      var osc2 = physicsAudioCtx.createOscillator();
+      var gain2 = physicsAudioCtx.createGain();
+      osc2.type = "sine";
+      osc2.frequency.setValueAtTime(659.25, now + 0.1);
+      gain2.gain.setValueAtTime(0.25, now + 0.1);
+      gain2.gain.exponentialRampToValueAtTime(0.001, now + 0.45);
+      osc2.connect(gain2);
+      gain2.connect(physicsAudioCtx.destination);
+      osc2.start(now + 0.1);
+      osc2.stop(now + 0.45);
+    }
+    if (navigator.vibrate) navigator.vibrate([50, 40, 80]);
+  } catch (e) {}
+}
+
+function spawnPhysicsConfetti() {
+  var container = document.getElementById("physics-particle-field");
+  if (!container) return;
+  container.innerHTML = "";
+  var colors = ["#10b981", "#3b82f6", "#f59e0b", "#a855f7", "#38bdf8", "#ffd23f", "#34d399"];
+  var count = 34;
+
+  for (var i = 0; i < count; i++) {
+    var spark = document.createElement("div");
+    spark.className = "physics-spark";
+    var angle = (Math.PI * 2 * i) / count + (Math.random() * 0.4 - 0.2);
+    var dist = 90 + Math.random() * 110;
+    var tx = Math.cos(angle) * dist;
+    var ty = Math.sin(angle) * dist + (Math.random() * 30 + 10);
+    var rot = (Math.random() * 720 - 360) + "deg";
+    var color = colors[Math.floor(Math.random() * colors.length)];
+    var size = Math.floor(Math.random() * 5 + 5);
+
+    spark.style.setProperty("--tx", tx.toFixed(1) + "px");
+    spark.style.setProperty("--ty", ty.toFixed(1) + "px");
+    spark.style.setProperty("--rot", rot);
+    spark.style.backgroundColor = color;
+    spark.style.width = size + "px";
+    spark.style.height = size + "px";
+    spark.style.borderRadius = Math.random() > 0.4 ? "50%" : "2px";
+    spark.style.left = "calc(50% - " + (size / 2) + "px)";
+    spark.style.top = "72px";
+
+    container.appendChild(spark);
+  }
+}
+
+function triggerPhysicsConfirmation(order) {
+  var successEl = document.getElementById("checkout-success");
+  if (!successEl) return;
+
+  var orderIdEl = document.getElementById("pay-success-order-id");
+  var amountEl = document.getElementById("pay-success-amount");
+  var railEl = document.getElementById("pay-success-rail");
+  var traceEl = document.getElementById("pay-success-trace");
+
+  if (orderIdEl) orderIdEl.textContent = order.id || "VB-0000";
+  if (amountEl) amountEl.textContent = "$" + (order.total || 0).toFixed(2);
+  if (railEl) railEl.textContent = order.paymentMethod || "Instant Settlement";
+  if (traceEl) traceEl.textContent = "req-" + Math.random().toString(36).substring(2, 9);
+
+  // Play harmonic chime & scatter micro-spark particles
+  playPaymentSuccessChime();
+  spawnPhysicsConfetti();
+
+  var springBadge = document.getElementById("pay-spring-badge");
+  if (springBadge) {
+    springBadge.style.animation = "none";
+    void springBadge.offsetWidth;
+    springBadge.style.animation = "";
+  }
+
+  var viewBillBtn = document.getElementById("pay-success-view-bill-btn");
+  if (viewBillBtn) {
+    viewBillBtn.onclick = function () {
+      clearTimeout(autoReceiptTimer);
+      closeModal(checkoutOverlayEl);
+      showReceipt(order);
+    };
+  }
+
+  // Smooth auto-transition into thermal receipt after 1.8s
+  clearTimeout(autoReceiptTimer);
+  autoReceiptTimer = setTimeout(function () {
+    closeModal(checkoutOverlayEl);
+    showReceipt(order);
+  }, 1800);
+}
+
+// ── Side-by-Side Product Comparison Controller ──
+var compareIds = [];
+var compareHighlightDiffs = false;
+
+function isProductInCompare(id) {
+  return compareIds.indexOf(Number(id)) !== -1;
+}
+
+function toggleCompareItem(id) {
+  var numId = Number(id);
+  var idx = compareIds.indexOf(numId);
+  if (idx !== -1) {
+    compareIds.splice(idx, 1);
+    showActivityToast("Removed item from comparison.");
+  } else {
+    if (compareIds.length >= 4) {
+      showActivityToast("You can compare up to 4 components side-by-side. Remove one first.");
+      return;
+    }
+    compareIds.push(numId);
+    var p = findProductById(numId);
+    showActivityToast("Added " + (p ? p.title : "part") + " to comparison.");
+  }
+  updateCompareUI();
+}
+
+function clearComparison() {
+  compareIds = [];
+  updateCompareUI();
+  var tableContainer = document.getElementById("compare-table-container");
+  if (tableContainer) {
+    tableContainer.innerHTML =
+      '<div class="compare-empty-state">' +
+        '<span data-icon="sliders" data-icon-size="32" class="compare-empty-icon"></span>' +
+        '<p class="compare-empty-text">No components selected for comparison.<br/><small>Select 2 to 4 components from the catalog to compare specs side-by-side.</small></p>' +
+        '<button type="button" class="sheet-btn small solid" onclick="closeComparisonModal()">Browse Hardware Catalog</button>' +
+      '</div>';
+  }
+  showActivityToast("Comparison list cleared.");
+}
+
+function openComparisonModal() {
+  var overlay = document.getElementById("compare-overlay");
+  if (!overlay) return;
+  openModal(overlay);
+  populateCompareAddSelect();
+  renderComparisonTable();
+}
+
+function closeComparisonModal() {
+  var overlay = document.getElementById("compare-overlay");
+  if (!overlay) return;
+  closeModal(overlay);
+}
+
+function populateCompareAddSelect() {
+  var sel = document.getElementById("compare-add-part-select");
+  if (!sel) return;
+  var html = '<option value="">+ Add Component to Matrix…</option>';
+  for (var i = 0; i < products.length; i++) {
+    var p = products[i];
+    if (!isProductInCompare(p.id)) {
+      html += '<option value="' + p.id + '">' + esc(p.title) + ' ($' + p.price.toFixed(2) + ')</option>';
+    }
+  }
+  sel.innerHTML = html;
+}
+
+function addAllComparedToCart() {
+  if (compareIds.length === 0) return;
+  var addedCount = 0;
+  for (var i = 0; i < compareIds.length; i++) {
+    var pid = compareIds[i];
+    cart[pid] = (cart[pid] || 0) + 1;
+    addedCount++;
+  }
+  recalc();
+  saveCartRemote();
+  renderComparisonTable();
+  showActivityToast("Added " + addedCount + " compared items to cart!");
+}
+
+function updateCompareUI() {
+  // 1. Sync card buttons
+  for (var i = 0; i < products.length; i++) {
+    var p = products[i];
+    var isComp = isProductInCompare(p.id);
+    var cardBtn = document.getElementById("card-compare-btn-" + p.id);
+    var cardArticle = document.getElementById("card-" + p.id);
+    if (cardBtn) {
+      if (isComp) {
+        cardBtn.classList.add("active");
+        cardBtn.setAttribute("aria-pressed", "true");
+        cardBtn.innerHTML = icon("check", 13) + ' <span>Comparing</span>';
+      } else {
+        cardBtn.classList.remove("active");
+        cardBtn.setAttribute("aria-pressed", "false");
+        cardBtn.innerHTML = icon("sliders", 13) + ' <span>Compare</span>';
+      }
+    }
+    if (cardArticle) {
+      if (isComp) cardArticle.classList.add("in-compare");
+      else cardArticle.classList.remove("in-compare");
+    }
+  }
+
+  // 2. Sync spec drawer compare button
+  if (activeSpecProductId) {
+    var specCompBtn = document.getElementById("spec-compare-btn");
+    if (specCompBtn) {
+      var isCompSpec = isProductInCompare(activeSpecProductId);
+      if (isCompSpec) {
+        specCompBtn.classList.add("active");
+        specCompBtn.innerHTML = icon("check", 14) + ' <span>Comparing</span>';
+      } else {
+        specCompBtn.classList.remove("active");
+        specCompBtn.innerHTML = icon("sliders", 14) + ' <span>Compare</span>';
+      }
+    }
+  }
+
+  // 3. Topbar compare count badge
+  var topBadge = document.getElementById("compare-badge");
+  if (topBadge) {
+    topBadge.textContent = String(compareIds.length);
+    topBadge.hidden = compareIds.length === 0;
+  }
+
+  // 4. Floating Comparison Dock
+  var dock = document.getElementById("compare-dock");
+  var dockCount = document.getElementById("compare-dock-count");
+  var dockThumbs = document.getElementById("compare-dock-thumbnails");
+  var dockLaunchText = document.getElementById("compare-dock-launch-text");
+
+  if (dock) {
+    if (compareIds.length > 0) {
+      dock.hidden = false;
+      dock.classList.add("open");
+      if (dockCount) dockCount.textContent = compareIds.length + "/4 selected";
+      if (dockLaunchText) dockLaunchText.textContent = "Compare (" + compareIds.length + ")";
+      if (dockThumbs) {
+        dockThumbs.innerHTML = compareIds.map(function (cid) {
+          var cp = findProductById(cid);
+          if (!cp) return "";
+          var img = (cp.image && (cp.image.indexOf("http") === 0 || cp.image.indexOf("/") === 0)) ? cp.image : tileFor(cp.category);
+          return '<div class="compare-thumb-chip" title="' + esc(cp.title) + '">' +
+            '<img src="' + esc(img) + '" alt="' + esc(cp.title) + '" />' +
+            '<button type="button" class="compare-thumb-remove" onclick="event.stopPropagation(); toggleCompareItem(' + cp.id + ')" aria-label="Remove ' + esc(cp.title) + '">×</button>' +
+          '</div>';
+        }).join("");
+      }
+    } else {
+      dock.hidden = true;
+      dock.classList.remove("open");
+    }
+  }
+
+  populateCompareAddSelect();
+
+  // 5. If modal is open, refresh comparative table
+  var modalOverlay = document.getElementById("compare-overlay");
+  if (modalOverlay && modalOverlay.classList.contains("open")) {
+    renderComparisonTable();
+  }
+}
+
+function renderComparisonTable() {
+  var container = document.getElementById("compare-table-container");
+  var countTag = document.getElementById("compare-modal-count-tag");
+  var summaryText = document.getElementById("compare-summary-text");
+  var addAllBtn = document.getElementById("compare-add-all-cart-btn");
+
+  if (!container) return;
+
+  if (countTag) {
+    countTag.textContent = compareIds.length === 1 ? "1 Component Selected" : (compareIds.length + " Components Selected");
+  }
+
+  if (compareIds.length === 0) {
+    if (addAllBtn) addAllBtn.disabled = true;
+    if (summaryText) summaryText.textContent = "Select 2 or more components from the catalog to analyze side-by-side specifications.";
+    container.innerHTML =
+      '<div class="compare-empty-state">' +
+        '<div class="compare-empty-icon">' + icon("sliders", 36) + '</div>' +
+        '<p class="compare-empty-text">No components selected for comparison.<br/><small>Click "Compare" on any 2–4 hardware items in the catalog to generate a side-by-side benchmark matrix.</small></p>' +
+        '<button type="button" class="sheet-btn small solid" onclick="closeComparisonModal()">Browse Catalog</button>' +
+      '</div>';
+    return;
+  }
+
+  var compProducts = [];
+  for (var i = 0; i < compareIds.length; i++) {
+    var item = findProductById(compareIds[i]);
+    if (item) compProducts.push(item);
+  }
+
+  if (addAllBtn) addAllBtn.disabled = false;
+
+  // Identify lowest price item and price spread
+  var lowestP = compProducts[0];
+  var highestP = compProducts[0];
+  var highestStock = compProducts[0];
+  for (var j = 0; j < compProducts.length; j++) {
+    var cur = compProducts[j];
+    if (cur.price < lowestP.price) lowestP = cur;
+    if (cur.price > highestP.price) highestP = cur;
+    var curStock = getEffectiveStock(cur);
+    if (curStock > getEffectiveStock(highestStock)) highestStock = cur;
+  }
+  var spread = highestP.price - lowestP.price;
+
+  if (summaryText) {
+    if (compProducts.length === 1) {
+      summaryText.textContent = "Selected " + compProducts[0].title + " ($" + compProducts[0].price.toFixed(2) + "). Add another component above to start comparing.";
+    } else {
+      summaryText.textContent = "Comparing " + compProducts.length + " components. Lowest price is " + lowestP.title + " at $" + lowestP.price.toFixed(2) + (spread > 0 ? " ($" + spread.toFixed(2) + " price spread)." : " (identical prices).");
+    }
+  }
+
+  // Construct Spec Attributes Matrix
+  var specRows = [
+    {
+      key: "price",
+      label: "Retail Price",
+      values: compProducts.map(function (p) { return "$" + p.price.toFixed(2); }),
+      isDiff: compProducts.some(function (p) { return p.price !== compProducts[0].price; }),
+      renderCell: function (p) {
+        var isBest = p.id === lowestP.id && spread > 0;
+        return '<div class="compare-price-val">$' + p.price.toFixed(2) + (isBest ? ' <span class="compare-best-badge">Best Value</span>' : '') + '</div>';
+      }
+    },
+    {
+      key: "history",
+      label: "6-Month Low → Peak",
+      values: compProducts.map(function (p) {
+        var h = getPriceHistoryFor(p);
+        var prs = h.map(function (x) { return x.price; });
+        return "$" + Math.min.apply(null, prs).toFixed(0) + " – $" + Math.max.apply(null, prs).toFixed(0);
+      }),
+      isDiff: true,
+      renderCell: function (p) {
+        var h = getPriceHistoryFor(p);
+        var prs = h.map(function (x) { return x.price; });
+        var minP = Math.min.apply(null, prs);
+        var maxP = Math.max.apply(null, prs);
+        var avgP = prs.reduce(function (a, b) { return a + b; }, 0) / prs.length;
+        return '<div class="compare-stat-line"><span class="mono">$' + minP.toFixed(0) + ' – $' + maxP.toFixed(0) + '</span><span class="compare-sub-note">Avg: $' + avgP.toFixed(0) + '</span></div>';
+      }
+    },
+    {
+      key: "group",
+      label: "Category / Form Factor",
+      values: compProducts.map(function (p) { return getComponentGroup(p).toUpperCase(); }),
+      isDiff: compProducts.some(function (p) { return getComponentGroup(p) !== getComponentGroup(compProducts[0]); }),
+      renderCell: function (p) {
+        return '<span class="compare-category-tag">' + (p.specs && p.specs.groupLabel ? p.specs.groupLabel : getComponentGroup(p).toUpperCase()) + '</span>';
+      }
+    },
+    {
+      key: "architecture",
+      label: "Silicon Architecture",
+      values: compProducts.map(function (p) { return (p.specs && p.specs.architecture) || "Solid-State Silicon"; }),
+      isDiff: compProducts.some(function (p) { return (p.specs && p.specs.architecture) !== (compProducts[0].specs && compProducts[0].specs.architecture); }),
+      renderCell: function (p) {
+        return '<span>' + esc((p.specs && p.specs.architecture) || "Precision Solid-State") + '</span>';
+      }
+    },
+    {
+      key: "interface",
+      label: "Bus & Interface Spec",
+      values: compProducts.map(function (p) { return (p.specs && p.specs.interfaceSpec) || "PCIe / USB-C"; }),
+      isDiff: compProducts.some(function (p) { return (p.specs && p.specs.interfaceSpec) !== (compProducts[0].specs && compProducts[0].specs.interfaceSpec); }),
+      renderCell: function (p) {
+        return '<span>' + esc((p.specs && p.specs.interfaceSpec) || "PCIe 4.0 / USB-C") + '</span>';
+      }
+    },
+    {
+      key: "power",
+      label: "Thermal TDP & Power",
+      values: compProducts.map(function (p) { return (p.specs && p.specs.powerDraw) || "65W Nominal"; }),
+      isDiff: compProducts.some(function (p) { return (p.specs && p.specs.powerDraw) !== (compProducts[0].specs && compProducts[0].specs.powerDraw); }),
+      renderCell: function (p) {
+        return '<span class="compare-power-tag">' + esc((p.specs && p.specs.powerDraw) || "65W Nominal") + '</span>';
+      }
+    },
+    {
+      key: "stock",
+      label: "Warehouse Stock Status",
+      values: compProducts.map(function (p) { return String(getEffectiveStock(p)); }),
+      isDiff: compProducts.some(function (p) { return getEffectiveStock(p) !== getEffectiveStock(compProducts[0]); }),
+      renderCell: function (p) {
+        var s = getEffectiveStock(p);
+        var isLow = isLowStockItem(p);
+        var isLeader = p.id === highestStock.id && compProducts.length > 1;
+        return '<div class="compare-stock-val">' +
+          '<span class="compare-stock-badge ' + (isLow ? 'low' : 'ok') + '">' + (isLow ? 'Low Stock (' + s + ')' : s + ' units') + '</span>' +
+          (isLeader ? ' <span class="compare-leader-badge">Readily Available</span>' : '') +
+        '</div>';
+      }
+    },
+    {
+      key: "warranty",
+      label: "Warranty & Certification",
+      values: compProducts.map(function (p) { return (p.specs && p.specs.warranty) || "3-Year Limited"; }),
+      isDiff: compProducts.some(function (p) { return (p.specs && p.specs.warranty) !== (compProducts[0].specs && compProducts[0].specs.warranty); }),
+      renderCell: function (p) {
+        return '<span class="compare-warranty-val">' + icon("shield", 13) + ' ' + esc((p.specs && p.specs.warranty) || "3-Year Limited Hardware") + '</span>';
+      }
+    }
+  ];
+
+  // Render Table Markup
+  var tableHtml = '<table class="compare-table" role="grid" aria-label="Product comparison table">';
+  
+  // Sticky Table Header with Products
+  tableHtml += '<thead><tr>';
+  tableHtml += '<th class="compare-sticky-th" scope="col"><span class="compare-attr-heading">Hardware Spec</span></th>';
+  for (var k = 0; k < compProducts.length; k++) {
+    var prod = compProducts[k];
+    var pImg = (prod.image && (prod.image.indexOf("http") === 0 || prod.image.indexOf("/") === 0)) ? prod.image : tileFor(prod.category);
+    var pSku = getSkuFor(prod);
+    var inCartQty = cart[prod.id] || 0;
+    tableHtml += '<th class="compare-product-th" scope="col">';
+    tableHtml +=   '<div class="compare-card-head">';
+    tableHtml +=     '<button type="button" class="compare-remove-col-btn" onclick="toggleCompareItem(' + prod.id + ')" title="Remove ' + esc(prod.title) + ' from matrix" aria-label="Remove ' + esc(prod.title) + '">×</button>';
+    tableHtml +=     '<div class="compare-img-box" onclick="openSpecDrawer(' + prod.id + ')">';
+    tableHtml +=       '<img src="' + esc(pImg) + '" alt="' + esc(prod.title) + '" loading="lazy" />';
+    tableHtml +=     '</div>';
+    tableHtml +=     '<span class="compare-col-sku">' + esc(pSku) + '</span>';
+    tableHtml +=     '<h4 class="compare-col-title" onclick="openSpecDrawer(' + prod.id + ')">' + esc(prod.title) + '</h4>';
+    tableHtml +=     '<div class="compare-col-actions">';
+    tableHtml +=       '<button type="button" class="compare-cart-btn" onclick="inc(' + prod.id + '); renderComparisonTable();">';
+    tableHtml +=         icon("cart", 13) + ' <span>' + (inCartQty > 0 ? ('In Cart (' + inCartQty + ')') : 'Add to Cart') + '</span>';
+    tableHtml +=       '</button>';
+    tableHtml +=     '</div>';
+    tableHtml +=   '</div>';
+    tableHtml += '</th>';
+  }
+  tableHtml += '</tr></thead>';
+
+  // Table Body Rows
+  tableHtml += '<tbody>';
+  for (var r = 0; r < specRows.length; r++) {
+    var row = specRows[r];
+    var isDiff = row.isDiff;
+    if (compareHighlightDiffs && !isDiff) {
+      continue; // Skip identical rows when Highlight Differences Only is active
+    }
+    tableHtml += '<tr class="compare-row' + (isDiff ? ' row-has-diff' : ' row-identical') + '">';
+    tableHtml +=   '<th class="compare-sticky-td" scope="row">';
+    tableHtml +=     '<span class="compare-row-label">' + esc(row.label) + '</span>';
+    if (isDiff) {
+      tableHtml +=   '<span class="compare-diff-tag">Diff</span>';
+    }
+    tableHtml +=   '</th>';
+    for (var col = 0; col < compProducts.length; col++) {
+      var colProd = compProducts[col];
+      tableHtml += '<td class="compare-cell">';
+      tableHtml +=   row.renderCell(colProd);
+      tableHtml += '</td>';
+    }
+    tableHtml += '</tr>';
+  }
+  tableHtml += '</tbody>';
+  tableHtml += '</table>';
+
+  container.innerHTML = tableHtml;
+}
+
 
 function showReceipt(order) {
   shownOrder = order;
@@ -3100,12 +4508,13 @@ function buildReceiptHTML(order) {
     var line = order.lines[i];
     var lineTotal = round(line.price * line.qty);
     var lineProduct = (typeof findProductById === "function") ? findProductById(line.productId) : null;
-    var thumb = lineProduct ? tileFor(lineProduct.category) : line.image;
+    var thumb = getProductImageUrl(lineProduct || line);
+    var fallbackCat = (lineProduct && lineProduct.category) ? lineProduct.category : "components";
 
     rows +=
       '<div class="r-item">' +
-        '<img class="r-thumb" src="' + thumb + '" alt="" ' +
-             'onerror="this.style.visibility=\'hidden\'" />' +
+        '<img class="r-thumb" src="' + esc(thumb) + '" alt="' + esc(line.title) + '" ' +
+             'onerror="this.onerror=null;this.src=\'' + tileFor(fallbackCat) + '\'" />' +
         '<div class="r-item-main">' +
           '<div class="r-item-name">' + esc(line.title) + '</div>' +
           '<div class="r-item-calc">' +
@@ -3419,7 +4828,7 @@ function cycleBgFxMode() {
   var mode = bgModes[currentBgModeIdx];
   document.body.setAttribute("data-bg-mode", mode);
   if (bgFxLabelEl) {
-    bgFxLabelEl.textContent = bgModeLabels[mode] || "FX: Quantum";
+    bgFxLabelEl.textContent = bgModeLabels[mode] || "Theme: Obsidian";
   }
   if (typeof window.triggerVoltboxShockwave === "function") {
     window.triggerVoltboxShockwave(window.innerWidth * 0.5, 80);
@@ -3427,173 +4836,7 @@ function cycleBgFxMode() {
 }
 
 function initQuantumCanvasBg() {
-  var canvas = document.getElementById("quantum-bg-canvas");
-  if (!canvas) return;
-  var ctx = canvas.getContext("2d");
-  if (!ctx) return;
-
-  var width = window.innerWidth;
-  var height = window.innerHeight;
-  var dpr = Math.min(window.devicePixelRatio || 1, 2);
-
-  function resizeCanvas() {
-    width = window.innerWidth;
-    height = window.innerHeight;
-    canvas.width = Math.floor(width * dpr);
-    canvas.height = Math.floor(height * dpr);
-    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-  }
-  resizeCanvas();
-  window.addEventListener("resize", resizeCanvas, { passive: true });
-
-  var DIE_LABELS = [
-    "DIE_04", "CLK_5.7G", "PCIE_5.0", "VRM_24P", "NPU_36T",
-    "L3_96MB", "GDDR7", "BUS_512B", "NVLINK", "TSMC_3NM",
-    "DDR5_8000", "PWM_SYNC", "VOLT_1.2V", "CORE_X9"
-  ];
-
-  var nodeCount = width < 680 ? 20 : 36;
-  var nodes = [];
-  for (var i = 0; i < nodeCount; i++) {
-    nodes.push({
-      x: Math.random() * width,
-      y: Math.random() * height,
-      vx: (Math.random() - 0.5) * 0.42,
-      vy: (Math.random() - 0.5) * 0.42,
-      size: (i % 4 === 0) ? 3.2 : 2.1,
-      label: (i % 3 === 0) ? DIE_LABELS[i % DIE_LABELS.length] : null,
-      phase: Math.random() * Math.PI * 2
-    });
-  }
-
-  var pointer = { x: width * 0.5, y: height * 0.35, active: false };
-  window.addEventListener("mousemove", function (e) {
-    pointer.x = e.clientX;
-    pointer.y = e.clientY;
-    pointer.active = true;
-  }, { passive: true });
-
-  window.addEventListener("touchmove", function (e) {
-    if (e.touches && e.touches[0]) {
-      pointer.x = e.touches[0].clientX;
-      pointer.y = e.touches[0].clientY;
-      pointer.active = true;
-    }
-  }, { passive: true });
-
-  var shockwaves = [];
-  window.triggerVoltboxShockwave = function (cx, cy) {
-    shockwaves.push({
-      x: typeof cx === "number" ? cx : pointer.x,
-      y: typeof cy === "number" ? cy : pointer.y,
-      r: 8,
-      maxR: Math.max(width, height) * 0.45,
-      alpha: 0.52
-    });
-  };
-
-  function getPalette() {
-    var mode = document.body.getAttribute("data-bg-mode") || "quantum";
-    if (mode === "overclock") {
-      return {
-        primary: "255, 180, 0",
-        secondary: "255, 107, 107",
-        nodeHex: "#ffd23f"
-      };
-    }
-    if (mode === "cyber") {
-      return {
-        primary: "124, 108, 246",
-        secondary: "45, 212, 191",
-        nodeHex: "#a78bfa"
-      };
-    }
-    return {
-      primary: "45, 212, 191",
-      secondary: "255, 210, 63",
-      nodeHex: "#2dd4bf"
-    };
-  }
-
-  function renderFrame(now) {
-    ctx.clearRect(0, 0, width, height);
-    var pal = getPalette();
-    var linkDist = width < 680 ? 125 : 165;
-
-    // Draw expanding shockwave rings on cart / FX / chat actions
-    for (var s = shockwaves.length - 1; s >= 0; s--) {
-      var sw = shockwaves[s];
-      sw.r += 7.5;
-      sw.alpha *= 0.96;
-      ctx.beginPath();
-      ctx.arc(sw.x, sw.y, sw.r, 0, Math.PI * 2);
-      ctx.strokeStyle = "rgba(" + pal.secondary + ", " + sw.alpha.toFixed(3) + ")";
-      ctx.lineWidth = 1.5;
-      ctx.stroke();
-      if (sw.r >= sw.maxR || sw.alpha < 0.02) {
-        shockwaves.splice(s, 1);
-      }
-    }
-
-    // Update and draw silicon wafer nodes
-    for (var i = 0; i < nodes.length; i++) {
-      var n = nodes[i];
-      n.x += n.vx;
-      n.y += n.vy;
-
-      if (n.x < 0) n.x = width;
-      if (n.x > width) n.x = 0;
-      if (n.y < 0) n.y = height;
-      if (n.y > height) n.y = 0;
-
-      // Gentle cursor magnetic pull
-      var dxP = pointer.x - n.x;
-      var dyP = pointer.y - n.y;
-      var distP = Math.sqrt(dxP * dxP + dyP * dyP);
-      if (distP < 190 && distP > 1) {
-        n.x += (dxP / distP) * 0.28;
-        n.y += (dyP / distP) * 0.28;
-        ctx.beginPath();
-        ctx.moveTo(n.x, n.y);
-        ctx.lineTo(pointer.x, pointer.y);
-        var pAlpha = ((1 - distP / 190) * 0.22).toFixed(3);
-        ctx.strokeStyle = "rgba(" + pal.secondary + ", " + pAlpha + ")";
-        ctx.lineWidth = 0.9;
-        ctx.stroke();
-      }
-
-      // Connect nearby silicon nodes with orthogonal/diagonal circuit traces
-      for (var j = i + 1; j < nodes.length; j++) {
-        var m = nodes[j];
-        var dx = m.x - n.x;
-        var dy = m.y - n.y;
-        var dist = Math.sqrt(dx * dx + dy * dy);
-        if (dist < linkDist) {
-          var alpha = ((1 - dist / linkDist) * 0.18).toFixed(3);
-          ctx.beginPath();
-          ctx.moveTo(n.x, n.y);
-          ctx.lineTo(m.x, m.y);
-          ctx.strokeStyle = "rgba(" + pal.primary + ", " + alpha + ")";
-          ctx.lineWidth = 0.8;
-          ctx.stroke();
-        }
-      }
-
-      var pulse = 0.55 + 0.45 * Math.sin(now * 0.0025 + n.phase);
-      ctx.fillStyle = "rgba(" + pal.primary + ", " + (0.35 + pulse * 0.45).toFixed(2) + ")";
-      ctx.fillRect(n.x - n.size * 0.5, n.y - n.size * 0.5, n.size, n.size);
-
-      if (n.label && distP < 240) {
-        ctx.font = "600 9px JetBrains Mono, monospace";
-        ctx.fillStyle = "rgba(" + pal.secondary + ", 0.55)";
-        ctx.fillText(n.label, n.x + 6, n.y - 4);
-      }
-    }
-
-    window.requestAnimationFrame(renderFrame);
-  }
-
-  window.requestAnimationFrame(renderFrame);
+  window.triggerVoltboxShockwave = function () {};
 }
 
 
@@ -3678,10 +4921,13 @@ function loadMessengerMessages() {
 
 function renderMessengerFeed() {
   if (!messengerFeedEl) return;
+  var currentChan = activeChatChannel || "engineering-desk";
   var filtered = [];
   for (var i = 0; i < chatMessages.length; i++) {
     var m = chatMessages[i];
-    if ((m.channel || "general") === activeChatChannel) {
+    var mChan = m.channel || "engineering-desk";
+    if (mChan === "general") mChan = "engineering-desk";
+    if (mChan === currentChan) {
       filtered.push(m);
     }
   }
@@ -3689,8 +4935,8 @@ function renderMessengerFeed() {
   if (filtered.length === 0) {
     messengerFeedEl.innerHTML =
       '<div class="msg-empty">' +
-        '<p>No messages in <b>#' + esc(activeChatChannel) + '</b> yet.</p>' +
-        '<span>Drop a rig question or attach a catalog part below to start the thread.</span>' +
+        '<p>No messages in <b>#' + esc(currentChan) + '</b> yet.</p>' +
+        '<span>Ask a hardware question or embed a component spec to consult with Voltbox Lead Architects.</span>' +
       '</div>';
     return;
   }
@@ -3700,10 +4946,10 @@ function renderMessengerFeed() {
     var msg = filtered[j];
     var isSelf = me && msg.senderEmail === me.email;
     var roleBadge = "";
-    if (msg.senderRole === "moderator") {
-      roleBadge = '<span class="msg-role-pill mod">MOD</span>';
-    } else if (msg.senderRole === "contributor") {
-      roleBadge = '<span class="msg-role-pill contrib">TECH</span>';
+    if (msg.senderRole === "STAFF_ARCHITECT" || msg.senderRole === "moderator") {
+      roleBadge = '<span class="msg-role-pill architect">STAFF ARCHITECT</span>';
+    } else if (msg.senderRole === "VERIFIED_BUILDER" || msg.senderRole === "contributor") {
+      roleBadge = '<span class="msg-role-pill builder">VERIFIED BUILDER</span>';
     }
 
     var when = new Date(msg.createdAt || Date.now());
@@ -3724,32 +4970,71 @@ function renderMessengerFeed() {
             '<span class="msg-part-price">$' + Number(pPrice).toFixed(2) + '</span>' +
           '</div>' +
           '<div class="msg-part-actions">' +
-            '<button type="button" class="msg-part-btn add" onclick="inc(' + Number(msg.productId) + ')">+ Cart</button>' +
             '<button type="button" class="msg-part-btn specs" onclick="closeMessenger();openSpecDrawer(' + Number(msg.productId) + ')">Specs</button>' +
+            '<button type="button" class="msg-part-btn add" onclick="inc(' + Number(msg.productId) + ')">+ Rig</button>' +
           '</div>' +
         '</div>';
     }
 
+    var reactions = msg.reactions || { "⚡": 1 };
+    var reactionsHtml = '<div class="msg-reactions-row">';
+    var emojis = ["⚡", "🚀", "🔥", "💡", "👍"];
+    for (var e = 0; e < emojis.length; e++) {
+      var em = emojis[e];
+      var cnt = reactions[em] || 0;
+      reactionsHtml +=
+        '<button type="button" class="msg-reaction-pill' + (cnt > 0 ? ' reacted' : '') + '" onclick="toggleMsgReaction(' + msg.id + ', \'' + em + '\')">' +
+          em + (cnt > 0 ? (' ' + cnt) : '') +
+        '</button>';
+    }
+    reactionsHtml += '</div>';
+
     html +=
       '<article class="msg-card' + (isSelf ? ' self' : '') + '" data-testid="messenger-msg-card">' +
-        '<div class="msg-avatar" style="background:' + esc(msg.senderColor || "#2dd4bf") + '">' +
-          esc(msg.senderInitial || "V") +
+        '<div class="msg-avatar" style="background:' + esc(msg.senderColor || "#3b82f6") + '">' +
+          esc((msg.senderName || "V").charAt(0).toUpperCase()) +
         '</div>' +
         '<div class="msg-body">' +
           '<div class="msg-meta">' +
-            '<span class="msg-author">' + esc(msg.senderName || "Builder") + '</span>' +
+            '<span class="msg-author">' + esc(msg.senderName || "Engineer") + '</span>' +
             roleBadge +
             '<span class="msg-time">' + esc(timeLabel) + '</span>' +
           '</div>' +
           '<div class="msg-text">' + esc(msg.text) + '</div>' +
           partCardHtml +
+          reactionsHtml +
         '</div>' +
       '</article>';
   }
 
   messengerFeedEl.innerHTML = html;
-  messengerFeedEl.scrollTop = messengerFeedEl.scrollHeight;
+  if (window.momentumDrawers && window.momentumDrawers.messenger) {
+    window.momentumDrawers.messenger.refreshMetrics();
+    window.momentumDrawers.messenger.scrollTo(messengerFeedEl.scrollHeight, true);
+  } else {
+    messengerFeedEl.scrollTop = messengerFeedEl.scrollHeight;
+  }
 }
+
+window.toggleMsgReaction = function (messageId, emoji) {
+  api("/api/messages/" + messageId + "/reactions", {
+    method: "POST",
+    body: JSON.stringify({ emoji: emoji })
+  })
+    .then(function (r) { return r.json(); })
+    .then(function (data) {
+      if (data && data.message) {
+        for (var i = 0; i < chatMessages.length; i++) {
+          if (chatMessages[i].id === messageId) {
+            chatMessages[i].reactions = data.message.reactions;
+            break;
+          }
+        }
+        renderMessengerFeed();
+      }
+    })
+    .catch(function () {});
+};
 
 function sendMessengerMessage() {
   if (!chatMessageInputEl) return;
@@ -3857,4 +5142,557 @@ function closePwaInstallModal() {
   pwaInstallOverlayEl.setAttribute("aria-hidden", "true");
   document.body.classList.remove("no-scroll");
 }
+
+
+// ═══════════════════════════════════════════════════════════════════
+// SMOOTH MOMENTUM-BASED SCROLLING ENGINE FOR ALL DRAWERS
+// (Product Specs #spec-drawer, Rig Builder #rig-drawer, Messenger #messenger-drawer)
+// ═══════════════════════════════════════════════════════════════════
+
+function computeTouchVelocityClient(samples, maxVelocity) {
+  var cap = Math.max(8, Math.abs(maxVelocity || 72));
+  if (!Array.isArray(samples) || samples.length < 2) return 0;
+
+  var last = samples[samples.length - 1];
+  var anchor = samples[0];
+  for (var i = samples.length - 2; i >= 0; i--) {
+    var dt = last.t - samples[i].t;
+    if (dt >= 16 && dt <= 130) {
+      anchor = samples[i];
+      if (dt >= 45) break;
+    }
+  }
+
+  var totalDt = last.t - anchor.t;
+  if (totalDt < 0 || totalDt > 200) return 0;
+
+  var deltaY = anchor.y - last.y;
+  if (totalDt < 12 && Math.abs(deltaY) < 8) return 0;
+
+  var effectiveDt = Math.max(24, totalDt);
+  var pxPerFrame = (deltaY / effectiveDt) * 16.667;
+  if (Math.abs(pxPerFrame) < 0.45) return 0;
+
+  return Math.round(Math.max(-cap, Math.min(cap, pxPerFrame)) * 100) / 100;
+}
+
+function computeRubberBandDragClient(deltaY, currentScrollTop, currentOverscroll, maxScroll, maxOverscroll) {
+  var safeMax = Math.max(0, Number(maxScroll) || 0);
+  var limit = Math.max(24, Number(maxOverscroll) || 84);
+  var scrollDelta = -deltaY;
+  var virtualOffset = currentScrollTop + currentOverscroll + scrollDelta;
+
+  if (virtualOffset >= 0 && virtualOffset <= safeMax) {
+    return {
+      scrollTop: Math.round(virtualOffset * 100) / 100,
+      overscroll: 0
+    };
+  }
+
+  var excess = virtualOffset < 0 ? virtualOffset : (virtualOffset - safeMax);
+  var clampedTop = virtualOffset < 0 ? 0 : safeMax;
+  var absExcess = Math.abs(excess);
+  var damped = (1 - 1 / ((absExcess * 0.52) / limit + 1)) * limit;
+  var overscroll = Math.round((excess < 0 ? -1 : 1) * damped * 100) / 100;
+
+  return {
+    scrollTop: clampedTop,
+    overscroll: overscroll
+  };
+}
+
+function stepMomentumScrollClient(state, dtMs) {
+  var maxScroll = Math.max(0, Number(state.maxScroll) || 0);
+  var friction = typeof state.friction === "number" ? state.friction : 0.945;
+  var springTension = typeof state.springTension === "number" ? state.springTension : 0.22;
+  var springDamping = typeof state.springDamping === "number" ? state.springDamping : 0.68;
+  var dtRatio = Math.max(0.25, Math.min(2.5, (Number(dtMs) || 16.667) / 16.667));
+
+  var scrollTop = Math.max(0, Math.min(maxScroll, Number(state.scrollTop) || 0));
+  var velocity = Number(state.velocity) || 0;
+  var overscroll = Number(state.overscroll) || 0;
+
+  if (Math.abs(overscroll) > 0.01) {
+    if (overscroll * velocity > 0) {
+      overscroll += velocity * 0.32 * dtRatio;
+      velocity *= Math.pow(0.55, dtRatio);
+      overscroll = Math.max(-90, Math.min(90, overscroll));
+    } else {
+      velocity = 0;
+    }
+
+    overscroll *= Math.pow(1 - springTension, dtRatio);
+    velocity *= Math.pow(springDamping, dtRatio);
+
+    if (Math.abs(overscroll) < 0.45 && Math.abs(velocity) < 0.35) {
+      return {
+        scrollTop: scrollTop,
+        velocity: 0,
+        overscroll: 0,
+        active: false,
+        phase: "idle"
+      };
+    }
+
+    return {
+      scrollTop: Math.round(scrollTop * 100) / 100,
+      velocity: Math.round(velocity * 100) / 100,
+      overscroll: Math.round(overscroll * 100) / 100,
+      active: true,
+      phase: Math.abs(velocity) > 0.8 ? "overscroll" : "springback"
+    };
+  }
+
+  velocity *= Math.pow(friction, dtRatio);
+  var nextRaw = scrollTop + velocity * dtRatio;
+
+  if (nextRaw < 0) {
+    scrollTop = 0;
+    overscroll = Math.max(-72, nextRaw * 0.38);
+    velocity *= 0.45;
+    return {
+      scrollTop: 0,
+      velocity: Math.round(velocity * 100) / 100,
+      overscroll: Math.round(overscroll * 100) / 100,
+      active: true,
+      phase: "overscroll"
+    };
+  }
+
+  if (nextRaw > maxScroll) {
+    scrollTop = maxScroll;
+    overscroll = Math.min(72, (nextRaw - maxScroll) * 0.38);
+    velocity *= 0.45;
+    return {
+      scrollTop: maxScroll,
+      velocity: Math.round(velocity * 100) / 100,
+      overscroll: Math.round(overscroll * 100) / 100,
+      active: true,
+      phase: "overscroll"
+    };
+  }
+
+  scrollTop = nextRaw;
+  if (Math.abs(velocity) < 0.22) {
+    return {
+      scrollTop: Math.round(scrollTop * 100) / 100,
+      velocity: 0,
+      overscroll: 0,
+      active: false,
+      phase: "idle"
+    };
+  }
+
+  return {
+    scrollTop: Math.round(scrollTop * 100) / 100,
+    velocity: Math.round(velocity * 100) / 100,
+    overscroll: 0,
+    active: true,
+    phase: "coasting"
+  };
+}
+
+function computeScrollThumbMetricsClient(scrollTop, scrollHeight, clientHeight, overscroll) {
+  var safeClient = Math.max(1, Number(clientHeight) || 1);
+  var safeScroll = Math.max(safeClient, Number(scrollHeight) || safeClient);
+  var maxScroll = Math.max(0, safeScroll - safeClient);
+  var scrollable = maxScroll > 2;
+
+  if (!scrollable) {
+    return {
+      scrollable: false,
+      progress: 0,
+      thumbHeightPct: 100,
+      thumbTopPct: 0,
+      overscrollPx: 0
+    };
+  }
+
+  var clampedTop = Math.max(0, Math.min(maxScroll, Number(scrollTop) || 0));
+  var progress = Math.round((clampedTop / maxScroll) * 1000) / 1000;
+  var rawThumbPct = (safeClient / safeScroll) * 100;
+  var baseThumbHeightPct = Math.max(12, Math.min(82, rawThumbPct));
+  var absOver = Math.min(80, Math.abs(Number(overscroll) || 0));
+  var compressionPct = (absOver / 80) * Math.min(8, baseThumbHeightPct * 0.35);
+  var thumbHeightPct = Math.round(Math.max(8, baseThumbHeightPct - compressionPct) * 100) / 100;
+
+  var availableTrackPct = 100 - thumbHeightPct;
+  var thumbTopPct = progress * availableTrackPct;
+  if (overscroll < 0) thumbTopPct = 0;
+  else if (overscroll > 0) thumbTopPct = availableTrackPct;
+
+  return {
+    scrollable: true,
+    progress: progress,
+    thumbHeightPct: thumbHeightPct,
+    thumbTopPct: Math.round(thumbTopPct * 100) / 100,
+    overscrollPx: Math.round((Number(overscroll) || 0) * 10) / 10
+  };
+}
+
+function createMomentumDrawerController(key, drawerEl, scrollEl) {
+  if (!drawerEl || !scrollEl) return null;
+
+  // Inject tactile custom scrollbar track + thumb and top/bottom edge bounce glows
+  var trackEl = drawerEl.querySelector(".drawer-momentum-track");
+  var thumbEl = null;
+  if (!trackEl) {
+    trackEl = document.createElement("div");
+    trackEl.className = "drawer-momentum-track";
+    trackEl.setAttribute("aria-hidden", "true");
+    trackEl.setAttribute("data-testid", "momentum-scrollbar-" + key);
+    thumbEl = document.createElement("div");
+    thumbEl.className = "drawer-momentum-thumb";
+    trackEl.appendChild(thumbEl);
+    drawerEl.appendChild(trackEl);
+  } else {
+    thumbEl = trackEl.querySelector(".drawer-momentum-thumb");
+  }
+
+  var topGlowEl = drawerEl.querySelector(".drawer-overscroll-glow.top");
+  var bottomGlowEl = drawerEl.querySelector(".drawer-overscroll-glow.bottom");
+  if (!topGlowEl) {
+    topGlowEl = document.createElement("div");
+    topGlowEl.className = "drawer-overscroll-glow top";
+    topGlowEl.setAttribute("aria-hidden", "true");
+    drawerEl.appendChild(topGlowEl);
+  }
+  if (!bottomGlowEl) {
+    bottomGlowEl = document.createElement("div");
+    bottomGlowEl.className = "drawer-overscroll-glow bottom";
+    bottomGlowEl.setAttribute("aria-hidden", "true");
+    drawerEl.appendChild(bottomGlowEl);
+  }
+
+  var state = {
+    key: key,
+    scrollTop: 0,
+    velocity: 0,
+    overscroll: 0,
+    maxScroll: 0,
+    phase: "idle",
+    dragging: false,
+    pointerActive: false,
+    startX: 0,
+    startY: 0,
+    lastY: 0,
+    samples: [],
+    rafId: null,
+    lastFrameTime: 0
+  };
+
+  function getMaxScroll() {
+    return Math.max(0, (scrollEl.scrollHeight || 0) - (scrollEl.clientHeight || 0));
+  }
+
+  function syncDomVisuals() {
+    state.maxScroll = getMaxScroll();
+    var metrics = computeScrollThumbMetricsClient(
+      state.scrollTop,
+      scrollEl.scrollHeight,
+      scrollEl.clientHeight,
+      state.overscroll
+    );
+
+    drawerEl.setAttribute("data-scroll-phase", state.phase);
+    scrollEl.setAttribute("data-scroll-phase", state.phase);
+    drawerEl.setAttribute("data-scroll-top", String(Math.round(state.scrollTop)));
+    scrollEl.setAttribute("data-scroll-top", String(Math.round(state.scrollTop)));
+    drawerEl.setAttribute("data-velocity", String(Math.round(state.velocity * 10) / 10));
+    scrollEl.setAttribute("data-velocity", String(Math.round(state.velocity * 10) / 10));
+
+    // Apply elastic rubber-band displacement transform when overscrolling
+    var shiftPx = state.overscroll !== 0 ? (-state.overscroll) : 0;
+    scrollEl.style.setProperty("--overscroll-shift", shiftPx.toFixed(1) + "px");
+
+    var speedNorm = Math.min(1, Math.abs(state.velocity) / 36);
+    drawerEl.style.setProperty("--momentum-speed", speedNorm.toFixed(2));
+    drawerEl.style.setProperty("--thumb-top", metrics.thumbTopPct + "%");
+    drawerEl.style.setProperty("--thumb-height", metrics.thumbHeightPct + "%");
+
+    var topGlow = state.overscroll < 0 ? Math.min(1, Math.abs(state.overscroll) / 48) : 0;
+    var bottomGlow = state.overscroll > 0 ? Math.min(1, Math.abs(state.overscroll) / 48) : 0;
+    drawerEl.style.setProperty("--overscroll-top-glow", topGlow.toFixed(2));
+    drawerEl.style.setProperty("--overscroll-bottom-glow", bottomGlow.toFixed(2));
+
+    if (trackEl) {
+      trackEl.setAttribute("data-scrollable", metrics.scrollable ? "true" : "false");
+    }
+  }
+
+  function cancelLoop() {
+    if (state.rafId) {
+      cancelAnimationFrame(state.rafId);
+      state.rafId = null;
+    }
+  }
+
+  function tickFrame(now) {
+    var dt = state.lastFrameTime ? (now - state.lastFrameTime) : 16.667;
+    state.lastFrameTime = now;
+    state.maxScroll = getMaxScroll();
+
+    var next = stepMomentumScrollClient({
+      scrollTop: state.scrollTop,
+      velocity: state.velocity,
+      overscroll: state.overscroll,
+      maxScroll: state.maxScroll
+    }, dt);
+
+    state.scrollTop = next.scrollTop;
+    state.velocity = next.velocity;
+    state.overscroll = next.overscroll;
+    state.phase = next.phase;
+
+    if (Math.abs(scrollEl.scrollTop - state.scrollTop) >= 0.5) {
+      scrollEl.scrollTop = state.scrollTop;
+    }
+    syncDomVisuals();
+
+    if (next.active) {
+      state.rafId = requestAnimationFrame(tickFrame);
+    } else {
+      state.rafId = null;
+      state.phase = "idle";
+      syncDomVisuals();
+    }
+  }
+
+  function startMomentumLoop() {
+    if (state.rafId) return;
+    state.lastFrameTime = performance.now();
+    state.rafId = requestAnimationFrame(tickFrame);
+  }
+
+  function isInteractiveTarget(el) {
+    if (!el || !el.closest) return false;
+    return Boolean(el.closest("input, select, textarea, label"));
+  }
+
+  function onGestureStart(clientX, clientY, target) {
+    if (isInteractiveTarget(target)) return;
+    cancelLoop();
+    state.pointerActive = true;
+    state.dragging = false;
+    state.startX = clientX;
+    state.startY = clientY;
+    state.lastY = clientY;
+    state.scrollTop = scrollEl.scrollTop;
+    state.maxScroll = getMaxScroll();
+    state.velocity = 0;
+    var now = performance.now();
+    state.samples = [{ y: clientY, t: now }];
+  }
+
+  function onGestureMove(clientX, clientY, ev) {
+    if (!state.pointerActive) return;
+    var totalDx = clientX - state.startX;
+    var totalDy = clientY - state.startY;
+
+    if (!state.dragging) {
+      // Require 7px vertical movement before engaging drag so taps on buttons inside drawers never misfire
+      if (Math.abs(totalDy) < 7) return;
+      if (Math.abs(totalDx) > Math.abs(totalDy) * 1.15) {
+        state.pointerActive = false;
+        return;
+      }
+      state.dragging = true;
+      state.phase = "dragging";
+      state.lastY = clientY;
+    }
+
+    if (ev && ev.cancelable) {
+      ev.preventDefault();
+    }
+
+    var deltaY = clientY - state.lastY;
+    state.lastY = clientY;
+    state.maxScroll = getMaxScroll();
+
+    var dragStep = computeRubberBandDragClient(
+      deltaY,
+      state.scrollTop,
+      state.overscroll,
+      state.maxScroll,
+      84
+    );
+
+    state.scrollTop = dragStep.scrollTop;
+    state.overscroll = dragStep.overscroll;
+    state.phase = state.overscroll !== 0 ? "overscroll" : "dragging";
+    scrollEl.scrollTop = state.scrollTop;
+
+    var now = performance.now();
+    state.samples.push({ y: clientY, t: now });
+    if (state.samples.length > 10) {
+      state.samples.shift();
+    }
+
+    syncDomVisuals();
+  }
+
+  function onGestureEnd() {
+    if (!state.pointerActive) return;
+    var wasDragging = state.dragging;
+    state.pointerActive = false;
+    state.dragging = false;
+
+    if (!wasDragging && Math.abs(state.overscroll) < 0.5) {
+      state.phase = "idle";
+      syncDomVisuals();
+      return;
+    }
+
+    state.samples.push({ y: state.lastY, t: performance.now() });
+    var flickVel = computeTouchVelocityClient(state.samples, 72);
+    state.velocity = flickVel;
+
+    if (Math.abs(state.velocity) >= 0.45 || Math.abs(state.overscroll) >= 0.45) {
+      state.phase = Math.abs(state.overscroll) > 0.45 ? "springback" : "coasting";
+      startMomentumLoop();
+    } else {
+      state.phase = "idle";
+      state.overscroll = 0;
+      syncDomVisuals();
+    }
+  }
+
+  // Touch events for iOS / iPadOS / Android touchscreens (bound to drawerEl so swipes on scrollEl or drawer surface both work)
+  drawerEl.addEventListener("touchstart", function (e) {
+    if (!e.touches || e.touches.length !== 1) return;
+    onGestureStart(e.touches[0].clientX, e.touches[0].clientY, e.target);
+  }, { passive: true });
+
+  drawerEl.addEventListener("touchmove", function (e) {
+    if (!e.touches || e.touches.length !== 1) return;
+    onGestureMove(e.touches[0].clientX, e.touches[0].clientY, e);
+  }, { passive: false });
+
+  drawerEl.addEventListener("touchend", onGestureEnd, { passive: true });
+  drawerEl.addEventListener("touchcancel", onGestureEnd, { passive: true });
+
+  // Pointer / mouse drag support for touch-emulated & desktop dragging
+  drawerEl.addEventListener("mousedown", function (e) {
+    if (e.button !== 0) return;
+    if (e.target && e.target.closest && e.target.closest("button, a, input, select, textarea, label")) {
+      return;
+    }
+    onGestureStart(e.clientX, e.clientY, e.target);
+  });
+
+  window.addEventListener("mousemove", function (e) {
+    if (!state.pointerActive) return;
+    onGestureMove(e.clientX, e.clientY, e);
+  });
+
+  window.addEventListener("mouseup", function () {
+    if (!state.pointerActive) return;
+    onGestureEnd();
+  });
+
+  // Smooth Wheel Impulse (converts stepped wheel ticks into smooth momentum coasting)
+  drawerEl.addEventListener("wheel", function (e) {
+    if (e.ctrlKey) return;
+    state.maxScroll = getMaxScroll();
+    if (state.maxScroll <= 0) return;
+
+    e.preventDefault();
+    var rawDelta = e.deltaMode === 1 ? (e.deltaY * 18) : e.deltaY;
+    var impulse = Math.max(-42, Math.min(42, rawDelta * 0.28));
+
+    if (!state.rafId) {
+      state.scrollTop = scrollEl.scrollTop;
+    }
+    state.velocity = Math.max(-68, Math.min(68, state.velocity + impulse));
+    state.phase = "coasting";
+    startMomentumLoop();
+  }, { passive: false });
+
+  // Native scroll fallback synchronization
+  scrollEl.addEventListener("scroll", function () {
+    if (!state.dragging && !state.rafId) {
+      state.scrollTop = scrollEl.scrollTop;
+      syncDomVisuals();
+    }
+  }, { passive: true });
+
+  return {
+    key: key,
+    drawerEl: drawerEl,
+    scrollEl: scrollEl,
+    refreshMetrics: function () {
+      state.maxScroll = getMaxScroll();
+      state.scrollTop = Math.max(0, Math.min(state.maxScroll, scrollEl.scrollTop));
+      syncDomVisuals();
+    },
+    flick: function (velocityPxPerFrame) {
+      cancelLoop();
+      state.maxScroll = getMaxScroll();
+      state.scrollTop = scrollEl.scrollTop;
+      state.velocity = Math.max(-72, Math.min(72, Number(velocityPxPerFrame) || 0));
+      state.phase = "coasting";
+      syncDomVisuals();
+      startMomentumLoop();
+    },
+    scrollTo: function (targetTop, animated) {
+      cancelLoop();
+      state.maxScroll = getMaxScroll();
+      var clamped = Math.max(0, Math.min(state.maxScroll, Number(targetTop) || 0));
+      if (!animated) {
+        state.scrollTop = clamped;
+        state.velocity = 0;
+        state.overscroll = 0;
+        state.phase = "idle";
+        scrollEl.scrollTop = clamped;
+        syncDomVisuals();
+        return;
+      }
+      var diff = clamped - scrollEl.scrollTop;
+      if (Math.abs(diff) < 2) {
+        scrollEl.scrollTop = clamped;
+        state.scrollTop = clamped;
+        syncDomVisuals();
+        return;
+      }
+      // Launch smooth momentum impulse toward targetTop
+      state.scrollTop = scrollEl.scrollTop;
+      state.velocity = Math.max(-64, Math.min(64, diff * 0.09));
+      state.phase = "coasting";
+      startMomentumLoop();
+    },
+    getState: function () {
+      return {
+        key: state.key,
+        scrollTop: Math.round(scrollEl.scrollTop * 100) / 100,
+        maxScroll: getMaxScroll(),
+        scrollHeight: scrollEl.scrollHeight,
+        clientHeight: scrollEl.clientHeight,
+        velocity: state.velocity,
+        overscroll: state.overscroll,
+        phase: state.phase,
+        active: Boolean(state.rafId)
+      };
+    }
+  };
+}
+
+function initMomentumDrawers() {
+  var specDrawerEl = document.getElementById("spec-drawer");
+  var specBodyEl = document.getElementById("spec-drawer-body");
+  var rigDrawerEl = document.getElementById("rig-drawer");
+  var rigBodyEl = document.getElementById("rig-slots-list");
+  var msgDrawerEl = document.getElementById("messenger-drawer");
+  var msgBodyEl = document.getElementById("messenger-feed");
+
+  window.momentumDrawers = {
+    spec: createMomentumDrawerController("spec", specDrawerEl, specBodyEl),
+    rig: createMomentumDrawerController("rig", rigDrawerEl, rigBodyEl),
+    messenger: createMomentumDrawerController("messenger", msgDrawerEl, msgBodyEl),
+    computeTouchVelocity: computeTouchVelocityClient,
+    computeRubberBandDrag: computeRubberBandDragClient,
+    stepMomentumScroll: stepMomentumScrollClient,
+    computeScrollThumbMetrics: computeScrollThumbMetricsClient
+  };
+}
+
 

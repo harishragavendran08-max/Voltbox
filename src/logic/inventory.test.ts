@@ -36,6 +36,19 @@ import {
   VOLTBOX_QR_THEMES,
   resolveQrColors,
   parseScannedProductPayload,
+  MIN_TOUCH_TARGET_PX,
+  validateTouchTargetDimensions,
+  computeTouchVelocity,
+  computeRubberBandDrag,
+  stepMomentumScroll,
+  computeScrollThumbMetrics,
+  resolveProductImageUrl,
+  detectCardNetwork,
+  formatPaymentMethodSummary,
+  UPI_APP_PROFILES,
+  normalizeUpiAppId,
+  buildUpiPaymentRequestPayload,
+  buildProductComparison,
 } from './inventory';
 
 test('LOW_STOCK_THRESHOLD is 5', () => {
@@ -255,16 +268,36 @@ test('classifyDeviceViewport adapts layout across iOS/Android mobile, iPad table
   assert.equal(iphone.deviceTier, 'mobile');
   assert.equal(iphone.showBottomAppDock, true);
   assert.equal(iphone.compactOrderBarByDefault, true);
+  assert.equal(iphone.minTouchTargetPx, 44);
 
   const ipad = classifyDeviceViewport(820, 1180);
   assert.equal(ipad.deviceTier, 'ipad-tablet');
   assert.equal(ipad.showBottomAppDock, true);
   assert.equal(ipad.columnsSuggested, 3);
+  assert.equal(ipad.minTouchTargetPx, 44);
 
   const desktop = classifyDeviceViewport(1440, 900);
   assert.equal(desktop.deviceTier, 'desktop');
   assert.equal(desktop.showBottomAppDock, false);
   assert.equal(desktop.columnsSuggested, 4);
+  assert.equal(desktop.minTouchTargetPx, 44);
+});
+
+test('validateTouchTargetDimensions enforces 44x44px minimum touch target size for mobile interactive elements', () => {
+  assert.equal(MIN_TOUCH_TARGET_PX, 44);
+
+  const compliantBtn = validateTouchTargetDimensions(44, 44);
+  assert.equal(compliantBtn.valid, true);
+  assert.equal(compliantBtn.deficitWidthPx, 0);
+  assert.equal(compliantBtn.deficitHeightPx, 0);
+
+  const largeNav = validateTouchTargetDimensions(72, 50);
+  assert.equal(largeNav.valid, true);
+
+  const undersizedIcon = validateTouchTargetDimensions(30, 30);
+  assert.equal(undersizedIcon.valid, false);
+  assert.equal(undersizedIcon.deficitWidthPx, 14);
+  assert.equal(undersizedIcon.deficitHeightPx, 14);
 });
 
 test('buildInventoryItem and buildInventorySummary compute warehouse stock, cart reservations, and low-stock status', () => {
@@ -566,5 +599,276 @@ test('parseScannedProductPayload accurately resolves product IDs from URLs, SKUs
   assert.equal(res7.productId, null);
 });
 
+test('computeTouchVelocity calculates flick velocity from touch samples and clamps to maxVelocity', () => {
+  // Upward finger swipe (y decreases from 400 to 250 over 50ms -> scrolling down with positive velocity)
+  const downFlick = computeTouchVelocity([
+    { y: 400, t: 100 },
+    { y: 330, t: 125 },
+    { y: 250, t: 150 },
+  ]);
+  assert.ok(downFlick > 30);
+  assert.ok(downFlick <= 72);
 
+  // Downward finger swipe (y increases from 200 to 350 over 50ms -> scrolling up with negative velocity)
+  const upFlick = computeTouchVelocity([
+    { y: 200, t: 100 },
+    { y: 275, t: 125 },
+    { y: 350, t: 150 },
+  ]);
+  assert.ok(upFlick < -30);
+
+  // Stationary / stale touch release produces 0 velocity
+  const stationary = computeTouchVelocity([
+    { y: 300, t: 100 },
+    { y: 300, t: 350 },
+  ]);
+  assert.equal(stationary, 0);
+});
+
+test('computeRubberBandDrag tracks 1:1 inside bounds and applies hyperbolic damping past top and bottom edges', () => {
+  // Normal drag inside [0, 500]
+  const inside = computeRubberBandDrag(-40, 100, 0, 500);
+  assert.equal(inside.scrollTop, 140);
+  assert.equal(inside.overscroll, 0);
+
+  // Pulling down past top edge (scrollTop = 0, finger moves down +60px)
+  const topPull = computeRubberBandDrag(60, 0, 0, 500, 84);
+  assert.equal(topPull.scrollTop, 0);
+  assert.ok(topPull.overscroll < 0);
+  assert.ok(Math.abs(topPull.overscroll) < 60); // damped
+
+  // Pulling up past bottom edge (scrollTop = 500, finger moves up -60px)
+  const bottomPull = computeRubberBandDrag(-60, 500, 0, 500, 84);
+  assert.equal(bottomPull.scrollTop, 500);
+  assert.ok(bottomPull.overscroll > 0);
+  assert.ok(bottomPull.overscroll < 60); // damped
+});
+
+test('stepMomentumScroll applies exponential friction coasting and spring-back recovery at drawer boundaries', () => {
+  // Free coasting in the middle of a drawer
+  const step1 = stepMomentumScroll({
+    scrollTop: 100,
+    velocity: 24,
+    overscroll: 0,
+    maxScroll: 600,
+  });
+  assert.equal(step1.phase, 'coasting');
+  assert.equal(step1.active, true);
+  assert.ok(step1.scrollTop > 120);
+  assert.ok(step1.velocity < 24 && step1.velocity > 20);
+  assert.equal(step1.overscroll, 0);
+
+  // Coasting past bottom boundary triggers overscroll and then springs back to 0 overscroll
+  let state = stepMomentumScroll({
+    scrollTop: 590,
+    velocity: 30,
+    overscroll: 0,
+    maxScroll: 600,
+  });
+  assert.equal(state.scrollTop, 600);
+  assert.ok(state.overscroll > 0);
+  assert.equal(state.active, true);
+
+  // Step through spring-back until idle
+  for (let i = 0; i < 45 && state.active; i++) {
+    state = stepMomentumScroll({
+      scrollTop: state.scrollTop,
+      velocity: state.velocity,
+      overscroll: state.overscroll,
+      maxScroll: 600,
+    });
+  }
+  assert.equal(state.active, false);
+  assert.equal(state.phase, 'idle');
+  assert.equal(state.scrollTop, 600);
+  assert.equal(state.overscroll, 0);
+});
+
+test('computeScrollThumbMetrics computes proportional thumb size, offset, and overscroll compression', () => {
+  const nonScrollable = computeScrollThumbMetrics(0, 400, 400, 0);
+  assert.equal(nonScrollable.scrollable, false);
+
+  const midScroll = computeScrollThumbMetrics(250, 1000, 500, 0);
+  assert.equal(midScroll.scrollable, true);
+  assert.equal(midScroll.progress, 0.5);
+  assert.equal(midScroll.thumbHeightPct, 50);
+  assert.equal(midScroll.thumbTopPct, 25);
+
+  const overscrolledBottom = computeScrollThumbMetrics(500, 1000, 500, 40);
+  assert.equal(overscrolledBottom.scrollable, true);
+  assert.ok(overscrolledBottom.thumbHeightPct < 50); // compressed during overscroll
+  assert.equal(
+    Math.round((overscrolledBottom.thumbHeightPct + overscrolledBottom.thumbTopPct) * 10) / 10,
+    100
+  );
+});
+
+test('resolveProductImageUrl upgrades category SVG fallbacks to real product photos for cart and bill', () => {
+  const catalog = [
+    {
+      id: 28,
+      title: 'Corsair Vengeance 32GB DDR5-6000 RGB',
+      category: 'memory',
+      image: '/src/assets/images/product_ddr5_ram_kit_1793511150356.jpg',
+    },
+    {
+      id: 36,
+      title: 'Intel Core Ultra 9 285K Processor',
+      category: 'cpus',
+      image: '/src/assets/images/product_intel_ultra_cpu_1793517563101.jpg',
+    },
+  ];
+
+  // Direct real image preserved
+  assert.equal(
+    resolveProductImageUrl(
+      { productId: 28, image: '/src/assets/images/product_ddr5_ram_kit_1793511150356.jpg' },
+      catalog
+    ),
+    '/src/assets/images/product_ddr5_ram_kit_1793511150356.jpg'
+  );
+
+  // Category icon fallback upgraded via productId lookup
+  assert.equal(
+    resolveProductImageUrl(
+      { productId: 36, image: '/images/categories/cpus.svg', category: 'cpus' },
+      catalog
+    ),
+    '/src/assets/images/product_intel_ultra_cpu_1793517563101.jpg'
+  );
+
+  // Category icon fallback upgraded via title lookup
+  assert.equal(
+    resolveProductImageUrl(
+      { title: 'Corsair Vengeance 32GB DDR5-6000 RGB', image: '' },
+      catalog
+    ),
+    '/src/assets/images/product_ddr5_ram_kit_1793511150356.jpg'
+  );
+});
+
+test('detectCardNetwork and formatPaymentMethodSummary format UPI, Credit Card, Debit Card, NetBanking, and EMI options', () => {
+  assert.equal(detectCardNetwork('4242 4242 4242 4242'), 'Visa');
+  assert.equal(detectCardNetwork('5412 7534 8899 1023'), 'Mastercard');
+  assert.equal(detectCardNetwork('3782 822463 10005'), 'Amex');
+  assert.equal(detectCardNetwork('6521 8800 1122 8821'), 'RuPay');
+
+  assert.equal(
+    formatPaymentMethodSummary({ method: 'upi', upiApp: 'GPay', upiId: 'harish@okaxis' }),
+    'UPI (GPay · harish@okaxis)'
+  );
+  assert.equal(
+    formatPaymentMethodSummary({ method: 'upi', upiApp: 'PhonePe', upiMode: 'qr' }),
+    'UPI QR (PhonePe)'
+  );
+  assert.equal(
+    formatPaymentMethodSummary({ method: 'credit_card', cardNumber: '5412 0000 1111 9988' }),
+    'Credit Card (Mastercard •••• 9988)'
+  );
+  assert.equal(
+    formatPaymentMethodSummary({ method: 'debit_card', cardNumber: '6521 0000 1111 8821' }),
+    'Debit Card (RuPay •••• 8821)'
+  );
+  assert.equal(
+    formatPaymentMethodSummary({ method: 'netbanking', bankName: 'HDFC Bank' }),
+    'NetBanking (HDFC Bank)'
+  );
+  assert.equal(
+    formatPaymentMethodSummary({ method: 'emi', emiMonths: 6 }),
+    'No-Cost EMI (6M Plan)'
+  );
+});
+
+test('buildUpiPaymentRequestPayload builds UPI QR deep links and workflow steps for Google Pay, PhonePe, and Paytm', () => {
+  assert.equal(normalizeUpiAppId('Google Pay'), 'GPay');
+  assert.equal(normalizeUpiAppId('PhonePe'), 'PhonePe');
+  assert.equal(normalizeUpiAppId('Paytm'), 'Paytm');
+  assert.equal(normalizeUpiAppId('BHIM'), 'BHIM');
+
+  const gpayReq = buildUpiPaymentRequestPayload({
+    app: 'Google Pay',
+    amountUsd: 199.5,
+    orderRef: 'VB-9012',
+  });
+  assert.equal(gpayReq.appId, 'GPay');
+  assert.equal(gpayReq.appLabel, 'Google Pay');
+  assert.equal(gpayReq.merchantVpa, UPI_APP_PROFILES.GPay.merchantVpa);
+  assert.equal(gpayReq.paymentMethodSummary, 'UPI QR (GPay)');
+  assert.ok(gpayReq.upiUri.startsWith('upi://pay?pa=voltbox.gpay%40okaxis'));
+  assert.ok(gpayReq.upiUri.includes('am=199.50'));
+  assert.ok(gpayReq.upiUri.includes('tr=VB-9012'));
+  assert.equal(gpayReq.workflowSteps.length, 3);
+  assert.ok(gpayReq.workflowSteps[1].includes('Google Pay'));
+
+  const phonepeReq = buildUpiPaymentRequestPayload({
+    app: 'PhonePe',
+    amountUsd: 349.0,
+    orderRef: 'VB-9013',
+  });
+  assert.equal(phonepeReq.appId, 'PhonePe');
+  assert.equal(phonepeReq.merchantVpa, 'voltbox.phonepe@ybl');
+  assert.equal(phonepeReq.paymentMethodSummary, 'UPI QR (PhonePe)');
+  assert.ok(phonepeReq.upiUri.includes('voltbox.phonepe%40ybl'));
+
+  const paytmReq = buildUpiPaymentRequestPayload({
+    app: 'Paytm',
+    amountUsd: 89.99,
+    orderRef: 'VB-9014',
+  });
+  assert.equal(paytmReq.appId, 'Paytm');
+  assert.equal(paytmReq.merchantVpa, 'voltbox.paytm@paytm');
+  assert.equal(paytmReq.paymentMethodSummary, 'UPI QR (Paytm)');
+  assert.ok(paytmReq.upiUri.includes('voltbox.paytm%40paytm'));
+});
+
+test('buildProductComparison builds side-by-side matrix, diff detection, and value highlights', () => {
+  const p1 = {
+    id: 19,
+    title: 'Nvidia RTX 5090',
+    price: 200,
+    category: 'memory',
+    quantity: 8,
+    image: 'https://images.unsplash.com/photo-rtx',
+  };
+  const p2 = {
+    id: 20,
+    title: 'AMD Ryzen 9 9950X',
+    price: 180,
+    category: 'cpus',
+    quantity: 3,
+    image: 'https://images.unsplash.com/photo-ryzen',
+  };
+
+  const comp = buildProductComparison([p1, p2]);
+  assert.equal(comp.count, 2);
+  assert.equal(comp.productIds.length, 2);
+  assert.equal(comp.lowestPriceProductId, 20);
+  assert.equal(comp.highestPriceProductId, 19);
+  assert.equal(comp.priceSpread, 20);
+  assert.equal(comp.hasIdenticalCategory, false);
+
+  // Check metrics
+  assert.ok(comp.metrics.length >= 7);
+  const priceMetric = comp.metrics.find((m) => m.key === 'price');
+  assert.ok(priceMetric);
+  assert.equal(priceMetric.hasDifference, true);
+  assert.equal(priceMetric.values[19], '$200.00');
+  assert.equal(priceMetric.values[20], '$180.00');
+  assert.equal(priceMetric.bestProductId, 20);
+
+  const stockMetric = comp.metrics.find((m) => m.key === 'stockStatus');
+  assert.ok(stockMetric);
+  assert.ok(String(stockMetric.values[20]).includes('Low Stock!'));
+  assert.equal(stockMetric.bestProductId, 19);
+
+  // Single product comparison check
+  const singleComp = buildProductComparison([p1]);
+  assert.equal(singleComp.count, 1);
+  assert.equal(singleComp.priceSpread, 0);
+
+  // Empty list check
+  const emptyComp = buildProductComparison([]);
+  assert.equal(emptyComp.count, 0);
+  assert.equal(emptyComp.products.length, 0);
+});
 

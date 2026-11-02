@@ -770,11 +770,43 @@ export function sanitizeChatMessage(input: {
   };
 }
 
+export const MIN_TOUCH_TARGET_PX = 44;
+
+export interface TouchTargetValidationResult {
+  valid: boolean;
+  width: number;
+  height: number;
+  minRequiredPx: number;
+  deficitWidthPx: number;
+  deficitHeightPx: number;
+}
+
+export function validateTouchTargetDimensions(
+  width: number,
+  height: number,
+  minRequiredPx: number = MIN_TOUCH_TARGET_PX
+): TouchTargetValidationResult {
+  const w = Number.isFinite(width) && width > 0 ? Math.round(width * 100) / 100 : 0;
+  const h = Number.isFinite(height) && height > 0 ? Math.round(height * 100) / 100 : 0;
+  const minReq = Number.isFinite(minRequiredPx) && minRequiredPx > 0 ? minRequiredPx : MIN_TOUCH_TARGET_PX;
+  const deficitWidthPx = Math.max(0, Math.round((minReq - w) * 100) / 100);
+  const deficitHeightPx = Math.max(0, Math.round((minReq - h) * 100) / 100);
+  return {
+    valid: w >= minReq && h >= minReq,
+    width: w,
+    height: h,
+    minRequiredPx: minReq,
+    deficitWidthPx,
+    deficitHeightPx,
+  };
+}
+
 export interface DeviceViewportProfile {
   deviceTier: 'mobile' | 'ipad-tablet' | 'desktop';
   columnsSuggested: number;
   showBottomAppDock: boolean;
   compactOrderBarByDefault: boolean;
+  minTouchTargetPx: number;
 }
 
 export function classifyDeviceViewport(width: number, _height = 800): DeviceViewportProfile {
@@ -785,6 +817,7 @@ export function classifyDeviceViewport(width: number, _height = 800): DeviceView
       columnsSuggested: 2,
       showBottomAppDock: true,
       compactOrderBarByDefault: true,
+      minTouchTargetPx: MIN_TOUCH_TARGET_PX,
     };
   }
   if (w <= 1040) {
@@ -793,6 +826,7 @@ export function classifyDeviceViewport(width: number, _height = 800): DeviceView
       columnsSuggested: 3,
       showBottomAppDock: true,
       compactOrderBarByDefault: false,
+      minTouchTargetPx: MIN_TOUCH_TARGET_PX,
     };
   }
   return {
@@ -800,6 +834,7 @@ export function classifyDeviceViewport(width: number, _height = 800): DeviceView
     columnsSuggested: 4,
     showBottomAppDock: false,
     compactOrderBarByDefault: false,
+    minTouchTargetPx: MIN_TOUCH_TARGET_PX,
   };
 }
 
@@ -1726,4 +1761,726 @@ export async function generateProductQrDataUrl(
   });
 }
 
+// ═══════════════════════════════════════════════════════════════════
+// MOMENTUM-BASED DRAWER SCROLLING KINEMATICS & RUBBER-BAND PHYSICS
+// ═══════════════════════════════════════════════════════════════════
+
+export interface TouchVelocitySample {
+  y: number;
+  t: number;
+}
+
+export interface MomentumScrollState {
+  scrollTop: number;
+  velocity: number;
+  overscroll: number;
+  maxScroll: number;
+  friction?: number;
+  springTension?: number;
+  springDamping?: number;
+}
+
+export interface MomentumStepResult {
+  scrollTop: number;
+  velocity: number;
+  overscroll: number;
+  active: boolean;
+  phase: 'coasting' | 'overscroll' | 'springback' | 'idle';
+}
+
+export interface ScrollThumbMetrics {
+  scrollable: boolean;
+  progress: number;
+  thumbHeightPct: number;
+  thumbTopPct: number;
+  overscrollPx: number;
+}
+
+/**
+ * Computes initial momentum scroll velocity (in px per 16.67ms frame)
+ * from recent touch/pointer movement samples.
+ * Positive returned velocity means scrolling DOWN (finger dragged UP, i.e. y decreased).
+ */
+export function computeTouchVelocity(
+  samples: TouchVelocitySample[],
+  maxVelocity: number = 72
+): number {
+  if (!Array.isArray(samples) || samples.length < 2) {
+    return 0;
+  }
+
+  const last = samples[samples.length - 1];
+  // Consider samples within the last 130ms window for responsive flick detection
+  let anchor = samples[0];
+  for (let i = samples.length - 2; i >= 0; i--) {
+    const dt = last.t - samples[i].t;
+    if (dt >= 16 && dt <= 130) {
+      anchor = samples[i];
+      if (dt >= 45) break;
+    }
+  }
+
+  const totalDt = last.t - anchor.t;
+  if (totalDt < 0 || totalDt > 200) {
+    return 0;
+  }
+
+  // Finger moving UP (last.y < anchor.y) scrolls content DOWN (positive scrollTop velocity)
+  const deltaY = anchor.y - last.y;
+  if (totalDt < 12 && Math.abs(deltaY) < 8) {
+    return 0;
+  }
+
+  const effectiveDt = Math.max(24, totalDt);
+  const pxPerMs = deltaY / effectiveDt;
+  const pxPerFrame = pxPerMs * 16.667;
+
+  if (Math.abs(pxPerFrame) < 0.45) {
+    return 0;
+  }
+
+  const cap = Math.max(8, Math.abs(maxVelocity));
+  return Math.round(Math.max(-cap, Math.min(cap, pxPerFrame)) * 100) / 100;
+}
+
+/**
+ * Computes direct touch/pointer drag position with hyperbolic rubber-band
+ * resistance when pulling past the top (0) or bottom (maxScroll) bounds.
+ * @param deltaY Finger movement delta (positive = finger moved down, scrolling up)
+ */
+export function computeRubberBandDrag(
+  deltaY: number,
+  currentScrollTop: number,
+  currentOverscroll: number,
+  maxScroll: number,
+  maxOverscroll: number = 84
+): { scrollTop: number; overscroll: number } {
+  const safeMaxScroll = Math.max(0, Number(maxScroll) || 0);
+  const scrollDelta = -deltaY; // Finger down (+deltaY) reduces scrollTop
+
+  // Reconstruct virtual unconstrained offset from current scrollTop + overscroll
+  let virtualOffset = currentScrollTop + currentOverscroll + scrollDelta;
+
+  if (virtualOffset >= 0 && virtualOffset <= safeMaxScroll) {
+    return {
+      scrollTop: Math.round(virtualOffset * 100) / 100,
+      overscroll: 0,
+    };
+  }
+
+  const excess = virtualOffset < 0 ? virtualOffset : virtualOffset - safeMaxScroll;
+  const clampedScrollTop = virtualOffset < 0 ? 0 : safeMaxScroll;
+  const absExcess = Math.abs(excess);
+  const limit = Math.max(24, maxOverscroll);
+  const damped = (1 - 1 / ((absExcess * 0.52) / limit + 1)) * limit;
+  const overscroll = Math.round(Math.sign(excess) * damped * 100) / 100;
+
+  return {
+    scrollTop: clampedScrollTop,
+    overscroll,
+  };
+}
+
+/**
+ * Steps the momentum scrolling simulation by one animation frame (default 16.67ms),
+ * combining exponential friction decay with spring-damper overscroll recovery.
+ */
+export function stepMomentumScroll(
+  state: MomentumScrollState,
+  dtMs: number = 16.667
+): MomentumStepResult {
+  const maxScroll = Math.max(0, Number(state.maxScroll) || 0);
+  const friction = typeof state.friction === 'number' ? state.friction : 0.945;
+  const springTension = typeof state.springTension === 'number' ? state.springTension : 0.22;
+  const springDamping = typeof state.springDamping === 'number' ? state.springDamping : 0.68;
+  const dtRatio = Math.max(0.25, Math.min(2.5, (Number(dtMs) || 16.667) / 16.667));
+
+  let scrollTop = Math.max(0, Math.min(maxScroll, Number(state.scrollTop) || 0));
+  let velocity = Number(state.velocity) || 0;
+  let overscroll = Number(state.overscroll) || 0;
+
+  // Case 1: Currently in rubber-band overscroll
+  if (Math.abs(overscroll) > 0.01) {
+    // If velocity is still pushing further into overscroll, damp it heavily
+    if (overscroll * velocity > 0) {
+      overscroll += velocity * 0.32 * dtRatio;
+      velocity *= Math.pow(0.55, dtRatio);
+      overscroll = Math.max(-90, Math.min(90, overscroll));
+    } else {
+      velocity = 0;
+    }
+
+    // Spring restoring pull toward 0
+    overscroll *= Math.pow(1 - springTension, dtRatio);
+    velocity *= Math.pow(springDamping, dtRatio);
+
+    if (Math.abs(overscroll) < 0.45 && Math.abs(velocity) < 0.35) {
+      return {
+        scrollTop,
+        velocity: 0,
+        overscroll: 0,
+        active: false,
+        phase: 'idle',
+      };
+    }
+
+    return {
+      scrollTop: Math.round(scrollTop * 100) / 100,
+      velocity: Math.round(velocity * 100) / 100,
+      overscroll: Math.round(overscroll * 100) / 100,
+      active: true,
+      phase: Math.abs(velocity) > 0.8 ? 'overscroll' : 'springback',
+    };
+  }
+
+  // Case 2: Standard inertial coasting within bounds
+  velocity *= Math.pow(friction, dtRatio);
+  const nextRaw = scrollTop + velocity * dtRatio;
+
+  if (nextRaw < 0) {
+    const excess = nextRaw;
+    scrollTop = 0;
+    overscroll = Math.max(-72, excess * 0.38);
+    velocity *= 0.45;
+    return {
+      scrollTop: 0,
+      velocity: Math.round(velocity * 100) / 100,
+      overscroll: Math.round(overscroll * 100) / 100,
+      active: true,
+      phase: 'overscroll',
+    };
+  }
+
+  if (nextRaw > maxScroll) {
+    const excess = nextRaw - maxScroll;
+    scrollTop = maxScroll;
+    overscroll = Math.min(72, excess * 0.38);
+    velocity *= 0.45;
+    return {
+      scrollTop: maxScroll,
+      velocity: Math.round(velocity * 100) / 100,
+      overscroll: Math.round(overscroll * 100) / 100,
+      active: true,
+      phase: 'overscroll',
+    };
+  }
+
+  scrollTop = nextRaw;
+
+  if (Math.abs(velocity) < 0.22) {
+    return {
+      scrollTop: Math.round(scrollTop * 100) / 100,
+      velocity: 0,
+      overscroll: 0,
+      active: false,
+      phase: 'idle',
+    };
+  }
+
+  return {
+    scrollTop: Math.round(scrollTop * 100) / 100,
+    velocity: Math.round(velocity * 100) / 100,
+    overscroll: 0,
+    active: true,
+    phase: 'coasting',
+  };
+}
+
+/**
+ * Computes custom scrollbar thumb height and position percentages,
+ * including rubber-band thumb compression during overscroll.
+ */
+export function computeScrollThumbMetrics(
+  scrollTop: number,
+  scrollHeight: number,
+  clientHeight: number,
+  overscroll: number = 0
+): ScrollThumbMetrics {
+  const safeClient = Math.max(1, Number(clientHeight) || 1);
+  const safeScroll = Math.max(safeClient, Number(scrollHeight) || safeClient);
+  const maxScroll = Math.max(0, safeScroll - safeClient);
+  const scrollable = maxScroll > 2;
+
+  if (!scrollable) {
+    return {
+      scrollable: false,
+      progress: 0,
+      thumbHeightPct: 100,
+      thumbTopPct: 0,
+      overscrollPx: 0,
+    };
+  }
+
+  const clampedTop = Math.max(0, Math.min(maxScroll, Number(scrollTop) || 0));
+  const progress = Math.round((clampedTop / maxScroll) * 1000) / 1000;
+
+  const rawThumbPct = (safeClient / safeScroll) * 100;
+  const baseThumbHeightPct = Math.max(12, Math.min(82, rawThumbPct));
+
+  // Compress thumb slightly when overscrolling at top or bottom edge
+  const absOver = Math.min(80, Math.abs(Number(overscroll) || 0));
+  const compressionPct = (absOver / 80) * Math.min(8, baseThumbHeightPct * 0.35);
+  const thumbHeightPct = Math.round(Math.max(8, baseThumbHeightPct - compressionPct) * 100) / 100;
+
+  const availableTrackPct = 100 - thumbHeightPct;
+  let thumbTopPct = progress * availableTrackPct;
+  if (overscroll < 0) {
+    thumbTopPct = 0;
+  } else if (overscroll > 0) {
+    thumbTopPct = availableTrackPct;
+  }
+
+  return {
+    scrollable: true,
+    progress,
+    thumbHeightPct,
+    thumbTopPct: Math.round(thumbTopPct * 100) / 100,
+    overscrollPx: Math.round((Number(overscroll) || 0) * 10) / 10,
+  };
+}
+
+/**
+ * Resolves the real product photo URL for a cart item or receipt order line,
+ * upgrading category icon fallbacks (/images/categories/*.svg) to the catalog's real image.
+ */
+export function resolveProductImageUrl(
+  item: {
+    id?: number;
+    productId?: number;
+    title?: string;
+    category?: string;
+    image?: string;
+  },
+  catalog: Array<{
+    id: number;
+    title?: string;
+    category?: string;
+    image?: string;
+  }> = []
+): string {
+  const isRealImage = (url?: string): boolean => {
+    if (!url || typeof url !== 'string') return false;
+    const trimmed = url.trim();
+    if (!trimmed) return false;
+    if (trimmed.includes('/images/categories/')) return false;
+    return trimmed.startsWith('http') || trimmed.startsWith('/');
+  };
+
+  if (isRealImage(item?.image)) {
+    return item.image!.trim();
+  }
+
+  const targetId = Number(item?.productId ?? item?.id ?? 0);
+  if (targetId > 0 && Array.isArray(catalog)) {
+    const matchedById = catalog.find((p) => Number(p.id) === targetId);
+    if (matchedById && isRealImage(matchedById.image)) {
+      return matchedById.image!.trim();
+    }
+  }
+
+  if (item?.title && Array.isArray(catalog)) {
+    const lowerTitle = item.title.trim().toLowerCase();
+    const matchedByTitle = catalog.find(
+      (p) => (p.title || '').trim().toLowerCase() === lowerTitle
+    );
+    if (matchedByTitle && isRealImage(matchedByTitle.image)) {
+      return matchedByTitle.image!.trim();
+    }
+  }
+
+  const cat = (item?.category || 'components').trim() || 'components';
+  return `/images/categories/${cat}.svg`;
+}
+
+export type PaymentMethodType = 'upi' | 'credit_card' | 'debit_card' | 'netbanking' | 'emi';
+
+export interface PaymentMethodInput {
+  method?: string;
+  upiApp?: string;
+  upiId?: string;
+  upiMode?: 'vpa' | 'qr';
+  cardNumber?: string;
+  cardNetwork?: string;
+  bankName?: string;
+  emiMonths?: number;
+}
+
+/**
+ * Detects card brand/network from card number prefix or explicit selection.
+ */
+export function detectCardNetwork(cardNumber?: string, explicitNetwork?: string): string {
+  if (explicitNetwork && explicitNetwork.trim()) {
+    return explicitNetwork.trim();
+  }
+  const digits = String(cardNumber || '').replace(/\D/g, '');
+  if (/^4/.test(digits)) return 'Visa';
+  if (/^(5[1-5]|2[2-7])/.test(digits)) return 'Mastercard';
+  if (/^3[47]/.test(digits)) return 'Amex';
+  if (/^(60|65|81|82|508)/.test(digits)) return 'RuPay';
+  return 'Visa';
+}
+
+/**
+ * Formats a human-readable payment method summary for orders and thermal receipts.
+ */
+export function formatPaymentMethodSummary(input: PaymentMethodInput = {}): string {
+  const rawMethod = String(input.method || 'credit_card').trim().toLowerCase();
+
+  if (rawMethod === 'upi') {
+    const app = (input.upiApp || 'GPay').trim();
+    if (input.upiMode === 'qr') {
+      return `UPI QR (${app})`;
+    }
+    const vpa = (input.upiId || 'voltbox@okaxis').trim();
+    return `UPI (${app} · ${vpa})`;
+  }
+
+  if (rawMethod === 'debit_card' || rawMethod === 'debit') {
+    const digits = String(input.cardNumber || '').replace(/\D/g, '');
+    const last4 = digits.length >= 4 ? digits.slice(-4) : '8821';
+    const net = detectCardNetwork(input.cardNumber, input.cardNetwork || 'RuPay');
+    return `Debit Card (${net} •••• ${last4})`;
+  }
+
+  if (rawMethod === 'netbanking' || rawMethod === 'wallet') {
+    const bank = (input.bankName || 'HDFC Bank').trim();
+    return `NetBanking (${bank})`;
+  }
+
+  if (rawMethod === 'emi' || rawMethod === 'pay_later') {
+    const months = Number(input.emiMonths) || 3;
+    return `No-Cost EMI (${months}M Plan)`;
+  }
+
+  // Default: Credit Card
+  const digits = String(input.cardNumber || '').replace(/\D/g, '');
+  const last4 = digits.length >= 4 ? digits.slice(-4) : '4242';
+  const net = detectCardNetwork(input.cardNumber, input.cardNetwork);
+  return `Credit Card (${net} •••• ${last4})`;
+}
+
+export type UpiAppId = 'GPay' | 'PhonePe' | 'Paytm' | 'BHIM';
+
+export interface UpiAppProfile {
+  id: UpiAppId;
+  label: string;
+  merchantVpa: string;
+  defaultPayerVpa: string;
+  accentColor: string;
+  qrTheme: VoltboxQrThemeKey;
+}
+
+export const UPI_APP_PROFILES: Record<UpiAppId, UpiAppProfile> = {
+  GPay: {
+    id: 'GPay',
+    label: 'Google Pay',
+    merchantVpa: 'voltbox.gpay@okaxis',
+    defaultPayerVpa: 'harish@okaxis',
+    accentColor: '#3b82f6',
+    qrTheme: 'cyber',
+  },
+  PhonePe: {
+    id: 'PhonePe',
+    label: 'PhonePe',
+    merchantVpa: 'voltbox.phonepe@ybl',
+    defaultPayerVpa: 'harish@ybl',
+    accentColor: '#a855f7',
+    qrTheme: 'gold',
+  },
+  Paytm: {
+    id: 'Paytm',
+    label: 'Paytm',
+    merchantVpa: 'voltbox.paytm@paytm',
+    defaultPayerVpa: 'harish@paytm',
+    accentColor: '#06b6d4',
+    qrTheme: 'cyber',
+  },
+  BHIM: {
+    id: 'BHIM',
+    label: 'BHIM UPI',
+    merchantVpa: 'voltbox.bhim@upi',
+    defaultPayerVpa: 'harish@upi',
+    accentColor: '#f97316',
+    qrTheme: 'amber',
+  },
+};
+
+export function normalizeUpiAppId(rawApp?: string | null): UpiAppId {
+  const clean = String(rawApp || 'GPay').trim().toLowerCase();
+  if (clean.includes('phonepe') || clean === 'ybl') return 'PhonePe';
+  if (clean.includes('paytm')) return 'Paytm';
+  if (clean.includes('bhim')) return 'BHIM';
+  return 'GPay';
+}
+
+export interface UpiPaymentRequestPayload {
+  appId: UpiAppId;
+  appLabel: string;
+  merchantVpa: string;
+  payerVpa: string;
+  orderRef: string;
+  amountUsd: number;
+  amountInr: number;
+  upiUri: string;
+  paymentMethodSummary: string;
+  workflowSteps: [string, string, string];
+}
+
+/**
+ * Builds the UPI deep-link QR payload and simulated payment request workflow metadata
+ * for Google Pay, PhonePe, Paytm, and BHIM UPI.
+ */
+export function buildUpiPaymentRequestPayload(input: {
+  app?: string | null;
+  amountUsd: number;
+  orderRef?: string | null;
+  payerVpa?: string | null;
+}): UpiPaymentRequestPayload {
+  const appId = normalizeUpiAppId(input.app);
+  const profile = UPI_APP_PROFILES[appId];
+  const amountUsd = roundMoney(Math.max(0, Number(input.amountUsd) || 0));
+  const amountInr = roundMoney(amountUsd * 84);
+  const orderRef = (input.orderRef || 'VB-UPI-REQ').trim() || 'VB-UPI-REQ';
+  const payerVpa = (input.payerVpa || profile.defaultPayerVpa).trim() || profile.defaultPayerVpa;
+
+  const params = [
+    `pa=${encodeURIComponent(profile.merchantVpa)}`,
+    `pn=${encodeURIComponent('Voltbox Electronics')}`,
+    `tr=${encodeURIComponent(orderRef)}`,
+    `am=${amountUsd.toFixed(2)}`,
+    `cu=USD`,
+    `tn=${encodeURIComponent(`Voltbox Order ${orderRef} via ${profile.label}`)}`,
+  ].join('&');
+
+  const upiUri = `upi://pay?${params}`;
+  const paymentMethodSummary = formatPaymentMethodSummary({
+    method: 'upi',
+    upiApp: appId,
+    upiMode: 'qr',
+    upiId: payerVpa,
+  });
+
+  return {
+    appId,
+    appLabel: profile.label,
+    merchantVpa: profile.merchantVpa,
+    payerVpa,
+    orderRef,
+    amountUsd,
+    amountInr,
+    upiUri,
+    paymentMethodSummary,
+    workflowSteps: [
+      `1. Dynamic ${profile.label} QR & Collect Intent Generated`,
+      `2. Waiting for approval in ${profile.label} (${payerVpa})`,
+      `3. NPCI UPI Verified · Instant Settlement ($${amountUsd.toFixed(2)})`,
+    ],
+  };
+}
+
+// ─────────────────────────────────────────────────────────────
+// 12. SIDE-BY-SIDE PRODUCT COMPARISON LOGIC
+// ─────────────────────────────────────────────────────────────
+
+export interface ComparisonProductItem {
+  id: number;
+  sku: string;
+  title: string;
+  price: number;
+  category: string;
+  groupLabel: string;
+  image: string;
+  stock: number;
+  lowStock: boolean;
+  specs: ProductSpecs;
+}
+
+export interface ComparisonMetricRow {
+  key: string;
+  label: string;
+  category: 'pricing' | 'hardware' | 'power' | 'support' | 'stock';
+  values: Record<number, string | number>;
+  hasDifference: boolean;
+  bestProductId?: number;
+  highlightNote?: string;
+}
+
+export interface ProductComparisonResult {
+  productIds: number[];
+  count: number;
+  products: ComparisonProductItem[];
+  hasIdenticalCategory: boolean;
+  commonCategory: string | null;
+  lowestPriceProductId: number;
+  highestPriceProductId: number;
+  priceSpread: number;
+  metrics: ComparisonMetricRow[];
+  summary: string;
+}
+
+export function buildProductComparison(
+  rawProducts: Array<{
+    id: number;
+    title?: string;
+    price: number;
+    category?: string;
+    stock?: number;
+    quantity?: number;
+    description?: string;
+    image?: string;
+  }>,
+  allCatalogProducts: Array<{ id: number; title?: string; category?: string; image?: string }> = []
+): ProductComparisonResult {
+  if (!Array.isArray(rawProducts) || rawProducts.length === 0) {
+    return {
+      productIds: [],
+      count: 0,
+      products: [],
+      hasIdenticalCategory: true,
+      commonCategory: null,
+      lowestPriceProductId: 0,
+      highestPriceProductId: 0,
+      priceSpread: 0,
+      metrics: [],
+      summary: 'No products selected for comparison.',
+    };
+  }
+
+  const catalogContext = allCatalogProducts.length > 0 ? allCatalogProducts : rawProducts;
+
+  const enrichedProducts: ComparisonProductItem[] = rawProducts.map((p) => {
+    const specs = getProductSpecs(p);
+    const resolvedStock = getProductQuantity(p);
+    const resolvedImg = resolveProductImageUrl(p, catalogContext);
+    return {
+      id: p.id,
+      sku: specs.sku,
+      title: p.title || 'Component',
+      price: roundMoney(p.price),
+      category: p.category || 'general',
+      groupLabel: specs.groupLabel,
+      image: resolvedImg,
+      stock: resolvedStock,
+      lowStock: resolvedStock <= 3,
+      specs,
+    };
+  });
+
+  const productIds = enrichedProducts.map((p) => p.id);
+  const categories = enrichedProducts.map((p) => p.category.toLowerCase());
+  const hasIdenticalCategory = categories.every((cat) => cat === categories[0]);
+  const commonCategory = hasIdenticalCategory ? categories[0] : null;
+
+  // Pricing analysis
+  let lowestPriceItem = enrichedProducts[0];
+  let highestPriceItem = enrichedProducts[0];
+
+  for (const item of enrichedProducts) {
+    if (item.price < lowestPriceItem.price) lowestPriceItem = item;
+    if (item.price > highestPriceItem.price) highestPriceItem = item;
+  }
+
+  const priceSpread = roundMoney(highestPriceItem.price - lowestPriceItem.price);
+
+  // Stock analysis
+  let highestStockItem = enrichedProducts[0];
+  for (const item of enrichedProducts) {
+    if (item.stock > highestStockItem.stock) highestStockItem = item;
+  }
+
+  // Construct comparative rows
+  const metrics: ComparisonMetricRow[] = [
+    {
+      key: 'price',
+      label: 'Retail Price',
+      category: 'pricing',
+      values: Object.fromEntries(enrichedProducts.map((p) => [p.id, `$${p.price.toFixed(2)}`])),
+      hasDifference: enrichedProducts.some((p) => p.price !== enrichedProducts[0].price),
+      bestProductId: lowestPriceItem.id,
+      highlightNote: priceSpread > 0 ? `$${priceSpread.toFixed(2)} price difference` : 'Identical pricing',
+    },
+    {
+      key: 'componentGroup',
+      label: 'Component Class',
+      category: 'hardware',
+      values: Object.fromEntries(enrichedProducts.map((p) => [p.id, p.groupLabel])),
+      hasDifference: enrichedProducts.some((p) => p.groupLabel !== enrichedProducts[0].groupLabel),
+    },
+    {
+      key: 'architecture',
+      label: 'Silicon Architecture',
+      category: 'hardware',
+      values: Object.fromEntries(enrichedProducts.map((p) => [p.id, p.specs.architecture])),
+      hasDifference: enrichedProducts.some((p) => p.specs.architecture !== enrichedProducts[0].specs.architecture),
+    },
+    {
+      key: 'interfaceSpec',
+      label: 'Bus & Interface',
+      category: 'hardware',
+      values: Object.fromEntries(enrichedProducts.map((p) => [p.id, p.specs.interfaceSpec])),
+      hasDifference: enrichedProducts.some((p) => p.specs.interfaceSpec !== enrichedProducts[0].specs.interfaceSpec),
+    },
+    {
+      key: 'powerDraw',
+      label: 'Thermal TDP & Power',
+      category: 'power',
+      values: Object.fromEntries(enrichedProducts.map((p) => [p.id, p.specs.powerDraw])),
+      hasDifference: enrichedProducts.some((p) => p.specs.powerDraw !== enrichedProducts[0].specs.powerDraw),
+    },
+    {
+      key: 'priceHistory',
+      label: '6-Month Low → High',
+      category: 'pricing',
+      values: Object.fromEntries(
+        enrichedProducts.map((p) => [
+          p.id,
+          `$${p.specs.lowestPrice.toFixed(0)} – $${p.specs.highestPrice.toFixed(0)} (Avg: $${p.specs.avgPrice.toFixed(0)})`,
+        ])
+      ),
+      hasDifference: enrichedProducts.some(
+        (p) => p.specs.lowestPrice !== enrichedProducts[0].specs.lowestPrice || p.specs.highestPrice !== enrichedProducts[0].specs.highestPrice
+      ),
+    },
+    {
+      key: 'stockStatus',
+      label: 'Warehouse Stock',
+      category: 'stock',
+      values: Object.fromEntries(
+        enrichedProducts.map((p) => [
+          p.id,
+          p.stock > 0 ? `${p.stock} units available${p.lowStock ? ' (Low Stock!)' : ''}` : 'Out of stock',
+        ])
+      ),
+      hasDifference: enrichedProducts.some((p) => p.stock !== enrichedProducts[0].stock),
+      bestProductId: highestStockItem.id,
+    },
+    {
+      key: 'warranty',
+      label: 'Warranty & Testing',
+      category: 'support',
+      values: Object.fromEntries(enrichedProducts.map((p) => [p.id, p.specs.warranty])),
+      hasDifference: enrichedProducts.some((p) => p.specs.warranty !== enrichedProducts[0].specs.warranty),
+    },
+  ];
+
+  const summary =
+    enrichedProducts.length === 1
+      ? `Selected ${enrichedProducts[0].title} ($${enrichedProducts[0].price.toFixed(2)}). Add more items to compare side-by-side.`
+      : `Comparing ${enrichedProducts.length} components. Lowest price is ${lowestPriceItem.title} at $${lowestPriceItem.price.toFixed(
+          2
+        )}, with a price spread of $${priceSpread.toFixed(2)}.`;
+
+  return {
+    productIds,
+    count: enrichedProducts.length,
+    products: enrichedProducts,
+    hasIdenticalCategory,
+    commonCategory,
+    lowestPriceProductId: lowestPriceItem.id,
+    highestPriceProductId: highestPriceItem.id,
+    priceSpread,
+    metrics,
+    summary,
+  };
+}
 

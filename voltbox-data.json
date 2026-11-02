@@ -3,7 +3,7 @@
   "nextProductId": 42,
   "nextApplicationId": 1,
   "nextReportId": 29,
-  "nextMessageId": 6,
+  "nextMessageId": 15,
   "users": [
     {
       "id": 1,
@@ -13,9 +13,7 @@
       "avatarColor": "#ffd23f",
       "billEmail": "harshan.v.s2004@gmail.com",
       "role": "moderator",
-      "cart": {
-        "19": 4
-      },
+      "cart": {},
       "orders": [
         {
           "id": "VB-8B38",
@@ -28,7 +26,7 @@
             {
               "productId": 2,
               "title": "USB-C to USB-C Cable 2m (100W)",
-              "image": "TODO: paste a real image link here",
+              "image": "/images/categories/components.svg",
               "price": 12.5,
               "qty": 2
             }
@@ -318,6 +316,32 @@
           "paymentMethod": "Fake Pay",
           "status": "Pending",
           "amountPaid": 1158.28
+        },
+        {
+          "id": "VB-C31B",
+          "placedAt": 1793623376667,
+          "count": 1,
+          "subtotal": 180,
+          "rigDiscount": 0,
+          "promoDiscount": 0,
+          "discountTotal": 0,
+          "promoCode": null,
+          "tax": 14.85,
+          "total": 194.85,
+          "lines": [
+            {
+              "productId": 20,
+              "title": "AMD RYZEN 9",
+              "image": "https://images.unsplash.com/photo-1591799264318-7e6ef8ddb7ea?auto=format&fit=crop&w=900&q=80",
+              "price": 180,
+              "qty": 1
+            }
+          ],
+          "shippingName": "Harish",
+          "shippingAddress": "42 Circuit Lane, Silicon Bay",
+          "paymentMethod": "UPI QR (PhonePe)",
+          "status": "Paid · Verified",
+          "amountPaid": 194.85
         }
       ],
       "wishlist": [
@@ -349,7 +373,7 @@
             {
               "productId": 2,
               "title": "USB-C to USB-C Cable 2m (100W)",
-              "image": "TODO: paste a real image link here",
+              "image": "/images/categories/components.svg",
               "price": 12.5,
               "qty": 1
             }
@@ -594,7 +618,9 @@
     "097b0276-873b-4ef4-80d1-1652b0259f9c": "harish@voltbox.test",
     "9da38076-36d1-4d3e-911e-6c5a0546596f": "harishragavendran08@gmail.com",
     "13deede6-16d5-4dbe-877b-05903f1dcd98": "harish@voltbox.test",
-    "18d48402-0534-4c03-8539-edbc30d05c9e": "alex.chen@gmail.com"
+    "18d48402-0534-4c03-8539-edbc30d05c9e": "alex.chen@gmail.com",
+    "ed4022ee-370d-47f0-9f6b-b73599596582": "alex.chen@gmail.com",
+    "391b910a-f74f-48a2-abe1-72dd260b59ef": "harish@voltbox.test"
   },
   "products": [
     {
@@ -973,8 +999,8 @@
       "official": false,
       "createdAt": 1785215065991,
       "takenDown": false,
-      "quantity": 11,
-      "stock": 11,
+      "quantity": 10,
+      "stock": 10,
       "lowStock": false
     },
     {
@@ -1701,7 +1727,7 @@
       "productPrice": 200,
       "productSku": "VB-GPU-019",
       "productImage": "https://www.nvidia.com/content/dam/en-zz/Solutions/geforce/graphic-cards/50-series/rtx-5090/geforce-rtx-5090-learn-more-og-1200x630.jpg",
-      "createdAt": 1793517379135,
+      "createdAt": 1793619367032,
       "id": 1
     },
     {
@@ -1716,8 +1742,98 @@
       "productPrice": 285,
       "productSku": "VB-GMG-041",
       "productImage": "/src/assets/images/product_handheld_oled_console_1793517566556.jpg",
-      "createdAt": 1793517919135,
+      "createdAt": 1793619847032,
       "id": 2
+    },
+    {
+      "channel": "general",
+      "senderName": "Alex Chen",
+      "senderEmail": "alex.chen@gmail.com",
+      "senderRole": "member",
+      "senderColor": "#4dabf7",
+      "text": "Does the AMD Ryzen 9 bottleneck the RTX 5090 at 4K 144Hz, or should I jump straight to the Intel Core Ultra 9 285K?",
+      "productId": 20,
+      "productTitle": "AMD RYZEN 9",
+      "productPrice": 180,
+      "productSku": "VB-CPU-020",
+      "productImage": "/src/assets/images/product_intel_ultra_cpu_1793517563101.jpg",
+      "createdAt": 1793620267032,
+      "id": 3
+    },
+    {
+      "channel": "general",
+      "senderName": "Devon Park",
+      "senderEmail": "devon@voltbox.test",
+      "senderRole": "contributor",
+      "senderColor": "#ff922b",
+      "text": "At 4K you are GPU-bound 96% of the time — either chip flies, just make sure your board has a dedicated PCIe 5.0 x16 top slot.",
+      "productId": 37,
+      "productTitle": "ASUS ROG Crosshair X870E Hero Motherboard",
+      "productPrice": 230,
+      "productSku": "VB-MBD-037",
+      "productImage": "/src/assets/images/product_x870e_motherboard_1793517565006.jpg",
+      "createdAt": 1793620747032,
+      "id": 4
+    },
+    {
+      "channel": "general",
+      "senderName": "Elena Vance",
+      "senderEmail": "elena@voltbox.test",
+      "senderRole": "contributor",
+      "senderColor": "#cc5de8",
+      "text": "Also recommend pairing a Gen5 NVMe drive with a copper heatsink so DirectStorage asset streaming stays under 58°C.",
+      "productId": 39,
+      "productTitle": "Corsair MP700 Pro 4TB Gen5 NVMe SSD",
+      "productPrice": 210,
+      "productSku": "VB-STR-039",
+      "productImage": "/src/assets/images/product_gen5_nvme_ssd_1793517565772.jpg",
+      "createdAt": 1793621167032,
+      "id": 5
+    },
+    {
+      "channel": "general",
+      "senderName": "Marcus Sterling",
+      "senderEmail": "marcus@voltbox.test",
+      "senderRole": "contributor",
+      "senderColor": "#51cf66",
+      "text": "For audio monitoring at the bench, the spatial ANC on AirPods Max blocks out 36dBA of GPU fan sweep noise.",
+      "productId": 25,
+      "productTitle": "Apple AirPods Max",
+      "productPrice": 500,
+      "productSku": "VB-AUD-025",
+      "productImage": "/src/assets/images/product_airpods_max_1793517567500.jpg",
+      "createdAt": 1793621647032,
+      "id": 6
+    },
+    {
+      "channel": "general",
+      "senderName": "Samira Khan",
+      "senderEmail": "samira@voltbox.test",
+      "senderRole": "member",
+      "senderColor": "#f06595",
+      "text": "Just scanned the QR code on the MSI B570 board from my iPad — love how the 6-month price chart opens right in the spec drawer.",
+      "productId": 21,
+      "productTitle": "MSI MotherBoard B570",
+      "productPrice": 150,
+      "productSku": "VB-MBD-021",
+      "productImage": "/src/assets/images/product_x870e_motherboard_1793517565006.jpg",
+      "createdAt": 1793621947032,
+      "id": 7
+    },
+    {
+      "channel": "general",
+      "senderName": "Harish",
+      "senderEmail": "harish@voltbox.test",
+      "senderRole": "moderator",
+      "senderColor": "#ffd23f",
+      "text": "Reminder: Combining any 3 of 4 core Rig Builder slots (CPU, GPU, Motherboard, Storage) unlocks an automatic 5% bundle discount that stacks with VOLT10!",
+      "productId": 36,
+      "productTitle": "Intel Core Ultra 9 285K Processor",
+      "productPrice": 195,
+      "productSku": "VB-CPU-036",
+      "productImage": "/src/assets/images/product_intel_ultra_cpu_1793517563101.jpg",
+      "createdAt": 1793622367032,
+      "id": 8
     },
     {
       "channel": "rig-builds",
@@ -1731,8 +1847,38 @@
       "productPrice": 230,
       "productSku": "VB-MBD-037",
       "productImage": "/src/assets/images/product_x870e_motherboard_1793517565006.jpg",
-      "createdAt": 1793517619135,
-      "id": 3
+      "createdAt": 1793620807032,
+      "id": 9
+    },
+    {
+      "channel": "rig-builds",
+      "senderName": "Maya Lin",
+      "senderEmail": "maya@voltbox.test",
+      "senderRole": "contributor",
+      "senderColor": "#20c997",
+      "text": "Completed my 4-slot SFF workstation build today: Core Ultra 9 + RTX 5090 + MSI B570 + Samsung 990 Pro. Idle acoustics are whisper quiet.",
+      "productId": 19,
+      "productTitle": "Nvidia RTX 5090",
+      "productPrice": 200,
+      "productSku": "VB-GPU-019",
+      "productImage": "https://www.nvidia.com/content/dam/en-zz/Solutions/geforce/graphic-cards/50-series/rtx-5090/geforce-rtx-5090-learn-more-og-1200x630.jpg",
+      "createdAt": 1793621467032,
+      "id": 10
+    },
+    {
+      "channel": "rig-builds",
+      "senderName": "Devon Park",
+      "senderEmail": "devon@voltbox.test",
+      "senderRole": "contributor",
+      "senderColor": "#ff922b",
+      "text": "For dual-boot Linux kernel builds, adding a second 4TB Gen5 NVMe in M.2_2 cuts full clean compile times by 38%.",
+      "productId": 39,
+      "productTitle": "Corsair MP700 Pro 4TB Gen5 NVMe SSD",
+      "productPrice": 210,
+      "productSku": "VB-STR-039",
+      "productImage": "/src/assets/images/product_gen5_nvme_ssd_1793517565772.jpg",
+      "createdAt": 1793621947032,
+      "id": 11
     },
     {
       "channel": "price-drops",
@@ -1746,23 +1892,38 @@
       "productPrice": 195,
       "productSku": "VB-CPU-036",
       "productImage": "/src/assets/images/product_intel_ultra_cpu_1793517563101.jpg",
-      "createdAt": 1793518159135,
-      "id": 4
+      "createdAt": 1793621167032,
+      "id": 12
     },
     {
-      "channel": "general",
-      "senderName": "Harish",
-      "senderEmail": "harish@voltbox.test",
-      "senderRole": "moderator",
-      "senderColor": "#ffd23f",
-      "text": "Testing Intel Core Ultra 9 285K thermals on the bench — rock solid at 5.7GHz!",
-      "productId": 36,
-      "productTitle": "Intel Core Ultra 9 285K Processor",
-      "productPrice": 195,
-      "productSku": "VB-CPU-036",
-      "productImage": "/src/assets/images/product_intel_ultra_cpu_1793517563101.jpg",
-      "id": 5,
-      "createdAt": 1793518782586
+      "channel": "price-drops",
+      "senderName": "Elena Vance",
+      "senderEmail": "elena@voltbox.test",
+      "senderRole": "contributor",
+      "senderColor": "#cc5de8",
+      "text": "6-month low alert: Radeon RX 8900 XTX 24GB dropped 11% vs May baseline and qualifies for the 5% Rig Builder discount.",
+      "productId": 35,
+      "productTitle": "AMD Radeon RX 8900 XTX 24GB Graphics Card",
+      "productPrice": 185,
+      "productSku": "VB-GPU-035",
+      "productImage": "/src/assets/images/product_radeon_rx_gpu_1793517562135.jpg",
+      "createdAt": 1793621887032,
+      "id": 13
+    },
+    {
+      "channel": "price-drops",
+      "senderName": "Maya Lin",
+      "senderEmail": "maya@voltbox.test",
+      "senderRole": "contributor",
+      "senderColor": "#20c997",
+      "text": "Use promo code VOLT10 at the bottom order bar for an extra 10% off your entire hardware order!",
+      "productId": 41,
+      "productTitle": "Aethel VX-1 1TB OLED Handheld Console",
+      "productPrice": 285,
+      "productSku": "VB-GMG-041",
+      "productImage": "/src/assets/images/product_handheld_oled_console_1793517566556.jpg",
+      "createdAt": 1793622367032,
+      "id": 14
     }
   ]
 }
