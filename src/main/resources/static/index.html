@@ -94,6 +94,11 @@
         <span class="search-icon" data-icon="search" data-icon-size="17"></span>
         <input id="product-search" type="search" placeholder="Search parts…"
                autocomplete="off" spellcheck="false" aria-label="Search products" />
+        <button class="search-scan-qr-btn" id="search-scan-qr-btn" type="button"
+                aria-label="Scan Product QR Code" title="Scan other products' QR codes with camera">
+          <span data-icon="qr-code" data-icon-size="14"></span>
+          <span class="search-scan-label">Scan QR</span>
+        </button>
       </div>
 
       <div class="topbar-right">
@@ -448,12 +453,72 @@
           <div class="drawer-kicker" id="spec-drawer-sku">VB-PRT-000</div>
           <h2 class="drawer-title" id="spec-drawer-title">Component Specs</h2>
         </div>
-        <button class="modal-close" id="spec-drawer-close" aria-label="Close Product Specs">
-          <span data-icon="x" data-icon-size="18"></span>
-        </button>
+        <div class="drawer-head-actions">
+          <button class="spec-head-share-btn" id="spec-head-share-btn" type="button" aria-label="Share product with QR code" title="Share with QR code">
+            <span data-icon="share" data-icon-size="14"></span>
+            <span>Share &amp; QR</span>
+          </button>
+          <button class="modal-close" id="spec-drawer-close" aria-label="Close Product Specs">
+            <span data-icon="x" data-icon-size="18"></span>
+          </button>
+        </div>
       </div>
 
       <div class="spec-drawer-body" id="spec-drawer-body">
+        <!-- Product QR Code & Share Card -->
+        <div class="spec-share-card" id="spec-share-card" hidden>
+          <div class="spec-share-head">
+            <div class="spec-share-title-wrap">
+              <span class="spec-share-icon" data-icon="qr-code" data-icon-size="15"></span>
+              <span class="spec-share-title">Product Share QR Code</span>
+            </div>
+            <button type="button" class="spec-share-close" id="spec-share-close-btn" aria-label="Close Share Card">
+              <span data-icon="x" data-icon-size="13"></span>
+            </button>
+          </div>
+          <div class="spec-share-content">
+            <div class="spec-qr-wrap" id="spec-qr-container" title="Scan with phone camera to view product">
+              <div class="spec-qr-mount" id="spec-qr-mount" data-testid="spec-qr-mount"></div>
+              <div class="spec-qr-badge">SCAN WITH MOBILE CAMERA</div>
+            </div>
+            <div class="spec-share-details">
+              <span class="spec-share-note">Scan this branded QR code with any smartphone camera to open this hardware component's direct specs and live warehouse stock.</span>
+              <!-- Voltbox QR Branding Color Switcher -->
+              <div class="spec-qr-theme-row">
+                <span class="spec-qr-theme-label">BRAND PALETTE:</span>
+                <div class="spec-qr-theme-pills" id="spec-qr-theme-pills">
+                  <button type="button" class="spec-qr-theme-pill active" data-theme="gold" title="Voltbox Signature Gold">
+                    <span class="theme-dot" style="background:#ffd23f;"></span> Gold
+                  </button>
+                  <button type="button" class="spec-qr-theme-pill" data-theme="amber" title="Electric Amber">
+                    <span class="theme-dot" style="background:#f59e0b;"></span> Amber
+                  </button>
+                  <button type="button" class="spec-qr-theme-pill" data-theme="cyber" title="Quantum Cyan">
+                    <span class="theme-dot" style="background:#2dd4bf;"></span> Cyan
+                  </button>
+                  <button type="button" class="spec-qr-theme-pill" data-theme="classic" title="High Contrast Paper">
+                    <span class="theme-dot" style="background:#ffffff; border:1px solid #94a3b8;"></span> Paper
+                  </button>
+                </div>
+              </div>
+              <div class="spec-share-url-row">
+                <input type="text" class="spec-share-url-input" id="spec-share-url-input" readonly aria-label="Product direct URL" />
+                <button type="button" class="spec-share-copy-btn" id="spec-share-copy-btn" title="Copy product URL to clipboard">
+                  <span data-icon="copy" data-icon-size="13"></span> Copy
+                </button>
+              </div>
+              <div class="spec-share-actions-row">
+                <button type="button" class="spec-share-action-btn primary" id="spec-share-native-btn">
+                  <span data-icon="share" data-icon-size="14"></span> <span>Share Link</span>
+                </button>
+                <button type="button" class="spec-share-action-btn ghost" id="spec-share-download-btn">
+                  <span data-icon="download" data-icon-size="14"></span> <span>Save QR Image</span>
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+
         <div class="spec-hero-row">
           <img class="spec-hero-img" id="spec-drawer-img" src="" alt="" />
           <div class="spec-hero-meta">
@@ -728,8 +793,77 @@
     </div>
   </div>
 
+  <!-- Global Camera QR Code Scanner Modal -->
+  <div class="modal-overlay" id="qr-scanner-overlay" aria-hidden="true">
+    <div class="modal-card qr-scanner-modal" id="qr-scanner-modal" role="dialog" aria-modal="true" aria-label="Scan Product QR Code">
+      <button class="modal-close" id="qr-scanner-close" aria-label="Close Scanner"><span data-icon="x" data-icon-size="18"></span></button>
+
+      <div class="qr-scanner-head">
+        <div class="qr-scanner-kicker">
+          <span class="led-dot amber"></span>
+          <span>OPTICAL HARDWARE SENSOR // SCANNER</span>
+        </div>
+        <h2 class="modal-title">Scan Product QR Code</h2>
+        <p class="modal-text">Point camera at any Voltbox product QR code to instantly open its live hardware specifications, price chart, and warehouse stock.</p>
+      </div>
+
+      <!-- Live Camera Viewfinder Box -->
+      <div class="qr-scanner-viewfinder-wrap">
+        <video id="qr-scanner-video" class="qr-scanner-video" playsinline muted></video>
+        <canvas id="qr-scanner-canvas" class="qr-scanner-canvas" hidden></canvas>
+
+        <!-- Cyber Reticle Overlay with Laser Animation -->
+        <div class="qr-scanner-reticle" id="qr-scanner-reticle">
+          <div class="qr-scanner-corner tl"></div>
+          <div class="qr-scanner-corner tr"></div>
+          <div class="qr-scanner-corner bl"></div>
+          <div class="qr-scanner-corner br"></div>
+          <div class="qr-scanner-laser" id="qr-scanner-laser"></div>
+        </div>
+
+        <!-- Camera Status Badge -->
+        <div class="qr-scanner-status" id="qr-scanner-status">
+          <span class="status-indicator-dot pulse" id="qr-scanner-status-dot"></span>
+          <span id="qr-scanner-status-text">Position QR code inside the frame</span>
+        </div>
+      </div>
+
+      <!-- Scanner Actions & Fallbacks -->
+      <div class="qr-scanner-footer">
+        <div class="qr-scanner-actions-row">
+          <label class="qr-file-upload-btn" title="Choose image file of a QR code">
+            <span data-icon="image" data-icon-size="14"></span>
+            <span>Upload Image</span>
+            <input type="file" id="qr-scanner-file-input" accept="image/*" style="display:none;" />
+          </label>
+
+          <button type="button" class="qr-scanner-btn ghost" id="qr-scanner-flip-cam-btn" title="Switch between front and back camera">
+            <span data-icon="refresh" data-icon-size="14"></span> <span>Switch Camera</span>
+          </button>
+        </div>
+
+        <!-- Interactive Quick Test Scanner Chips -->
+        <div class="qr-scanner-demo-strip">
+          <span class="qr-demo-label">SIMULATE QR SCAN:</span>
+          <button type="button" class="qr-demo-chip" onclick="simulateQrScan(19)">RTX 5090</button>
+          <button type="button" class="qr-demo-chip" onclick="simulateQrScan(20)">Ryzen 9</button>
+          <button type="button" class="qr-demo-chip" onclick="simulateQrScan(21)">MSI B570</button>
+          <button type="button" class="qr-demo-chip" onclick="simulateQrScan(22)">Samsung 990</button>
+        </div>
+
+        <!-- Manual Product Code / URL Input -->
+        <form class="qr-manual-entry-row" id="qr-manual-entry-form">
+          <input type="text" class="qr-manual-input" id="qr-manual-input" placeholder="Or enter product SKU (VB-GPU-019), URL, or ID…" aria-label="Manual Product URL or SKU" />
+          <button type="submit" class="qr-manual-submit-btn">Go &rarr;</button>
+        </form>
+      </div>
+    </div>
+  </div>
+
+
   <script src="icons.js"></script>
   <script src="recharts-bundle.js"></script>
+  <script src="qr-bundle.js"></script>
   <script src="app.js"></script>
   <script src="community.js"></script>
 </body>

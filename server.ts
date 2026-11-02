@@ -25,6 +25,9 @@ import {
   resolveSocialLoginIdentity,
   buildWishlistSummary,
   toggleWishlistItem,
+  generateProductSharePayload,
+  generateProductQrSvgAsync,
+  generateProductQrDataUrl,
 } from './src/logic/inventory';
 
 const PORT = Number(process.env.PORT) || 3000;
@@ -337,6 +340,41 @@ app.get('/api/products/:id', (req, res) => {
   if (!p || p.takenDown) return notFound(res, 'Product not found.');
   return res.json(enrichProduct(p));
 });
+
+app.get('/api/products/:id/qr', async (req, res) => {
+  const id = Number.parseInt(String(req.params.id || ''), 10);
+  const p = Number.isNaN(id) ? null : store.findProduct(id);
+  if (!p || p.takenDown) return notFound(res, 'Product not found.');
+
+  const host = req.get('host') || 'localhost:3000';
+  const protocol = req.protocol === 'https' || req.get('x-forwarded-proto') === 'https' ? 'https' : 'http';
+  const origin = `${protocol}://${host}`;
+  const sharePayload = generateProductSharePayload(origin, p);
+  const theme = typeof req.query.theme === 'string' ? req.query.theme : 'gold';
+  const colorDark = typeof req.query.colorDark === 'string' ? req.query.colorDark : undefined;
+  const colorLight = typeof req.query.colorLight === 'string' ? req.query.colorLight : undefined;
+
+  try {
+    const qrSvg = await generateProductQrSvgAsync(sharePayload.url, { theme, colorDark, colorLight });
+    const qrDataUrl = await generateProductQrDataUrl(sharePayload.url, { theme, colorDark, colorLight });
+    return res.json({
+      ok: true,
+      productId: p.id,
+      theme,
+      share: sharePayload,
+      qrSvg,
+      qrDataUrl,
+    });
+  } catch (err) {
+    return res.status(500).json({ ok: false, message: 'Failed to generate QR code' });
+  }
+});
+
+app.get('/product/:id', (req, res) => {
+  const id = Number.parseInt(String(req.params.id || ''), 10);
+  return res.redirect(`/?product=${id}`);
+});
+
 
 app.put('/api/products/:id', (req, res) => {
   const user = userFromReq(req);

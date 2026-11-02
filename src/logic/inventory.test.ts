@@ -29,6 +29,13 @@ import {
   resolveSocialLoginIdentity,
   toggleWishlistItem,
   buildWishlistSummary,
+  generateProductShareUrl,
+  generateProductSharePayload,
+  generateProductQrSvgAsync,
+  generateProductQrDataUrl,
+  VOLTBOX_QR_THEMES,
+  resolveQrColors,
+  parseScannedProductPayload,
 } from './inventory';
 
 test('LOW_STOCK_THRESHOLD is 5', () => {
@@ -439,5 +446,125 @@ test('buildWishlistSummary compiles saved products with SKU, stock status and va
   assert.equal(summary.items[0].inStock, true);
   assert.equal(summary.items[1].sku, 'VB-MBD-028');
 });
+
+test('generateProductShareUrl formats sanitized deep links with encoded product IDs', () => {
+  const url1 = generateProductShareUrl('https://voltbox.test', 19);
+  assert.equal(url1, 'https://voltbox.test/?product=19');
+
+  // Handles trailing slashes cleanly
+  const url2 = generateProductShareUrl('https://voltbox.test/store///', '42');
+  assert.equal(url2, 'https://voltbox.test/store/?product=42');
+
+  // Handles empty origin by defaulting to localhost:3000
+  const url3 = generateProductShareUrl('', 1);
+  assert.equal(url3, 'http://localhost:3000/?product=1');
+});
+
+test('generateProductSharePayload creates full share metadata and text for social/mobile', () => {
+  const payload = generateProductSharePayload('https://voltbox.test', {
+    id: 19,
+    title: 'Nvidia RTX 5090',
+    price: 200,
+    sku: 'VB-GPU-019',
+  });
+
+  assert.equal(payload.url, 'https://voltbox.test/?product=19');
+  assert.equal(payload.title, 'Nvidia RTX 5090');
+  assert.equal(payload.price, 200);
+  assert.equal(payload.sku, 'VB-GPU-019');
+  assert.match(payload.text, /Nvidia RTX 5090/);
+  assert.match(payload.text, /\$200\.00/);
+  assert.equal(payload.qrPayload, payload.url);
+});
+
+test('generateProductQrSvgAsync produces valid SVG containing QR path modules', async () => {
+  const testUrl = 'https://voltbox.test/?product=19';
+  const svg = await generateProductQrSvgAsync(testUrl, { margin: 1 });
+
+  assert.ok(svg.startsWith('<svg'));
+  assert.ok(svg.includes('viewBox='));
+  assert.ok(svg.includes('</svg>'));
+  assert.ok(svg.includes('path'));
+});
+
+test('generateProductQrDataUrl produces base64 image/png data URI for mobile downloading', async () => {
+  const testUrl = 'https://voltbox.test/?product=19';
+  const dataUrl = await generateProductQrDataUrl(testUrl, { width: 200 });
+
+  assert.ok(dataUrl.startsWith('data:image/png;base64,'));
+  assert.ok(dataUrl.length > 200);
+});
+
+test('VOLTBOX_QR_THEMES and resolveQrColors support Voltbox electric gold, amber, and cyber palettes', () => {
+  assert.equal(VOLTBOX_QR_THEMES.gold.dark, '#ffd23f');
+  assert.equal(VOLTBOX_QR_THEMES.amber.dark, '#f59e0b');
+
+  // Default theme is gold
+  const def = resolveQrColors();
+  assert.equal(def.dark, '#ffd23f');
+  assert.equal(def.light, '#0a0e17');
+
+  // Amber theme
+  const amb = resolveQrColors({ theme: 'amber' });
+  assert.equal(amb.dark, '#f59e0b');
+
+  // Custom color override
+  const custom = resolveQrColors({ colorDark: '#ff5500', colorLight: '#ffffff' });
+  assert.equal(custom.dark, '#ff5500');
+  assert.equal(custom.light, '#ffffff');
+});
+
+test('generateProductQrSvgAsync applies Voltbox branded gold and amber colors to generated SVG', async () => {
+  const testUrl = 'https://voltbox.test/?product=19';
+
+  // Gold theme
+  const goldSvg = await generateProductQrSvgAsync(testUrl, { theme: 'gold' });
+  assert.ok(goldSvg.includes('#ffd23f') || goldSvg.includes('#FFD23F'));
+  assert.ok(goldSvg.includes('#0a0e17') || goldSvg.includes('#0A0E17'));
+
+  // Amber theme
+  const amberSvg = await generateProductQrSvgAsync(testUrl, { theme: 'amber' });
+  assert.ok(amberSvg.includes('#f59e0b') || amberSvg.includes('#F59E0B'));
+});
+
+test('parseScannedProductPayload accurately resolves product IDs from URLs, SKUs, and codes', () => {
+  const mockCatalog = [
+    { id: 19, sku: 'VB-GPU-019', title: 'Nvidia RTX 5090' },
+    { id: 20, sku: 'VB-CPU-020', title: 'AMD RYZEN 9' },
+  ];
+
+  // Query parameter
+  const res1 = parseScannedProductPayload('https://voltbox.test/?product=19');
+  assert.equal(res1.productId, 19);
+  assert.equal(res1.matchedBy, 'query_param');
+
+  // Path deep link
+  const res2 = parseScannedProductPayload('https://voltbox.test/product/20');
+  assert.equal(res2.productId, 20);
+  assert.equal(res2.matchedBy, 'path');
+
+  // Catalog SKU exact match
+  const res3 = parseScannedProductPayload('VB-GPU-019', mockCatalog);
+  assert.equal(res3.productId, 19);
+  assert.equal(res3.matchedBy, 'catalog_sku');
+
+  // Sku pattern fallback
+  const res4 = parseScannedProductPayload('VB-MBD-028');
+  assert.equal(res4.productId, 28);
+  assert.equal(res4.matchedBy, 'sku_pattern');
+
+  // Voltbox prefix
+  const res5 = parseScannedProductPayload('VOLTBOX:19');
+  assert.equal(res5.productId, 19);
+
+  // Plain numeric ID
+  const res6 = parseScannedProductPayload('20');
+  assert.equal(res6.productId, 20);
+
+  // Invalid payload
+  const res7 = parseScannedProductPayload('https://google.com/search?q=pc');
+  assert.equal(res7.productId, null);
+});
+
 
 

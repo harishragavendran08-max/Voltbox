@@ -1,3 +1,5 @@
+import QRCode from 'qrcode';
+
 export const LOW_STOCK_THRESHOLD = 5;
 export const DEFAULT_TAX_RATE = 0.0825;
 export const RIG_BUNDLE_DISCOUNT_RATE = 0.05;
@@ -1551,4 +1553,177 @@ export function buildWishlistSummary(
     totalValue,
   };
 }
+
+export function generateProductShareUrl(baseUrl: string, productId: number | string): string {
+  const cleanBase = (baseUrl || 'http://localhost:3000').trim().replace(/\/+$/, '');
+  const id = encodeURIComponent(String(productId));
+  return `${cleanBase}/?product=${id}`;
+}
+
+export interface ProductSharePayload {
+  url: string;
+  title: string;
+  text: string;
+  sku: string;
+  price: number;
+  qrPayload: string;
+}
+
+export function generateProductSharePayload(
+  origin: string,
+  product: { id: number; title?: string; price?: number; sku?: string }
+): ProductSharePayload {
+  const url = generateProductShareUrl(origin, product.id);
+  const title = product.title || `Component #${product.id}`;
+  const price = roundMoney(Number(product.price) || 0);
+  const sku = product.sku || `VB-PRT-${String(product.id).padStart(3, '0')}`;
+  const text = `Check out ${title} ($${price.toFixed(2)}) on Voltbox Electronics!`;
+  return {
+    url,
+    title,
+    text,
+    sku,
+    price,
+    qrPayload: url,
+  };
+}
+
+export const VOLTBOX_QR_THEMES = {
+  gold: {
+    dark: '#ffd23f', // Voltbox Electric Gold
+    light: '#0a0e17', // Voltbox Cyber Chassis
+    name: 'Voltbox Gold',
+    accent: '#ffd23f',
+  },
+  amber: {
+    dark: '#f59e0b', // Electric Amber
+    light: '#0a0e17', // Deep Charcoal
+    name: 'Electric Amber',
+    accent: '#f59e0b',
+  },
+  cyber: {
+    dark: '#2dd4bf', // Quantum Cyan
+    light: '#080c14',
+    name: 'Quantum Cyan',
+    accent: '#2dd4bf',
+  },
+  classic: {
+    dark: '#0f172a',
+    light: '#ffffff',
+    name: 'Monochrome Paper',
+    accent: '#64748b',
+  },
+  invertedGold: {
+    dark: '#0a0e17',
+    light: '#ffd23f',
+    name: 'Gold Inverted',
+    accent: '#ffd23f',
+  },
+} as const;
+
+export type VoltboxQrThemeKey = keyof typeof VOLTBOX_QR_THEMES;
+
+export function resolveQrColors(options?: {
+  theme?: VoltboxQrThemeKey | string;
+  colorDark?: string;
+  colorLight?: string;
+}): { dark: string; light: string; themeName: string } {
+  const selectedTheme =
+    (options?.theme && (VOLTBOX_QR_THEMES as Record<string, { dark: string; light: string; name: string }>)[options.theme]) ||
+    VOLTBOX_QR_THEMES.gold;
+  return {
+    dark: options?.colorDark || selectedTheme.dark,
+    light: options?.colorLight || selectedTheme.light,
+    themeName: selectedTheme.name,
+  };
+}
+
+export function parseScannedProductPayload(
+  rawText: string,
+  catalog?: Array<{ id: number; sku?: string; title?: string }>
+): { productId: number | null; rawText: string; matchedBy: string | null } {
+  if (!rawText || typeof rawText !== 'string') {
+    return { productId: null, rawText: '', matchedBy: null };
+  }
+  const clean = rawText.trim();
+
+  // 1. URL Query parameter ?product=19 or &product=19
+  const queryMatch = clean.match(/[?&]product=(\d+)/i);
+  if (queryMatch) {
+    return { productId: Number(queryMatch[1]), rawText: clean, matchedBy: 'query_param' };
+  }
+
+  // 2. URL Path /product/19
+  const pathMatch = clean.match(/\/product\/(\d+)/i);
+  if (pathMatch) {
+    return { productId: Number(pathMatch[1]), rawText: clean, matchedBy: 'path' };
+  }
+
+  // 3. Hash #product=19 or #product-19
+  const hashMatch = clean.match(/#product[=-](\d+)/i);
+  if (hashMatch) {
+    return { productId: Number(hashMatch[1]), rawText: clean, matchedBy: 'hash' };
+  }
+
+  // 4. Match by exact SKU in catalog
+  if (Array.isArray(catalog) && catalog.length > 0) {
+    const skuClean = clean.toUpperCase();
+    const foundBySku = catalog.find((p) => p.sku && p.sku.toUpperCase() === skuClean);
+    if (foundBySku) {
+      return { productId: foundBySku.id, rawText: clean, matchedBy: 'catalog_sku' };
+    }
+  }
+
+  // 5. Voltbox SKU pattern VB-XXX-019
+  const skuPatternMatch = clean.match(/VB-[A-Z]{3}-(\d+)/i);
+  if (skuPatternMatch) {
+    return { productId: Number(skuPatternMatch[1]), rawText: clean, matchedBy: 'sku_pattern' };
+  }
+
+  // 6. VOLTBOX:19 or VB:19 prefix
+  const voltboxPrefixMatch = clean.match(/^(?:VOLTBOX|VB):(\d+)$/i);
+  if (voltboxPrefixMatch) {
+    return { productId: Number(voltboxPrefixMatch[1]), rawText: clean, matchedBy: 'voltbox_prefix' };
+  }
+
+  // 7. Plain numeric ID (e.g. 19)
+  if (/^\d+$/.test(clean)) {
+    return { productId: Number(clean), rawText: clean, matchedBy: 'numeric_id' };
+  }
+
+  return { productId: null, rawText: clean, matchedBy: null };
+}
+
+export async function generateProductQrSvgAsync(
+  url: string,
+  options?: { margin?: number; colorDark?: string; colorLight?: string; theme?: VoltboxQrThemeKey | string }
+): Promise<string> {
+  const colors = resolveQrColors(options);
+  return QRCode.toString(url, {
+    type: 'svg',
+    margin: options && typeof options.margin === 'number' ? options.margin : 1,
+    errorCorrectionLevel: 'M',
+    color: {
+      dark: colors.dark,
+      light: colors.light,
+    },
+  });
+}
+
+export async function generateProductQrDataUrl(
+  url: string,
+  options?: { margin?: number; width?: number; colorDark?: string; colorLight?: string; theme?: VoltboxQrThemeKey | string }
+): Promise<string> {
+  const colors = resolveQrColors(options);
+  return QRCode.toDataURL(url, {
+    margin: options && typeof options.margin === 'number' ? options.margin : 1,
+    width: options && typeof options.width === 'number' ? options.width : 280,
+    errorCorrectionLevel: 'M',
+    color: {
+      dark: colors.dark,
+      light: colors.light,
+    },
+  });
+}
+
 

@@ -1448,7 +1448,7 @@ body {
   background: var(--card);
   border: 1px solid var(--line);
   border-radius: 999px;
-  padding: 10px 16px 10px 42px;
+  padding: 10px 104px 10px 42px;
   color: var(--text);
   font-family: inherit;
   font-size: 14px;
@@ -1465,6 +1465,59 @@ body {
 
 #product-search:focus + .search-icon,
 .topbar-search:focus-within .search-icon { color: var(--accent); }
+
+/* Scan QR button pinned inside the global search bar */
+.search-scan-qr-btn {
+  position: absolute;
+  right: 6px;
+  top: 50%;
+  transform: translateY(-50%);
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: rgba(255, 210, 63, 0.12);
+  border: 1px solid rgba(255, 210, 63, 0.4);
+  color: #ffd23f;
+  padding: 6px 12px;
+  border-radius: 999px;
+  font-family: inherit;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.3px;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: all 0.16s ease;
+  z-index: 2;
+}
+
+.search-scan-qr-btn:hover {
+  background: rgba(255, 210, 63, 0.24);
+  border-color: #ffd23f;
+  color: #ffde6a;
+  box-shadow: 0 0 14px rgba(255, 210, 63, 0.35);
+  transform: translateY(-50%) scale(1.02);
+}
+
+.search-scan-qr-btn:active {
+  transform: translateY(-50%) scale(0.97);
+}
+
+.search-scan-qr-btn .ic {
+  flex-shrink: 0;
+  color: #ffd23f;
+}
+
+@media (max-width: 600px) {
+  #product-search {
+    padding-right: 48px;
+  }
+  .search-scan-qr-btn {
+    padding: 6px 8px;
+  }
+  .search-scan-qr-btn span {
+    display: none;
+  }
+}
 
 /* the "nothing matched your search" line */
 .no-results {
@@ -5817,5 +5870,675 @@ body.can-report .card-flag {
 .wishlist-actions button {
   font-size: 11.5px;
 }
+
+/* ═══════════════════════════════════════════════════════════════════
+   PRODUCT URL QR CODE GENERATOR & SHARE MODAL/DRAWER STYLES
+   ═══════════════════════════════════════════════════════════════════ */
+
+.drawer-head-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.spec-head-share-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  border-radius: 8px;
+  background: rgba(45, 212, 191, 0.12);
+  border: 1px solid rgba(45, 212, 191, 0.35);
+  color: #2dd4bf;
+  font-family: inherit;
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.spec-head-share-btn:hover {
+  background: rgba(45, 212, 191, 0.22);
+  border-color: #2dd4bf;
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(45, 212, 191, 0.25);
+}
+
+.spec-head-share-btn.active {
+  background: #2dd4bf;
+  color: #0b201d;
+  box-shadow: 0 0 16px rgba(45, 212, 191, 0.4);
+}
+
+/* Spec Actions Bar Share Button */
+.spec-share-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 8px 14px;
+  border-radius: 8px;
+  border: 1px solid var(--line);
+  background: rgba(24, 27, 34, 0.85);
+  color: var(--text);
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.spec-share-btn:hover {
+  border-color: rgba(45, 212, 191, 0.5);
+  color: #2dd4bf;
+  background: rgba(45, 212, 191, 0.12);
+}
+
+.spec-share-btn.active {
+  border-color: #2dd4bf;
+  background: rgba(45, 212, 191, 0.2);
+  color: #2dd4bf;
+  box-shadow: 0 0 14px rgba(45, 212, 191, 0.25);
+}
+
+/* Spec Share & QR Code Card */
+.spec-share-card {
+  margin-bottom: 16px;
+  background: rgba(15, 20, 28, 0.94);
+  border: 1px solid rgba(45, 212, 191, 0.32);
+  border-radius: 12px;
+  padding: 14px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.45), 0 0 0 1px rgba(45, 212, 191, 0.15);
+  animation: share-slide-down 0.22s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.spec-share-card[hidden] {
+  display: none;
+}
+
+@keyframes share-slide-down {
+  from { opacity: 0; transform: translateY(-8px) scale(0.98); }
+  to   { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+.spec-share-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 12px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid var(--line);
+}
+
+.spec-share-title-wrap {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: #2dd4bf;
+}
+
+.spec-share-title {
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: -0.2px;
+}
+
+.spec-share-close {
+  width: 26px;
+  height: 26px;
+  display: grid;
+  place-items: center;
+  border-radius: 6px;
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.spec-share-close:hover {
+  background: rgba(255, 107, 107, 0.14);
+  border-color: rgba(255, 107, 107, 0.3);
+  color: #ff6b6b;
+}
+
+.spec-share-content {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+
+.spec-qr-wrap {
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  background: #080c14;
+  padding: 12px;
+  border-radius: 12px;
+  border: 1px solid rgba(255, 210, 63, 0.28);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.55), 0 0 16px rgba(255, 210, 63, 0.08);
+  transition: border-color 0.2s ease, box-shadow 0.2s ease;
+}
+
+.spec-qr-mount {
+  width: 126px;
+  height: 126px;
+  display: grid;
+  place-items: center;
+  line-height: 0;
+  border-radius: 6px;
+  overflow: hidden;
+}
+
+.spec-qr-mount svg {
+  width: 100%;
+  height: 100%;
+  display: block;
+}
+
+.spec-qr-badge {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 8.5px;
+  font-weight: 800;
+  letter-spacing: 0.8px;
+  color: #ffd23f;
+  text-transform: uppercase;
+}
+
+.spec-share-details {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.spec-share-note {
+  font-size: 11.5px;
+  color: #94a3b8;
+  line-height: 1.45;
+}
+
+/* Voltbox QR Brand Palette Switcher */
+.spec-qr-theme-row {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.spec-qr-theme-label {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.8px;
+  color: #94a3b8;
+  text-transform: uppercase;
+}
+
+.spec-qr-theme-pills {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.spec-qr-theme-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: rgba(15, 23, 42, 0.7);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  color: #cbd5e1;
+  padding: 5px 10px;
+  border-radius: 6px;
+  font-family: inherit;
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.spec-qr-theme-pill:hover {
+  background: rgba(30, 41, 59, 0.9);
+  border-color: rgba(255, 255, 255, 0.28);
+  color: #ffffff;
+}
+
+.spec-qr-theme-pill.active {
+  background: rgba(255, 210, 63, 0.15);
+  border-color: #ffd23f;
+  color: #ffd23f;
+  box-shadow: 0 0 10px rgba(255, 210, 63, 0.2);
+}
+
+.theme-dot {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  display: inline-block;
+  flex-shrink: 0;
+}
+
+.spec-share-url-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.spec-share-url-input {
+  flex: 1;
+  min-width: 0;
+  background: rgba(15, 17, 21, 0.9);
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  padding: 7px 10px;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 11px;
+  color: #e2e8f0;
+  outline: none;
+}
+
+.spec-share-url-input:focus {
+  border-color: #2dd4bf;
+}
+
+.spec-share-copy-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 7px 11px;
+  border-radius: 7px;
+  background: rgba(45, 212, 191, 0.15);
+  border: 1px solid rgba(45, 212, 191, 0.4);
+  color: #2dd4bf;
+  font-family: inherit;
+  font-size: 11.5px;
+  font-weight: 700;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: all 0.15s ease;
+}
+
+.spec-share-copy-btn:hover {
+  background: #2dd4bf;
+  color: #0b201d;
+}
+
+.spec-share-actions-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.spec-share-action-btn {
+  flex: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 7px 12px;
+  border-radius: 7px;
+  font-family: inherit;
+  font-size: 11.5px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.spec-share-action-btn.primary {
+  background: #2dd4bf;
+  border: 1px solid #2dd4bf;
+  color: #0b201d;
+  font-weight: 700;
+}
+
+.spec-share-action-btn.primary:hover {
+  background: #22b8a5;
+  border-color: #22b8a5;
+}
+
+.spec-share-action-btn.ghost {
+  background: transparent;
+  border: 1px solid var(--line);
+  color: #cbd5e1;
+}
+
+.spec-share-action-btn.ghost:hover {
+  border-color: var(--muted);
+  background: rgba(255, 255, 255, 0.05);
+}
+
+@media (max-width: 520px) {
+  .spec-share-content {
+    flex-direction: column;
+    align-items: stretch;
+  }
+  .spec-qr-wrap {
+    align-self: center;
+  }
+}
+
+/* ==========================================================================
+   GLOBAL CAMERA QR SCANNER MODAL & CYBER RETICLE VIEWFINDER
+   ========================================================================== */
+
+.qr-scanner-modal {
+  width: 100%;
+  max-width: 490px;
+  background: #0b0f19;
+  border: 1px solid rgba(255, 210, 63, 0.35);
+  border-radius: 20px;
+  padding: 24px;
+  position: relative;
+  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.75), 0 0 40px rgba(255, 210, 63, 0.1);
+}
+
+.qr-scanner-head {
+  margin-bottom: 12px;
+}
+
+.qr-scanner-kicker {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 11px;
+  font-weight: 700;
+  color: #ffd23f;
+  letter-spacing: 1px;
+  margin-bottom: 6px;
+}
+
+/* Live Viewfinder Box */
+.qr-scanner-viewfinder-wrap {
+  position: relative;
+  width: 100%;
+  aspect-ratio: 4 / 3;
+  max-height: 270px;
+  background: #05070c;
+  border-radius: 14px;
+  overflow: hidden;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  margin: 14px 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: inset 0 0 30px rgba(0, 0, 0, 0.8);
+}
+
+.qr-scanner-video {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.qr-scanner-canvas {
+  display: none;
+}
+
+/* Cyber Reticle Overlay with Amber/Gold Corners */
+.qr-scanner-reticle {
+  position: absolute;
+  inset: 22px;
+  pointer-events: none;
+}
+
+.qr-scanner-corner {
+  position: absolute;
+  width: 26px;
+  height: 26px;
+}
+
+.qr-scanner-corner.tl {
+  top: 0;
+  left: 0;
+  border-top: 3px solid #ffd23f;
+  border-left: 3px solid #ffd23f;
+  border-top-left-radius: 6px;
+}
+
+.qr-scanner-corner.tr {
+  top: 0;
+  right: 0;
+  border-top: 3px solid #ffd23f;
+  border-right: 3px solid #ffd23f;
+  border-top-right-radius: 6px;
+}
+
+.qr-scanner-corner.bl {
+  bottom: 0;
+  left: 0;
+  border-bottom: 3px solid #ffd23f;
+  border-left: 3px solid #ffd23f;
+  border-bottom-left-radius: 6px;
+}
+
+.qr-scanner-corner.br {
+  bottom: 0;
+  right: 0;
+  border-bottom: 3px solid #ffd23f;
+  border-right: 3px solid #ffd23f;
+  border-bottom-right-radius: 6px;
+}
+
+/* Animated Laser Sweep Line */
+.qr-scanner-laser {
+  position: absolute;
+  left: 0;
+  right: 0;
+  height: 2px;
+  background: linear-gradient(90deg, transparent, #ffd23f, #f59e0b, transparent);
+  box-shadow: 0 0 10px #ffd23f, 0 0 18px #f59e0b;
+  animation: qrLaserSweep 2.2s ease-in-out infinite alternate;
+}
+
+@keyframes qrLaserSweep {
+  0% {
+    top: 5%;
+    opacity: 0.3;
+  }
+  50% {
+    opacity: 1;
+  }
+  100% {
+    top: 95%;
+    opacity: 0.3;
+  }
+}
+
+/* Camera Live Status Badge */
+.qr-scanner-status {
+  position: absolute;
+  bottom: 12px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: rgba(5, 7, 12, 0.88);
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
+  padding: 5px 14px;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 210, 63, 0.3);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 11.5px;
+  font-weight: 600;
+  color: #e2e8f0;
+  white-space: nowrap;
+  max-width: 92%;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.5);
+}
+
+.status-indicator-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: #ffd23f;
+  display: inline-block;
+  flex-shrink: 0;
+}
+
+.status-indicator-dot.pulse {
+  animation: dotPulse 1.4s ease-in-out infinite;
+}
+
+@keyframes dotPulse {
+  0%, 100% {
+    transform: scale(0.9);
+    opacity: 0.6;
+    box-shadow: 0 0 0 0 rgba(255, 210, 63, 0.5);
+  }
+  50% {
+    transform: scale(1.2);
+    opacity: 1;
+    box-shadow: 0 0 8px rgba(255, 210, 63, 0.8);
+  }
+}
+
+/* Scanner Footer Actions */
+.qr-scanner-footer {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.qr-scanner-actions-row {
+  display: flex;
+  gap: 10px;
+}
+
+.qr-file-upload-btn {
+  flex: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  padding: 9px 12px;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  color: #cbd5e1;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.16s ease;
+}
+
+.qr-file-upload-btn:hover {
+  background: rgba(255, 255, 255, 0.09);
+  border-color: rgba(255, 255, 255, 0.25);
+  color: #ffffff;
+}
+
+.qr-scanner-btn.ghost {
+  flex: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  padding: 9px 12px;
+  background: transparent;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  color: #cbd5e1;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.16s ease;
+}
+
+.qr-scanner-btn.ghost:hover {
+  border-color: var(--muted);
+  background: rgba(255, 255, 255, 0.05);
+  color: #ffffff;
+}
+
+/* Simulation Chips */
+.qr-scanner-demo-strip {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+  padding: 8px 12px;
+  background: rgba(255, 210, 63, 0.06);
+  border: 1px dashed rgba(255, 210, 63, 0.3);
+  border-radius: 9px;
+}
+
+.qr-demo-label {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 10px;
+  font-weight: 800;
+  color: #ffd23f;
+  letter-spacing: 0.6px;
+}
+
+.qr-demo-chip {
+  background: rgba(255, 210, 63, 0.14);
+  border: 1px solid rgba(255, 210, 63, 0.4);
+  color: #ffd23f;
+  padding: 4px 9px;
+  border-radius: 6px;
+  font-family: inherit;
+  font-size: 11px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.qr-demo-chip:hover {
+  background: #ffd23f;
+  color: #080c14;
+  transform: translateY(-1px);
+  box-shadow: 0 3px 10px rgba(255, 210, 63, 0.35);
+}
+
+/* Manual URL / SKU Entry Fallback */
+.qr-manual-entry-row {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.qr-manual-input {
+  flex: 1;
+  min-width: 0;
+  background: #05070c;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  padding: 8px 12px;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 12px;
+  color: #e2e8f0;
+  outline: none;
+  transition: border-color 0.2s ease;
+}
+
+.qr-manual-input:focus {
+  border-color: #ffd23f;
+  box-shadow: 0 0 0 2px rgba(255, 210, 63, 0.2);
+}
+
+.qr-manual-submit-btn {
+  background: linear-gradient(135deg, #ffd23f, #f59e0b);
+  border: none;
+  border-radius: 9px;
+  padding: 8px 16px;
+  font-family: inherit;
+  font-size: 12px;
+  font-weight: 800;
+  color: #080c14;
+  cursor: pointer;
+  transition: transform 0.12s ease, box-shadow 0.2s ease;
+  white-space: nowrap;
+}
+
+.qr-manual-submit-btn:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 4px 14px rgba(255, 210, 63, 0.35);
+}
+
+
 
 

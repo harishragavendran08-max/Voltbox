@@ -695,6 +695,7 @@ function fetchProducts(filterParams) {
         var current = findProductById(activeSpecProductId);
         if (current) populateSpecDrawer(current);
       }
+      checkDeepLinkProduct();
       return products;
     })
     .catch(function (err) {
@@ -1041,6 +1042,7 @@ function openSpecDrawer(productId) {
   specDrawerOverlayEl.classList.add("open");
   specDrawerOverlayEl.setAttribute("aria-hidden", "false");
   document.body.classList.add("no-scroll");
+  prepareProductShare(p);
 
   // Fetch individual product details by ID from Spring Boot ProductController (GET /api/products/{id})
   Promise.all([
@@ -1075,6 +1077,12 @@ function closeSpecDrawer() {
   specDrawerOverlayEl.setAttribute("aria-hidden", "true");
   document.body.classList.remove("no-scroll");
   activeSpecProductId = null;
+  var shareCard = document.getElementById("spec-share-card");
+  if (shareCard) shareCard.hidden = true;
+  var headBtn = document.getElementById("spec-head-share-btn");
+  if (headBtn) headBtn.classList.remove("active");
+  var barBtn = document.getElementById("spec-share-btn");
+  if (barBtn) barBtn.classList.remove("active");
 }
 
 function populateSpecDrawer(p) {
@@ -1133,6 +1141,11 @@ function populateSpecDrawer(p) {
       icon("heart", 15) + ' <span>' + (isSaved ? 'Saved to Wishlist' : 'Add to Wishlist') + '</span>' +
     '</button>';
 
+  var shareBtnHtml =
+    '<button class="spec-share-btn" id="spec-share-btn" type="button" onclick="toggleProductShareCard()" title="Share Product QR Code" aria-label="Share product with QR code">' +
+      icon("share", 15) + ' <span>Share &amp; QR</span>' +
+    '</button>';
+
   var restockBtnHtml = canCurrentUserRestock()
     ? '<button class="restock-btn" type="button" onclick="restockProduct(' + p.id + ')">' +
         icon("refresh", 14) + ' <span>Restock +3</span>' +
@@ -1146,7 +1159,13 @@ function populateSpecDrawer(p) {
       '<button class="qty-btn" onclick="inc(' + p.id + ')" aria-label="Increase quantity in drawer">+</button>' +
     '</div>' +
     wishBtnHtml +
+    shareBtnHtml +
     restockBtnHtml;
+
+  var shareCard = document.getElementById("spec-share-card");
+  if (shareCard && !shareCard.hidden) {
+    prepareProductShare(p);
+  }
 
   var chartContainer = document.getElementById("drawer-chart-container");
   if (chartContainer && typeof window.renderVoltboxPriceChart === "function") {
@@ -1156,6 +1175,437 @@ function populateSpecDrawer(p) {
       height: 170
     });
   }
+}
+
+// ── Product URL & QR Code Sharing Generator ──
+var activeQrTheme = "gold"; // Voltbox Signature Electric Gold
+var qrScanStream = null;
+var qrScanAnimFrame = null;
+var qrFacingMode = "environment";
+var qrScanningActive = false;
+var qrAudioContext = null;
+
+function getProductShareUrl(productId) {
+  var id = productId || activeSpecProductId;
+  if (!id) return window.location.origin;
+  if (window.VoltboxQR && typeof window.VoltboxQR.generateProductUrl === "function") {
+    return window.VoltboxQR.generateProductUrl(id, window.location.origin);
+  }
+  return window.location.origin + "/?product=" + encodeURIComponent(String(id));
+}
+
+function prepareProductShare(p, themeOverride) {
+  if (!p) return;
+  if (themeOverride) activeQrTheme = themeOverride;
+  var url = getProductShareUrl(p.id);
+  var inputEl = document.getElementById("spec-share-url-input");
+  if (inputEl) inputEl.value = url;
+
+  var mountEl = document.getElementById("spec-qr-mount");
+  if (!mountEl) return;
+
+  // Update theme pill states
+  var pills = document.querySelectorAll(".spec-qr-theme-pill");
+  for (var i = 0; i < pills.length; i++) {
+    var th = pills[i].getAttribute("data-theme");
+    pills[i].classList.toggle("active", th === activeQrTheme);
+  }
+
+  if (window.VoltboxQR && typeof window.VoltboxQR.renderQrIntoElement === "function") {
+    window.VoltboxQR.renderQrIntoElement(mountEl, url, {
+      margin: 1,
+      theme: activeQrTheme
+    });
+  } else {
+    fetch("/api/products/" + p.id + "/qr?theme=" + encodeURIComponent(activeQrTheme))
+      .then(function (r) { return r.json(); })
+      .then(function (data) {
+        if (data && data.qrSvg && mountEl) {
+          mountEl.innerHTML = data.qrSvg;
+        }
+      })
+      .catch(function () {});
+  }
+}
+
+function setQrTheme(themeName) {
+  if (!themeName) return;
+  activeQrTheme = themeName;
+  var p = findProductById(activeSpecProductId);
+  if (p) prepareProductShare(p, themeName);
+}
+
+function toggleProductShareCard(forceOpen) {
+  var card = document.getElementById("spec-share-card");
+  if (!card) return;
+  var nextState = (forceOpen !== undefined) ? Boolean(forceOpen) : card.hidden;
+  card.hidden = !nextState;
+  var headBtn = document.getElementById("spec-head-share-btn");
+  var barBtn = document.getElementById("spec-share-btn");
+  if (headBtn) headBtn.classList.toggle("active", nextState);
+  if (barBtn) barBtn.classList.toggle("active", nextState);
+
+  if (nextState) {
+    var p = findProductById(activeSpecProductId);
+    if (p) prepareProductShare(p);
+    card.scrollIntoView({ behavior: "smooth", block: "nearest" });
+  }
+}
+
+function copyProductShareUrl() {
+  var url = getProductShareUrl(activeSpecProductId);
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    navigator.clipboard.writeText(url).then(function () {
+      showActivityToast("Product direct link copied to clipboard!");
+    }).catch(function () {
+      fallbackCopy(url);
+    });
+  } else {
+    fallbackCopy(url);
+  }
+}
+
+function fallbackCopy(text) {
+  var inputEl = document.getElementById("spec-share-url-input");
+  if (inputEl) {
+    inputEl.select();
+    inputEl.setSelectionRange(0, 99999);
+    try {
+      document.execCommand("copy");
+      showActivityToast("Product direct link copied to clipboard!");
+    } catch (e) {
+      showActivityToast("Link: " + text);
+    }
+  }
+}
+
+function shareProductNative() {
+  var p = findProductById(activeSpecProductId);
+  var url = getProductShareUrl(activeSpecProductId);
+  var title = p ? p.title : "Voltbox Component";
+  var text = "Check out " + title + " on Voltbox Electronics!";
+
+  if (navigator.share) {
+    navigator.share({
+      title: title,
+      text: text,
+      url: url
+    }).catch(function (err) {
+      if (err.name !== "AbortError") {
+        copyProductShareUrl();
+      }
+    });
+  } else {
+    copyProductShareUrl();
+  }
+}
+
+function downloadProductQrCode() {
+  var p = findProductById(activeSpecProductId);
+  var id = p ? p.id : (activeSpecProductId || 1);
+  var title = (p ? p.title : "voltbox-product").replace(/[^a-zA-Z0-9_-]/g, "_").toLowerCase();
+  var url = getProductShareUrl(id);
+
+  if (window.VoltboxQR && typeof window.VoltboxQR.generateQrDataUrl === "function") {
+    window.VoltboxQR.generateQrDataUrl(url, { width: 320, margin: 1, theme: activeQrTheme }).then(function (dataUrl) {
+      triggerDownload(dataUrl, title + "-" + activeQrTheme + "-qr.png");
+      showActivityToast("Voltbox branded QR code downloaded!");
+    });
+  } else {
+    fetch("/api/products/" + id + "/qr?theme=" + encodeURIComponent(activeQrTheme))
+      .then(function (r) { return r.json(); })
+      .then(function (data) {
+        if (data && data.qrDataUrl) {
+          triggerDownload(data.qrDataUrl, title + "-" + activeQrTheme + "-qr.png");
+          showActivityToast("Voltbox branded QR code downloaded!");
+        }
+      });
+  }
+}
+
+function triggerDownload(dataUrl, filename) {
+  var a = document.createElement("a");
+  a.href = dataUrl;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+}
+
+// ── Camera QR Code Scanner Implementation ──
+
+function playScanSuccessChime() {
+  try {
+    if (!qrAudioContext) {
+      var AudioCtx = window.AudioContext || window.webkitAudioContext;
+      if (AudioCtx) qrAudioContext = new AudioCtx();
+    }
+    if (qrAudioContext && qrAudioContext.state !== "suspended") {
+      var osc = qrAudioContext.createOscillator();
+      var gain = qrAudioContext.createGain();
+      osc.type = "sine";
+      osc.frequency.setValueAtTime(880, qrAudioContext.currentTime); // A5
+      osc.frequency.exponentialRampToValueAtTime(1320, qrAudioContext.currentTime + 0.12); // E6
+      gain.gain.setValueAtTime(0.25, qrAudioContext.currentTime);
+      gain.gain.exponentialRampToValueAtTime(0.001, qrAudioContext.currentTime + 0.18);
+      osc.connect(gain);
+      gain.connect(qrAudioContext.destination);
+      osc.start();
+      osc.stop(qrAudioContext.currentTime + 0.18);
+    }
+    if (navigator.vibrate) navigator.vibrate([40, 30, 60]);
+  } catch (e) {}
+}
+
+function openQrScannerModal() {
+  var overlay = document.getElementById("qr-scanner-overlay");
+  if (!overlay) return;
+  openModal(overlay);
+  startQrCamera();
+}
+
+function closeQrScannerModal() {
+  var overlay = document.getElementById("qr-scanner-overlay");
+  if (!overlay) return;
+  stopQrCamera();
+  closeModal(overlay);
+}
+
+function updateScannerStatus(text, isError) {
+  var textEl = document.getElementById("qr-scanner-status-text");
+  var dotEl = document.getElementById("qr-scanner-status-dot");
+  if (textEl) textEl.textContent = text;
+  if (dotEl) {
+    dotEl.className = isError ? "status-indicator-dot error" : "status-indicator-dot pulse";
+  }
+}
+
+function startQrCamera() {
+  var video = document.getElementById("qr-scanner-video");
+  if (!video) return;
+
+  qrScanningActive = true;
+  updateScannerStatus("Initializing optical camera sensor…", false);
+
+  if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+    updateScannerStatus("Webcam hardware not supported on this browser. Upload QR image or use simulation below.", true);
+    return;
+  }
+
+  var constraints = {
+    audio: false,
+    video: {
+      facingMode: qrFacingMode,
+      width: { ideal: 1280 },
+      height: { ideal: 720 }
+    }
+  };
+
+  navigator.mediaDevices.getUserMedia(constraints)
+    .then(function (stream) {
+      if (!qrScanningActive) {
+        stream.getTracks().forEach(function (t) { t.stop(); });
+        return;
+      }
+      qrScanStream = stream;
+      video.srcObject = stream;
+      video.setAttribute("playsinline", "true");
+      return video.play();
+    })
+    .then(function () {
+      updateScannerStatus("Align product QR code within reticle frame", false);
+      qrScanAnimFrame = requestAnimationFrame(scanVideoFrameLoop);
+    })
+    .catch(function (err) {
+      console.warn("Camera sensor unavailable:", err);
+      updateScannerStatus("Camera permission needed or sensor busy. Upload image or simulate below.", true);
+    });
+}
+
+function stopQrCamera() {
+  qrScanningActive = false;
+  if (qrScanAnimFrame) {
+    cancelAnimationFrame(qrScanAnimFrame);
+    qrScanAnimFrame = null;
+  }
+  if (qrScanStream) {
+    qrScanStream.getTracks().forEach(function (t) { t.stop(); });
+    qrScanStream = null;
+  }
+  var video = document.getElementById("qr-scanner-video");
+  if (video) {
+    video.srcObject = null;
+  }
+}
+
+function flipQrCamera() {
+  qrFacingMode = (qrFacingMode === "environment") ? "user" : "environment";
+  stopQrCamera();
+  startQrCamera();
+}
+
+function scanVideoFrameLoop() {
+  if (!qrScanningActive) return;
+  var video = document.getElementById("qr-scanner-video");
+  var canvas = document.getElementById("qr-scanner-canvas");
+  if (!video || !canvas || video.readyState < video.HAVE_CURRENT_DATA) {
+    qrScanAnimFrame = requestAnimationFrame(scanVideoFrameLoop);
+    return;
+  }
+
+  var w = video.videoWidth || 640;
+  var h = video.videoHeight || 480;
+  if (canvas.width !== w || canvas.height !== h) {
+    canvas.width = w;
+    canvas.height = h;
+  }
+
+  var ctx = canvas.getContext("2d", { willReadFrequently: true });
+  if (ctx) {
+    ctx.drawImage(video, 0, 0, w, h);
+    var imgData = ctx.getImageData(0, 0, w, h);
+
+    // 1. Native BarcodeDetector (Chrome/Edge/Android)
+    if (window.BarcodeDetector) {
+      try {
+        var detector = new window.BarcodeDetector({ formats: ["qr_code"] });
+        detector.detect(video).then(function (barcodes) {
+          if (barcodes && barcodes.length > 0 && qrScanningActive) {
+            handleSuccessfulQrScan(barcodes[0].rawValue);
+          } else if (qrScanningActive) {
+            qrScanAnimFrame = requestAnimationFrame(scanVideoFrameLoop);
+          }
+        }).catch(function () {
+          decodeWithJsQr(imgData);
+        });
+        return;
+      } catch (e) {
+        decodeWithJsQr(imgData);
+        return;
+      }
+    }
+
+    decodeWithJsQr(imgData);
+    return;
+  }
+
+  qrScanAnimFrame = requestAnimationFrame(scanVideoFrameLoop);
+}
+
+function decodeWithJsQr(imgData) {
+  if (!qrScanningActive) return;
+  if (window.VoltboxQR && typeof window.VoltboxQR.decodeQrFromImageData === "function") {
+    var res = window.VoltboxQR.decodeQrFromImageData(imgData);
+    if (res && res.data) {
+      handleSuccessfulQrScan(res.data);
+      return;
+    }
+  }
+  qrScanAnimFrame = requestAnimationFrame(scanVideoFrameLoop);
+}
+
+function handleSuccessfulQrScan(rawPayload) {
+  if (!rawPayload) return;
+  stopQrCamera();
+
+  var parseRes = (window.VoltboxQR && typeof window.VoltboxQR.parseScannedProduct === "function")
+    ? window.VoltboxQR.parseScannedProduct(rawPayload, products)
+    : parseFallbackScannedProduct(rawPayload);
+
+  var targetId = parseRes ? parseRes.productId : null;
+
+  if (targetId) {
+    playScanSuccessChime();
+    closeQrScannerModal();
+
+    var targetProduct = findProductById(targetId);
+    var card = document.getElementById("card-" + targetId);
+    if (card) {
+      card.scrollIntoView({ behavior: "smooth", block: "center" });
+      card.classList.add("restock-flash");
+      setTimeout(function () { card.classList.remove("restock-flash"); }, 2000);
+    }
+
+    openSpecDrawer(targetId);
+    showActivityToast("QR Code recognized: " + (targetProduct ? targetProduct.title : ("Part #" + targetId)));
+  } else {
+    updateScannerStatus("Unrecognized QR payload: " + rawPayload.slice(0, 36), true);
+    setTimeout(function () {
+      if (document.getElementById("qr-scanner-overlay").classList.contains("open")) {
+        startQrCamera();
+      }
+    }, 1800);
+  }
+}
+
+function parseFallbackScannedProduct(rawText) {
+  var clean = String(rawText || "").trim();
+  var qMatch = clean.match(/[?&]product=(\d+)/i) || clean.match(/\/product\/(\d+)/i) || clean.match(/#product[=-](\d+)/i);
+  if (qMatch) return { productId: Number(qMatch[1]) };
+  if (/^\d+$/.test(clean)) return { productId: Number(clean) };
+  var skuMatch = clean.match(/VB-[A-Z]{3}-(\d+)/i);
+  if (skuMatch) return { productId: Number(skuMatch[1]) };
+  return { productId: null };
+}
+
+window.simulateQrScan = function (productId) {
+  var url = getProductShareUrl(productId);
+  handleSuccessfulQrScan(url);
+};
+
+function handleQrImageUpload(file) {
+  if (!file) return;
+  updateScannerStatus("Processing uploaded QR image…", false);
+  var reader = new FileReader();
+  reader.onload = function (e) {
+    var img = new Image();
+    img.onload = function () {
+      var canvas = document.createElement("canvas");
+      canvas.width = img.width;
+      canvas.height = img.height;
+      var ctx = canvas.getContext("2d");
+      ctx.drawImage(img, 0, 0);
+      var imgData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+      if (window.VoltboxQR && typeof window.VoltboxQR.decodeQrFromImageData === "function") {
+        var res = window.VoltboxQR.decodeQrFromImageData(imgData);
+        if (res && res.data) {
+          handleSuccessfulQrScan(res.data);
+          return;
+        }
+      }
+      updateScannerStatus("No valid QR code detected in uploaded image.", true);
+    };
+    img.src = e.target.result;
+  };
+  reader.readAsDataURL(file);
+}
+
+function handleManualQrSubmit(e) {
+  if (e) e.preventDefault();
+  var input = document.getElementById("qr-manual-input");
+  if (!input || !input.value.trim()) return;
+  handleSuccessfulQrScan(input.value.trim());
+}
+
+function checkDeepLinkProduct() {
+  var params = new URLSearchParams(window.location.search);
+  var prodParam = params.get("product") || (window.location.hash.match(/product[=-](\d+)/) || [])[1];
+  if (!prodParam) return;
+  var targetId = Number(prodParam);
+  if (!targetId) return;
+
+  setTimeout(function () {
+    var p = findProductById(targetId);
+    if (p) {
+      var card = document.getElementById("card-" + targetId);
+      if (card) {
+        card.scrollIntoView({ behavior: "smooth", block: "center" });
+        card.classList.add("restock-flash");
+      }
+      openSpecDrawer(targetId);
+      showActivityToast("Opened shared product: " + p.title);
+    }
+  }, 400);
 }
 
 function restockProduct(productId) {
@@ -2090,6 +2540,67 @@ function wireUpButtons() {
     specDrawerOverlayEl.addEventListener("click", function (e) {
       if (e.target === specDrawerOverlayEl) closeSpecDrawer();
     });
+  }
+  var specHeadShareBtn = document.getElementById("spec-head-share-btn");
+  if (specHeadShareBtn) {
+    specHeadShareBtn.addEventListener("click", function () { toggleProductShareCard(); });
+  }
+  var specShareCloseBtn = document.getElementById("spec-share-close-btn");
+  if (specShareCloseBtn) {
+    specShareCloseBtn.addEventListener("click", function () { toggleProductShareCard(false); });
+  }
+  var specShareCopyBtn = document.getElementById("spec-share-copy-btn");
+  if (specShareCopyBtn) {
+    specShareCopyBtn.addEventListener("click", copyProductShareUrl);
+  }
+  var specShareNativeBtn = document.getElementById("spec-share-native-btn");
+  if (specShareNativeBtn) {
+    specShareNativeBtn.addEventListener("click", shareProductNative);
+  }
+  var specShareDownloadBtn = document.getElementById("spec-share-download-btn");
+  if (specShareDownloadBtn) {
+    specShareDownloadBtn.addEventListener("click", downloadProductQrCode);
+  }
+
+  // QR Branding Theme Switcher Pills
+  var themePills = document.querySelectorAll(".spec-qr-theme-pill");
+  for (var tp = 0; tp < themePills.length; tp++) {
+    themePills[tp].addEventListener("click", function () {
+      var th = this.getAttribute("data-theme");
+      if (th) setQrTheme(th);
+    });
+  }
+
+  // Global Camera QR Scanner
+  var searchScanQrBtn = document.getElementById("search-scan-qr-btn");
+  if (searchScanQrBtn) {
+    searchScanQrBtn.addEventListener("click", openQrScannerModal);
+  }
+  var qrScannerClose = document.getElementById("qr-scanner-close");
+  if (qrScannerClose) {
+    qrScannerClose.addEventListener("click", closeQrScannerModal);
+  }
+  var qrScannerOverlay = document.getElementById("qr-scanner-overlay");
+  if (qrScannerOverlay) {
+    qrScannerOverlay.addEventListener("click", function (e) {
+      if (e.target === qrScannerOverlay) closeQrScannerModal();
+    });
+  }
+  var qrScannerFlipBtn = document.getElementById("qr-scanner-flip-cam-btn");
+  if (qrScannerFlipBtn) {
+    qrScannerFlipBtn.addEventListener("click", flipQrCamera);
+  }
+  var qrScannerFileInput = document.getElementById("qr-scanner-file-input");
+  if (qrScannerFileInput) {
+    qrScannerFileInput.addEventListener("change", function (e) {
+      if (e.target.files && e.target.files[0]) {
+        handleQrImageUpload(e.target.files[0]);
+      }
+    });
+  }
+  var qrManualForm = document.getElementById("qr-manual-entry-form");
+  if (qrManualForm) {
+    qrManualForm.addEventListener("submit", handleManualQrSubmit);
   }
 
   // Promo code controls
