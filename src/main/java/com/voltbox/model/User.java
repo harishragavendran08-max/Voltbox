@@ -16,4 +16,5 @@ public class User {
     public Map<String, Integer> cart = new LinkedHashMap<>();
     public List<Order> orders = new ArrayList<>();
     public List<Integer> wishlist = new ArrayList<>();
+    public List<PriceAlert> priceAlerts = new ArrayList<>();
 }

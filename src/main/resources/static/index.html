@@ -85,16 +85,44 @@
         </h1>
       </div>
 
-      <!-- search — filters the grid live as you type. see filterProducts() in app.js -->
-      <div class="topbar-search">
+      <!-- search — filters the grid live as you type or via hands-free Web Speech API. see filterProducts() in app.js -->
+      <div class="topbar-search" id="topbar-search-wrap">
         <span class="search-icon" data-icon="search" data-icon-size="17"></span>
         <input id="product-search" type="search" placeholder="Search parts, GPUs, CPUs…"
                autocomplete="off" spellcheck="false" aria-label="Search products" />
+        <button class="search-voice-btn" id="search-voice-btn" type="button"
+                aria-label="Voice search products" aria-pressed="false"
+                title="Hands-free voice search (Web Speech API)">
+          <span class="search-voice-icon" id="search-voice-icon" data-icon="mic" data-icon-size="15"></span>
+          <span class="search-voice-wave" aria-hidden="true">
+            <span></span><span></span><span></span>
+          </span>
+        </button>
         <button class="search-scan-qr-btn" id="search-scan-qr-btn" type="button"
                 aria-label="Scan Product QR Code" title="Scan other products' QR codes with camera">
           <span data-icon="qr-code" data-icon-size="14"></span>
           <span class="search-scan-label">Scan QR</span>
         </button>
+
+        <!-- Web Speech API Live Voice Search Popover -->
+        <div class="voice-search-popover" id="voice-search-popover" role="status" aria-live="polite" hidden>
+          <div class="voice-popover-header">
+            <div class="voice-popover-indicator">
+              <span class="voice-live-dot" id="voice-live-dot"></span>
+              <span class="voice-popover-state" id="voice-popover-state">Listening — Speak now…</span>
+            </div>
+            <button class="voice-popover-close" id="voice-popover-close" type="button" aria-label="Close voice search">×</button>
+          </div>
+          <p class="voice-popover-transcript" id="voice-popover-transcript">Say a component name, SKU, or budget (e.g. "Nvidia RTX 5090" or "SSD under 150 dollars")</p>
+          <div class="voice-popover-suggestions" id="voice-popover-suggestions">
+            <span class="voice-suggestions-label">Try saying:</span>
+            <button type="button" class="voice-suggestion-chip" data-voice-sample="Search for Nvidia RTX 5090">"Nvidia RTX 5090"</button>
+            <button type="button" class="voice-suggestion-chip" data-voice-sample="Show me AMD Ryzen 9">"AMD Ryzen 9"</button>
+            <button type="button" class="voice-suggestion-chip" data-voice-sample="Find Samsung SSD under 150 dollars">"SSD under $150"</button>
+            <button type="button" class="voice-suggestion-chip" data-voice-sample="Playstation 5 Pro">"PS5 Pro"</button>
+            <button type="button" class="voice-suggestion-chip" data-voice-sample="Clear search">"Clear search"</button>
+          </div>
+        </div>
       </div>
 
       <div class="topbar-right">
@@ -232,6 +260,25 @@
 
             <div class="sheet-divider"></div>
 
+            <!-- Personal Price Drop Alerts Section -->
+            <div class="sheet-section tight">
+              <button class="wishlist-toggle price-alerts-toggle" id="price-alerts-toggle" type="button" aria-expanded="false">
+                <div class="wishlist-toggle-left">
+                  <span class="price-alert-sheet-icon" data-icon="bell" data-icon-size="14"></span>
+                  <span class="sheet-label">Price Drop Alerts</span>
+                </div>
+                <span class="price-alerts-count" id="profile-price-alerts-count">0 active</span>
+                <span class="chevron" id="price-alerts-chevron" data-icon="chevron-down" data-icon-size="16"></span>
+              </button>
+              <div class="wishlist-panel" id="profile-price-alerts-panel" hidden>
+                <div class="wishlist-list" id="profile-price-alerts-list">
+                  <p class="sheet-empty">No price drop alerts set.<br/><small>Click the Notify Me bell icon on any component to get emailed when the price drops.</small></p>
+                </div>
+              </div>
+            </div>
+
+            <div class="sheet-divider"></div>
+
             <!-- where bills get emailed. "linking" is just saving an address. -->
             <div class="sheet-section">
               <div class="sheet-label">Bills by email</div>
@@ -297,38 +344,82 @@
       </div>
     </header>
 
-    <!-- Category Filter Bar, Sort Controls & Rig Builder Trigger -->
+    <!-- Category Filter Bar, Sort Controls, View Mode Toggle & Quick Budget Strip -->
     <section class="catalog-toolbar" aria-label="Catalog filters and tools">
-      <div class="filter-bar" id="category-filters" role="tablist" aria-label="Filter by category">
-        <button class="filter-tab active" data-filter="all" role="tab" aria-selected="true">All</button>
-        <button class="filter-tab" data-filter="gpus" role="tab" aria-selected="false">GPUs</button>
-        <button class="filter-tab" data-filter="cpus" role="tab" aria-selected="false">CPUs</button>
-        <button class="filter-tab" data-filter="motherboards" role="tab" aria-selected="false">Motherboards</button>
-        <button class="filter-tab" data-filter="storage" role="tab" aria-selected="false">Storage</button>
-        <button class="filter-tab" data-filter="audio" role="tab" aria-selected="false">Audio</button>
-        <button class="filter-tab" data-filter="gaming" role="tab" aria-selected="false">Gaming</button>
-        <button class="filter-tab" data-filter="low-stock" role="tab" aria-selected="false">Low Stock Only</button>
-        <button class="filter-tab wishlist-tab" data-filter="wishlist" role="tab" aria-selected="false">
-          <span data-icon="heart" data-icon-size="12"></span> Wishlist (<span id="wishlist-filter-count">0</span>)
-        </button>
+      <div class="catalog-toolbar-top">
+        <div class="filter-bar" id="category-filters" role="tablist" aria-label="Filter by category">
+          <button class="filter-tab active" data-filter="all" role="tab" aria-selected="true">All</button>
+          <button class="filter-tab" data-filter="gpus" role="tab" aria-selected="false">GPUs</button>
+          <button class="filter-tab" data-filter="cpus" role="tab" aria-selected="false">CPUs</button>
+          <button class="filter-tab" data-filter="motherboards" role="tab" aria-selected="false">Motherboards</button>
+          <button class="filter-tab" data-filter="storage" role="tab" aria-selected="false">Storage</button>
+          <button class="filter-tab" data-filter="audio" role="tab" aria-selected="false">Audio</button>
+          <button class="filter-tab" data-filter="gaming" role="tab" aria-selected="false">Gaming</button>
+          <button class="filter-tab" data-filter="low-stock" role="tab" aria-selected="false">Low Stock</button>
+          <button class="filter-tab wishlist-tab" data-filter="wishlist" role="tab" aria-selected="false">
+            <span data-icon="heart" data-icon-size="12"></span> <span class="filter-tab-label">Wishlist</span> <span class="filter-count" id="wishlist-filter-count">0</span>
+          </button>
+        </div>
+
+        <div class="toolbar-actions">
+          <label class="sort-wrap" for="sort-select">
+            <span class="sort-label" data-icon="sliders" data-icon-size="14"></span>
+            <select id="sort-select" aria-label="Sort products">
+              <option value="featured">Sort: Featured</option>
+              <option value="price-asc">Price: Low → High</option>
+              <option value="price-desc">Price: High → Low</option>
+              <option value="rating-desc">Rating: Highest First</option>
+              <option value="stock-asc">Stock: Lowest First</option>
+            </select>
+          </label>
+
+          <div class="view-toggle-group" role="group" aria-label="Catalog layout view">
+            <button type="button" class="view-toggle-btn active" id="view-grid-btn" data-view-mode="grid" aria-pressed="true" title="Grid card view" aria-label="Grid card view">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <rect x="3" y="3" width="7" height="7" rx="1.5"></rect>
+                <rect x="14" y="3" width="7" height="7" rx="1.5"></rect>
+                <rect x="14" y="14" width="7" height="7" rx="1.5"></rect>
+                <rect x="3" y="14" width="7" height="7" rx="1.5"></rect>
+              </svg>
+              <span>Grid</span>
+            </button>
+            <button type="button" class="view-toggle-btn" id="view-list-btn" data-view-mode="list" aria-pressed="false" title="Compact spec list view" aria-label="Compact spec list view">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <line x1="8" y1="6" x2="21" y2="6"></line>
+                <line x1="8" y1="12" x2="21" y2="12"></line>
+                <line x1="8" y1="18" x2="21" y2="18"></line>
+                <line x1="3" y1="6" x2="3.01" y2="6"></line>
+                <line x1="3" y1="12" x2="3.01" y2="12"></line>
+                <line x1="3" y1="18" x2="3.01" y2="18"></line>
+              </svg>
+              <span>List</span>
+            </button>
+          </div>
+
+          <button class="rig-trigger-btn" id="rig-builder-btn" aria-label="Open Rig Builder">
+            <span data-icon="cpu" data-icon-size="15"></span>
+            <span>Build a Rig</span>
+            <span class="rig-progress-text" id="rig-builder-count">0/4</span>
+          </button>
+        </div>
       </div>
 
-      <div class="toolbar-actions">
-        <label class="sort-wrap" for="sort-select">
-          <span class="sort-label" data-icon="sliders" data-icon-size="14"></span>
-          <select id="sort-select" aria-label="Sort products">
-            <option value="featured">Sort: Featured</option>
-            <option value="price-asc">Price: Low → High</option>
-            <option value="price-desc">Price: High → Low</option>
-            <option value="stock-asc">Stock: Lowest First</option>
-          </select>
-        </label>
+      <div class="catalog-subbar" id="catalog-subbar" aria-label="Quick budget filters and result count">
+        <div class="catalog-results-meta" id="catalog-results-meta" data-testid="catalog-results-meta">
+          <span class="results-dot"></span>
+          <span>Showing <strong id="catalog-visible-count">0</strong> of <strong id="catalog-total-count">0</strong> components</span>
+        </div>
 
-        <button class="rig-trigger-btn" id="rig-builder-btn" aria-label="Open Rig Builder">
-          <span data-icon="cpu" data-icon-size="15"></span>
-          <span>Build a Rig</span>
-          <span class="rig-progress-text" id="rig-builder-count">0/4</span>
-        </button>
+        <div class="budget-filter-strip" id="budget-filter-strip" role="group" aria-label="Filter by maximum price">
+          <span class="budget-strip-label">Budget:</span>
+          <button type="button" class="budget-chip active" data-budget="all" aria-pressed="true">All Prices</button>
+          <button type="button" class="budget-chip" data-budget="100" aria-pressed="false">Under $100</button>
+          <button type="button" class="budget-chip" data-budget="150" aria-pressed="false">Under $150</button>
+          <button type="button" class="budget-chip" data-budget="200" aria-pressed="false">Under $200</button>
+          <button type="button" class="catalog-reset-btn" id="catalog-reset-filters-btn" hidden aria-label="Reset all catalog filters">
+            Reset Filters ✕
+          </button>
+        </div>
       </div>
     </section>
 
@@ -462,9 +553,9 @@
           <h2 class="drawer-title" id="spec-drawer-title">Component Specs</h2>
         </div>
         <div class="drawer-head-actions">
-          <button class="spec-head-share-btn" id="spec-head-share-btn" type="button" aria-label="Share product with QR code" title="Share with QR code">
+          <button class="spec-head-share-btn" id="spec-head-share-btn" type="button" aria-label="Share product to Twitter, WhatsApp, or Facebook" title="Share product link and generated description">
             <span data-icon="share" data-icon-size="14"></span>
-            <span>Share &amp; QR</span>
+            <span>Share</span>
           </button>
           <button class="modal-close" id="spec-drawer-close" aria-label="Close Product Specs">
             <span data-icon="x" data-icon-size="18"></span>
@@ -473,24 +564,107 @@
       </div>
 
       <div class="spec-drawer-body momentum-scroll-body" id="spec-drawer-body" data-momentum-scroll="true">
-        <!-- Product QR Code & Share Card -->
-        <div class="spec-share-card" id="spec-share-card" hidden>
+        <!-- Product Social Share (Twitter, WhatsApp, Facebook) & QR Code Card -->
+        <div class="spec-share-card" id="spec-share-card" data-testid="spec-share-card" hidden>
           <div class="spec-share-head">
             <div class="spec-share-title-wrap">
-              <span class="spec-share-icon" data-icon="qr-code" data-icon-size="15"></span>
-              <span class="spec-share-title">Product Share QR Code</span>
+              <span class="spec-share-icon" data-icon="share" data-icon-size="15"></span>
+              <span class="spec-share-title">Share Product &amp; QR Code</span>
             </div>
             <button type="button" class="spec-share-close" id="spec-share-close-btn" aria-label="Close Share Card">
               <span data-icon="x" data-icon-size="13"></span>
             </button>
           </div>
+
+          <!-- Generated Product Description & Social Post Composer -->
+          <div class="spec-social-composer" data-testid="spec-social-composer">
+            <div class="spec-social-composer-head">
+              <span class="spec-social-composer-label">Generated Share Description</span>
+              <div class="spec-share-tone-group" id="spec-share-tone-group" role="group" aria-label="Description template style">
+                <button type="button" class="spec-tone-chip active" data-share-tone="spec" aria-pressed="true">Spec Highlight</button>
+                <button type="button" class="spec-tone-chip" data-share-tone="deal" aria-pressed="false">Build Deal</button>
+                <button type="button" class="spec-tone-chip" data-share-tone="concise" aria-pressed="false">Quick Link</button>
+              </div>
+            </div>
+
+            <div class="spec-social-desc-wrap">
+              <textarea
+                id="spec-share-generated-desc"
+                class="spec-share-generated-desc"
+                rows="3"
+                aria-label="Generated product description for social sharing"
+                data-testid="spec-share-generated-desc"
+              ></textarea>
+              <div class="spec-social-desc-foot">
+                <span class="spec-social-char-count" id="spec-social-char-count">0 chars</span>
+                <button type="button" class="spec-copy-desc-btn" id="spec-share-copy-desc-btn" title="Copy generated description and link">
+                  <span data-icon="copy" data-icon-size="12"></span>
+                  <span>Copy Description + Link</span>
+                </button>
+              </div>
+            </div>
+
+            <div class="spec-social-platforms-label">Post Link &amp; Generated Description To:</div>
+            <div class="spec-social-platforms-row" role="group" aria-label="Post product to social media">
+              <a
+                href="https://twitter.com/intent/tweet"
+                target="_blank"
+                rel="noopener noreferrer"
+                class="spec-social-btn twitter"
+                id="spec-share-twitter-btn"
+                data-social-platform="twitter"
+                data-testid="spec-share-twitter-btn"
+                aria-label="Share on Twitter"
+              >
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+                  <path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z"/>
+                </svg>
+                <span>Twitter</span>
+              </a>
+
+              <a
+                href="https://wa.me/"
+                target="_blank"
+                rel="noopener noreferrer"
+                class="spec-social-btn whatsapp"
+                id="spec-share-whatsapp-btn"
+                data-social-platform="whatsapp"
+                data-testid="spec-share-whatsapp-btn"
+                aria-label="Share on WhatsApp"
+              >
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                  <path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"/>
+                </svg>
+                <span>WhatsApp</span>
+              </a>
+
+              <a
+                href="https://www.facebook.com/sharer/sharer.php"
+                target="_blank"
+                rel="noopener noreferrer"
+                class="spec-social-btn facebook"
+                id="spec-share-facebook-btn"
+                data-social-platform="facebook"
+                data-testid="spec-share-facebook-btn"
+                aria-label="Share on Facebook"
+              >
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+                  <path d="M22 12c0-5.523-4.477-10-10-10S2 6.477 2 12c0 4.991 3.657 9.128 8.438 9.878v-6.987h-2.54V12h2.54V9.797c0-2.506 1.492-3.89 3.777-3.89 1.094 0 2.238.195 2.238.195v2.46h-1.26c-1.243 0-1.63.771-1.63 1.562V12h2.773l-.443 2.89h-2.33v6.988C18.343 21.128 22 16.991 22 12z"/>
+                </svg>
+                <span>Facebook</span>
+              </a>
+            </div>
+
+            <div class="spec-social-share-status" id="spec-social-share-status" data-testid="spec-social-share-status" hidden></div>
+          </div>
+
           <div class="spec-share-content">
             <div class="spec-qr-wrap" id="spec-qr-container" title="Scan with phone camera to view product">
               <div class="spec-qr-mount" id="spec-qr-mount" data-testid="spec-qr-mount"></div>
               <div class="spec-qr-badge">SCAN WITH MOBILE CAMERA</div>
             </div>
             <div class="spec-share-details">
-              <span class="spec-share-note">Scan this branded QR code with any smartphone camera to open this hardware component's direct specs and live warehouse stock.</span>
+              <span class="spec-share-note">Direct product link &amp; branded QR code for instant mobile or desktop access:</span>
               <div class="spec-share-url-row">
                 <input type="text" class="spec-share-url-input" id="spec-share-url-input" readonly aria-label="Product direct URL" />
                 <button type="button" class="spec-share-copy-btn" id="spec-share-copy-btn" title="Copy product URL to clipboard">
@@ -1244,6 +1418,111 @@
           <input type="text" class="qr-manual-input" id="qr-manual-input" placeholder="Or enter product SKU (VB-GPU-019), URL, or ID…" aria-label="Manual Product URL or SKU" />
           <button type="submit" class="qr-manual-submit-btn">Go &rarr;</button>
         </form>
+
+        <!-- Scan History Section (Last 10 Products Successfully Scanned) -->
+        <div class="qr-scan-history-section" id="qr-scan-history-section" data-testid="qr-scan-history-section">
+          <div class="qr-scan-history-head">
+            <div class="qr-scan-history-title-wrap">
+              <span class="qr-scan-history-kicker">SCAN HISTORY</span>
+              <span class="qr-scan-history-count" id="qr-scan-history-count" data-testid="qr-scan-history-count">0 / 10</span>
+            </div>
+            <button type="button" class="qr-scan-history-clear-btn" id="qr-scan-history-clear-btn" data-testid="qr-scan-history-clear-btn" hidden aria-label="Clear Scan History">
+              Clear History
+            </button>
+          </div>
+          <div class="qr-scan-history-list" id="qr-scan-history-list" data-testid="qr-scan-history-list" role="list" aria-label="Last 10 scanned products">
+            <!-- Populated dynamically by app.js -->
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 'Notify Me' Price Drop Email Alert Modal -->
+  <div class="modal-overlay" id="price-alert-overlay" aria-hidden="true">
+    <div class="modal-card price-alert-modal-card" id="price-alert-card" data-testid="price-alert-modal" role="dialog" aria-modal="true" aria-label="Set Price Drop Email Alert">
+      <button class="modal-close" id="price-alert-close" aria-label="Close Price Alert Modal">
+        <span data-icon="x" data-icon-size="18"></span>
+      </button>
+
+      <div class="price-alert-head">
+        <div class="price-alert-bell-badge" id="price-alert-bell-badge" aria-hidden="true">
+          <span data-icon="bell-ring" data-icon-size="22"></span>
+        </div>
+        <div>
+          <div class="drawer-kicker">AUTOMATED PRICE WATCH</div>
+          <h2 class="modal-title" id="price-alert-modal-title">Notify Me When Price Drops</h2>
+          <p class="modal-text price-alert-sub">Set your target price threshold and receive an instant email alert the moment this component drops to or below your target.</p>
+        </div>
+      </div>
+
+      <!-- Product Summary Strip -->
+      <div class="price-alert-product-box" id="price-alert-product-box">
+        <img class="price-alert-prod-img" id="price-alert-prod-img" src="" alt="" />
+        <div class="price-alert-prod-info">
+          <span class="price-alert-prod-sku" id="price-alert-prod-sku">VB-GPU-019</span>
+          <strong class="price-alert-prod-title" id="price-alert-prod-title">Hardware Component</strong>
+          <div class="price-alert-prod-prices">
+            <span class="price-alert-current-price">Current: <b id="price-alert-current-val">$0.00</b></span>
+            <span class="price-alert-6m-low">6M Low: <b id="price-alert-low-val">$0.00</b></span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Quick Preset Threshold Buttons (-5%, -10%, -15%, 6M Low) -->
+      <div class="price-alert-presets-section">
+        <span class="field-label">Quick-Select Target Threshold</span>
+        <div class="price-alert-presets-grid" id="price-alert-presets-grid" role="group" aria-label="Suggested price drop thresholds"></div>
+      </div>
+
+      <!-- Custom Threshold & Email Form -->
+      <form class="price-alert-form" id="price-alert-form" autocomplete="off">
+        <div class="admin-row2">
+          <label class="field">
+            <span class="field-label">Target Price Threshold (USD)</span>
+            <div class="price-alert-currency-input">
+              <span class="currency-prefix">$</span>
+              <input id="price-alert-threshold-input" data-testid="price-alert-threshold-input" type="number" min="1" step="0.01" required placeholder="180.00" />
+            </div>
+          </label>
+
+          <label class="field">
+            <span class="field-label">Alert Email Address</span>
+            <input id="price-alert-email-input" data-testid="price-alert-email-input" type="email" required placeholder="you@gmail.com" autocomplete="email" />
+          </label>
+        </div>
+
+        <div class="price-alert-savings-callout" id="price-alert-savings-callout">
+          <span data-icon="mail" data-icon-size="14"></span>
+          <span id="price-alert-savings-text">We will email you as soon as the price drops below your threshold.</span>
+        </div>
+
+        <p class="modal-msg" id="price-alert-msg" data-testid="price-alert-msg" hidden></p>
+
+        <div class="price-alert-actions-row">
+          <button type="submit" class="modal-btn solid price-alert-save-btn" id="price-alert-save-btn" data-testid="price-alert-save-btn">
+            <span data-icon="bell" data-icon-size="16"></span>
+            <span id="price-alert-save-label">Set Price Drop Alert</span>
+          </button>
+          <button type="button" class="modal-btn ghost price-alert-test-btn" id="price-alert-test-btn" data-testid="price-alert-test-btn" title="Simulate a live price drop below your threshold and dispatch the email alert">
+            <span data-icon="zap" data-icon-size="15"></span>
+            <span>Simulate Drop &amp; Test Email</span>
+          </button>
+          <button type="button" class="modal-btn ghost danger price-alert-remove-btn" id="price-alert-remove-btn" data-testid="price-alert-remove-btn" hidden>
+            <span data-icon="trash" data-icon-size="15"></span>
+            <span>Remove</span>
+          </button>
+        </div>
+      </form>
+
+      <!-- Live Dispatched Email Preview Card (shown when alert triggers or is tested) -->
+      <div class="price-alert-email-preview" id="price-alert-email-preview" data-testid="price-alert-email-preview" hidden>
+        <div class="price-alert-email-head">
+          <span class="price-alert-email-badge"><span data-icon="check" data-icon-size="12"></span> EMAIL DISPATCHED</span>
+          <span class="price-alert-email-to" id="price-alert-email-to">To: user@example.com</span>
+        </div>
+        <div class="price-alert-email-subject" id="price-alert-email-subject">Subject: Price Drop Alert</div>
+        <pre class="price-alert-email-body" id="price-alert-email-body"></pre>
       </div>
     </div>
   </div>

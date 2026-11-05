@@ -1595,28 +1595,125 @@ export function generateProductShareUrl(baseUrl: string, productId: number | str
   return `${cleanBase}/?product=${id}`;
 }
 
+export type SocialSharePlatform = 'twitter' | 'whatsapp' | 'facebook';
+export type ShareDescriptionTone = 'spec' | 'deal' | 'concise';
+
+export interface SocialShareUrls {
+  twitter: string;
+  whatsapp: string;
+  facebook: string;
+}
+
 export interface ProductSharePayload {
   url: string;
   title: string;
   text: string;
+  generatedDescription: string;
+  descriptionsByTone: Record<ShareDescriptionTone, string>;
+  socialUrls: SocialShareUrls;
   sku: string;
   price: number;
   qrPayload: string;
 }
 
+export function generateProductShareDescription(
+  product: {
+    id: number;
+    title?: string;
+    price?: number;
+    sku?: string;
+    category?: string;
+    description?: string;
+    quantity?: number;
+    stock?: number;
+  },
+  shareUrl?: string,
+  tone: ShareDescriptionTone = 'spec'
+): string {
+  const title = (product.title || `Component #${product.id}`).trim();
+  const price = roundMoney(Number(product.price) || 0);
+  const sku = (product.sku || getProductSku({ id: product.id, title, category: product.category })).trim();
+  const specs = getProductSpecs({
+    id: product.id,
+    title,
+    category: product.category,
+    price,
+  });
+  const urlSuffix = shareUrl ? ` ${shareUrl}` : '';
+
+  if (tone === 'deal') {
+    return `⚡ Hardware Drop on Voltbox: ${title} (${sku}) is live at $${price.toFixed(2)}! Features ${specs.architecture} & ${specs.interfaceSpec} — qualifies for the 5% Rig Builder Bundle.${urlSuffix}`;
+  }
+  if (tone === 'concise') {
+    return `Check out ${title} ($${price.toFixed(2)} · SKU ${sku}) on Voltbox Electronics!${urlSuffix}`;
+  }
+  return `🔧 ${title} [$${price.toFixed(2)} · ${sku}] on Voltbox Electronics — ${specs.architecture}, ${specs.interfaceSpec}, ${specs.powerDraw}. Bench-verified & ready to ship!${urlSuffix}`;
+}
+
+export function buildSocialShareUrls(
+  url: string,
+  description: string,
+  hashtags: string[] = ['Voltbox', 'PCHardware', 'BuildARig']
+): SocialShareUrls {
+  const cleanUrl = (url || 'http://localhost:3000').trim();
+  const cleanDesc = (description || 'Check out this component on Voltbox Electronics!').trim();
+  // Strip trailing URL from tweet text since Twitter's `url` query param appends it cleanly
+  const descWithoutTrailingUrl = cleanDesc.replace(new RegExp(`\\s*${cleanUrl.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\s*$`), '').trim();
+  const tagString = hashtags.filter(Boolean).join(',');
+
+  const twitter =
+    `https://twitter.com/intent/tweet?text=${encodeURIComponent(descWithoutTrailingUrl)}` +
+    `&url=${encodeURIComponent(cleanUrl)}` +
+    (tagString ? `&hashtags=${encodeURIComponent(tagString)}` : '');
+
+  const whatsappMessage = cleanDesc.includes(cleanUrl) ? cleanDesc : `${cleanDesc} ${cleanUrl}`;
+  const whatsapp = `https://wa.me/?text=${encodeURIComponent(whatsappMessage)}`;
+
+  const facebook =
+    `https://www.facebook.com/sharer/sharer.php?u=${encodeURIComponent(cleanUrl)}` +
+    `&quote=${encodeURIComponent(descWithoutTrailingUrl)}`;
+
+  return {
+    twitter,
+    whatsapp,
+    facebook,
+  };
+}
+
 export function generateProductSharePayload(
   origin: string,
-  product: { id: number; title?: string; price?: number; sku?: string }
+  product: {
+    id: number;
+    title?: string;
+    price?: number;
+    sku?: string;
+    category?: string;
+    description?: string;
+    quantity?: number;
+    stock?: number;
+  },
+  tone: ShareDescriptionTone = 'spec'
 ): ProductSharePayload {
   const url = generateProductShareUrl(origin, product.id);
   const title = product.title || `Component #${product.id}`;
   const price = roundMoney(Number(product.price) || 0);
   const sku = product.sku || `VB-PRT-${String(product.id).padStart(3, '0')}`;
   const text = `Check out ${title} ($${price.toFixed(2)}) on Voltbox Electronics!`;
+  const descriptionsByTone: Record<ShareDescriptionTone, string> = {
+    spec: generateProductShareDescription({ ...product, title, price, sku }, undefined, 'spec'),
+    deal: generateProductShareDescription({ ...product, title, price, sku }, undefined, 'deal'),
+    concise: generateProductShareDescription({ ...product, title, price, sku }, undefined, 'concise'),
+  };
+  const generatedDescription = descriptionsByTone[tone] || descriptionsByTone.spec;
+  const socialUrls = buildSocialShareUrls(url, generatedDescription);
+
   return {
     url,
     title,
     text,
+    generatedDescription,
+    descriptionsByTone,
+    socialUrls,
     sku,
     price,
     qrPayload: url,
@@ -2483,4 +2580,706 @@ export function buildProductComparison(
     summary,
   };
 }
+
+// ═══════════════════════════════════════════════════════════════════
+// BUCKET4J TOKEN-BUCKET IP RATE LIMITER LOGIC
+// ═══════════════════════════════════════════════════════════════════
+
+export interface ConsumptionProbeResult {
+  consumed: boolean;
+  remainingTokens: number;
+  limitCapacity: number;
+  retryAfterSeconds: number;
+  clientIp: string;
+  tier: 'general' | 'sensitive';
+}
+
+interface TokenBucketState {
+  tokens: number;
+  lastRefillMs: number;
+}
+
+export class IpRateLimiter {
+  private readonly buckets = new Map<string, TokenBucketState>();
+  private readonly generalCapacity: number;
+  private readonly sensitiveCapacity: number;
+  private readonly refillWindowMs: number;
+
+  constructor(options?: {
+    generalCapacity?: number;
+    sensitiveCapacity?: number;
+    refillWindowMs?: number;
+  }) {
+    this.generalCapacity = options?.generalCapacity ?? 120;
+    this.sensitiveCapacity = options?.sensitiveCapacity ?? 30;
+    this.refillWindowMs = options?.refillWindowMs ?? 60_000;
+  }
+
+  public normalizeIp(rawIp?: string | null): string {
+    if (!rawIp || typeof rawIp !== 'string' || !rawIp.trim()) {
+      return '127.0.0.1';
+    }
+    const first = rawIp.split(',')[0].trim();
+    const cleaned = first.startsWith('::ffff:') ? first.slice(7) : first;
+    if (cleaned === '::1' || cleaned === '0:0:0:0:0:0:0:1') {
+      return '127.0.0.1';
+    }
+    return cleaned || '127.0.0.1';
+  }
+
+  public isSensitiveEndpoint(uri?: string | null, method?: string | null): boolean {
+    if (!uri) return false;
+    if (uri.startsWith('/api/auth/') || uri.startsWith('/api/login') || uri.startsWith('/api/register')) {
+      return true;
+    }
+    const upperMethod = (method || 'GET').toUpperCase();
+    if (upperMethod === 'POST' && (uri.startsWith('/api/orders') || uri.startsWith('/api/checkout'))) {
+      return true;
+    }
+    return false;
+  }
+
+  public tryConsume(
+    rawIp: string | null | undefined,
+    isSensitive = false,
+    tokensToConsume = 1,
+    nowMs = Date.now()
+  ): ConsumptionProbeResult {
+    const clientIp = this.normalizeIp(rawIp);
+    const tier: 'general' | 'sensitive' = isSensitive ? 'sensitive' : 'general';
+    const capacity = isSensitive ? this.sensitiveCapacity : this.generalCapacity;
+    const key = `${tier}:${clientIp}`;
+
+    let state = this.buckets.get(key);
+    if (!state) {
+      state = { tokens: capacity, lastRefillMs: nowMs };
+      this.buckets.set(key, state);
+    } else {
+      const elapsedMs = Math.max(0, nowMs - state.lastRefillMs);
+      if (elapsedMs > 0) {
+        const refillRatePerMs = capacity / this.refillWindowMs;
+        const addedTokens = elapsedMs * refillRatePerMs;
+        state.tokens = Math.min(capacity, state.tokens + addedTokens);
+        state.lastRefillMs = nowMs;
+      }
+    }
+
+    const cost = Math.max(1, tokensToConsume);
+    if (state.tokens >= cost) {
+      state.tokens -= cost;
+      return {
+        consumed: true,
+        remainingTokens: Math.floor(state.tokens),
+        limitCapacity: capacity,
+        retryAfterSeconds: 0,
+        clientIp,
+        tier,
+      };
+    }
+
+    const deficit = cost - state.tokens;
+    const refillRatePerSec = capacity / (this.refillWindowMs / 1000);
+    const waitSeconds = Math.max(1, Math.ceil(deficit / refillRatePerSec));
+
+    return {
+      consumed: false,
+      remainingTokens: 0,
+      limitCapacity: capacity,
+      retryAfterSeconds: waitSeconds,
+      clientIp,
+      tier,
+    };
+  }
+
+  public reset(): void {
+    this.buckets.clear();
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// 'NOTIFY ME' PRICE DROP EMAIL ALERT SUBSCRIPTION & EVALUATION LOGIC
+// ═══════════════════════════════════════════════════════════════════
+
+export interface PriceAlertSubscription {
+  id: string;
+  productId: number;
+  productTitle: string;
+  sku: string;
+  email: string;
+  targetPrice: number;
+  priceAtCreation: number;
+  createdAt: number;
+  triggered: boolean;
+  triggeredAt: number | null;
+  triggeredPrice: number | null;
+}
+
+export interface PriceAlertEmailNotification {
+  alertId: string;
+  productId: number;
+  productTitle: string;
+  sku: string;
+  toEmail: string;
+  targetPrice: number;
+  previousPrice: number;
+  newPrice: number;
+  savingsAmount: number;
+  savingsPct: number;
+  subject: string;
+  body: string;
+  sentAt: number;
+}
+
+export interface PriceThresholdPreset {
+  key: 'drop5' | 'drop10' | 'drop15' | 'sixMonthLow';
+  label: string;
+  sublabel: string;
+  targetPrice: number;
+  savingsPct: number;
+}
+
+export function computeSuggestedPriceThresholds(
+  currentPrice: number,
+  sixMonthLow?: number
+): PriceThresholdPreset[] {
+  const base = Math.max(1, roundMoney(Number(currentPrice) || 100));
+  const p5 = Math.max(1, roundMoney(base * 0.95));
+  const p10 = Math.max(1, roundMoney(base * 0.90));
+  const p15 = Math.max(1, roundMoney(base * 0.85));
+  const low6m =
+    typeof sixMonthLow === 'number' && sixMonthLow > 0 && sixMonthLow < base
+      ? roundMoney(sixMonthLow)
+      : Math.max(1, roundMoney(base * 0.88));
+  const lowPct = Math.max(1, Math.round(((base - low6m) / base) * 100));
+
+  return [
+    {
+      key: 'drop5',
+      label: '5% Drop',
+      sublabel: `$${p5.toFixed(2)}`,
+      targetPrice: p5,
+      savingsPct: 5,
+    },
+    {
+      key: 'drop10',
+      label: '10% Drop',
+      sublabel: `$${p10.toFixed(2)}`,
+      targetPrice: p10,
+      savingsPct: 10,
+    },
+    {
+      key: 'drop15',
+      label: '15% Drop',
+      sublabel: `$${p15.toFixed(2)}`,
+      targetPrice: p15,
+      savingsPct: 15,
+    },
+    {
+      key: 'sixMonthLow',
+      label: '6M Low',
+      sublabel: `$${low6m.toFixed(2)}`,
+      targetPrice: low6m,
+      savingsPct: lowPct,
+    },
+  ];
+}
+
+export function validatePriceAlertInput(input: {
+  productId?: number;
+  email?: string;
+  targetPrice?: number;
+  currentPrice?: number;
+}): { ok: boolean; message?: string; normalizedEmail: string; normalizedTargetPrice: number } {
+  const pid = Number(input.productId);
+  if (!pid || Number.isNaN(pid) || pid <= 0) {
+    return {
+      ok: false,
+      message: 'Valid hardware product ID is required.',
+      normalizedEmail: '',
+      normalizedTargetPrice: 0,
+    };
+  }
+
+  const email = typeof input.email === 'string' ? input.email.trim().toLowerCase() : '';
+  const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+  if (!email || !emailRegex.test(email)) {
+    return {
+      ok: false,
+      message: 'Please enter a valid email address to receive price drop alerts.',
+      normalizedEmail: email,
+      normalizedTargetPrice: 0,
+    };
+  }
+
+  const target = roundMoney(Number(input.targetPrice));
+  if (Number.isNaN(target) || target <= 0) {
+    return {
+      ok: false,
+      message: 'Please enter a target price threshold greater than $0.00.',
+      normalizedEmail: email,
+      normalizedTargetPrice: 0,
+    };
+  }
+
+  return {
+    ok: true,
+    normalizedEmail: email,
+    normalizedTargetPrice: target,
+  };
+}
+
+export function upsertPriceAlertSubscription(
+  existingAlerts: PriceAlertSubscription[] | undefined | null,
+  params: {
+    product: { id: number; title?: string; category?: string; price: number };
+    email: string;
+    targetPrice: number;
+    nowMs?: number;
+  }
+): { alerts: PriceAlertSubscription[]; subscription: PriceAlertSubscription; isUpdate: boolean } {
+  const list: PriceAlertSubscription[] = Array.isArray(existingAlerts)
+    ? existingAlerts.map((a) => ({ ...a }))
+    : [];
+  const now = params.nowMs ?? Date.now();
+  const sku = getProductSku(params.product);
+  const cleanTarget = roundMoney(params.targetPrice);
+  const currentPrice = roundMoney(params.product.price);
+  const cleanEmail = params.email.trim().toLowerCase();
+
+  const existingIdx = list.findIndex((a) => a.productId === params.product.id);
+  const alreadyBelow = currentPrice < cleanTarget;
+
+  const sub: PriceAlertSubscription = {
+    id:
+      existingIdx >= 0
+        ? list[existingIdx].id
+        : `PA-${params.product.id}-${(now % 100000).toString(36).toUpperCase()}`,
+    productId: params.product.id,
+    productTitle: params.product.title || 'Hardware Component',
+    sku,
+    email: cleanEmail,
+    targetPrice: cleanTarget,
+    priceAtCreation: currentPrice,
+    createdAt: now,
+    triggered: alreadyBelow,
+    triggeredAt: alreadyBelow ? now : null,
+    triggeredPrice: alreadyBelow ? currentPrice : null,
+  };
+
+  if (existingIdx >= 0) {
+    list[existingIdx] = sub;
+    return { alerts: list, subscription: sub, isUpdate: true };
+  }
+
+  list.unshift(sub);
+  return { alerts: list, subscription: sub, isUpdate: false };
+}
+
+export function removePriceAlertSubscription(
+  existingAlerts: PriceAlertSubscription[] | undefined | null,
+  productId: number
+): { alerts: PriceAlertSubscription[]; removed: boolean } {
+  const list = Array.isArray(existingAlerts) ? existingAlerts : [];
+  const next = list.filter((a) => a.productId !== Number(productId));
+  return {
+    alerts: next,
+    removed: next.length !== list.length,
+  };
+}
+
+export function buildPriceAlertEmailPayload(
+  alert: PriceAlertSubscription,
+  newPrice: number,
+  nowMs = Date.now()
+): PriceAlertEmailNotification {
+  const cleanNew = roundMoney(newPrice);
+  const baseline = Math.max(alert.priceAtCreation, alert.targetPrice, cleanNew);
+  const savingsAmount = Math.max(0, roundMoney(baseline - cleanNew));
+  const savingsPct = baseline > 0 ? Math.max(0, Math.round((savingsAmount / baseline) * 100)) : 0;
+
+  const subject = `Price Drop Alert: ${alert.productTitle} dropped to $${cleanNew.toFixed(2)} (Below your $${alert.targetPrice.toFixed(2)} threshold)`;
+  const body = [
+    `VOLTBOX HARDWARE BENCH — PRICE DROP ALERT`,
+    `--------------------------------------------------`,
+    `Component: ${alert.productTitle}`,
+    `Part SKU:  ${alert.sku}`,
+    ``,
+    `Good news! The component you're watching has dropped below your target price threshold:`,
+    `  • New Live Price:     $${cleanNew.toFixed(2)}`,
+    `  • Your Alert Target:  $${alert.targetPrice.toFixed(2)}`,
+    `  • Original Price:     $${alert.priceAtCreation.toFixed(2)}`,
+    savingsAmount > 0 ? `  • Total Savings:      $${savingsAmount.toFixed(2)} (${savingsPct}% off)` : null,
+    ``,
+    `Order now on Voltbox before stock runs out: /?product=${alert.productId}`,
+  ]
+    .filter(Boolean)
+    .join('\n');
+
+  return {
+    alertId: alert.id,
+    productId: alert.productId,
+    productTitle: alert.productTitle,
+    sku: alert.sku,
+    toEmail: alert.email,
+    targetPrice: alert.targetPrice,
+    previousPrice: alert.priceAtCreation,
+    newPrice: cleanNew,
+    savingsAmount,
+    savingsPct,
+    subject,
+    body,
+    sentAt: nowMs,
+  };
+}
+
+export function evaluatePriceDropAlerts(
+  alerts: PriceAlertSubscription[] | undefined | null,
+  productId: number,
+  newPrice: number,
+  nowMs = Date.now()
+): {
+  updatedAlerts: PriceAlertSubscription[];
+  triggeredNotifications: PriceAlertEmailNotification[];
+} {
+  const list: PriceAlertSubscription[] = Array.isArray(alerts)
+    ? alerts.map((a) => ({ ...a }))
+    : [];
+  const cleanNew = roundMoney(newPrice);
+  const notifications: PriceAlertEmailNotification[] = [];
+
+  for (const alert of list) {
+    if (alert.productId !== Number(productId)) continue;
+    // Trigger when newPrice drops below or equals the user-defined threshold
+    if (cleanNew <= alert.targetPrice) {
+      alert.triggered = true;
+      alert.triggeredAt = nowMs;
+      alert.triggeredPrice = cleanNew;
+      notifications.push(buildPriceAlertEmailPayload(alert, cleanNew, nowMs));
+    }
+  }
+
+  return {
+    updatedAlerts: list,
+    triggeredNotifications: notifications,
+  };
+}
+
+// ── QR Scanner 'Scan History' (Last 10 Products Scanned) Pure Logic ──
+
+export const MAX_SCAN_HISTORY_ITEMS = 10;
+
+export interface QrScanHistoryItem {
+  productId: number;
+  title: string;
+  sku: string;
+  category: string;
+  price: number;
+  image: string;
+  scannedAt: number;
+  scanCount: number;
+}
+
+export function recordScannedProduct(
+  existingHistory: QrScanHistoryItem[] | undefined | null,
+  product: {
+    id: number;
+    title?: string;
+    name?: string;
+    sku?: string;
+    category?: string;
+    price?: number;
+    image?: string;
+  } | null | undefined,
+  nowMs = Date.now()
+): QrScanHistoryItem[] {
+  const list: QrScanHistoryItem[] = Array.isArray(existingHistory)
+    ? existingHistory.filter((item) => item && typeof item.productId === 'number' && item.productId > 0).map((item) => ({ ...item }))
+    : [];
+
+  if (!product || typeof product.id !== 'number' || product.id <= 0) {
+    return list.slice(0, MAX_SCAN_HISTORY_ITEMS);
+  }
+
+  const pid = Number(product.id);
+  const title = String(product.title || product.name || `Part #${pid}`).trim();
+  const category = String(product.category || 'components').trim();
+  const sku = String(product.sku || getProductSku({ id: pid, title, category })).trim();
+  const price = roundMoney(Number(product.price || 0));
+  const image = resolveProductImageUrl({ id: pid, title, category, image: product.image });
+
+  const existingIndex = list.findIndex((item) => item.productId === pid);
+  const prevCount = existingIndex !== -1 ? Math.max(1, Number(list[existingIndex].scanCount || 1)) : 0;
+
+  if (existingIndex !== -1) {
+    list.splice(existingIndex, 1);
+  }
+
+  const newEntry: QrScanHistoryItem = {
+    productId: pid,
+    title,
+    sku,
+    category,
+    price,
+    image,
+    scannedAt: Number(nowMs) || Date.now(),
+    scanCount: prevCount + 1,
+  };
+
+  return [newEntry, ...list].slice(0, MAX_SCAN_HISTORY_ITEMS);
+}
+
+export function removeScannedProduct(
+  existingHistory: QrScanHistoryItem[] | undefined | null,
+  productId: number
+): QrScanHistoryItem[] {
+  if (!Array.isArray(existingHistory)) return [];
+  const targetId = Number(productId);
+  return existingHistory
+    .filter((item) => item && Number(item.productId) !== targetId)
+    .slice(0, MAX_SCAN_HISTORY_ITEMS);
+}
+
+export function clearScanHistory(): QrScanHistoryItem[] {
+  return [];
+}
+
+export function formatScanHistoryRelativeTime(scannedAt: number, nowMs = Date.now()): string {
+  const ts = Number(scannedAt);
+  if (!Number.isFinite(ts) || ts <= 0) return 'Recently';
+  const diffSec = Math.max(0, Math.floor((nowMs - ts) / 1000));
+  if (diffSec < 45) return 'Just now';
+  const diffMin = Math.floor(diffSec / 60);
+  if (diffMin < 60) return `${diffMin}m ago`;
+  const diffHr = Math.floor(diffMin / 60);
+  if (diffHr < 24) return `${diffHr}h ago`;
+  const diffDays = Math.floor(diffHr / 24);
+  return `${diffDays}d ago`;
+}
+
+// ── Smart Catalog Toolbar: Budget Ceiling, Category, Search & Rating Sort Pure Logic ──
+
+export type CatalogSortMode = 'featured' | 'price-asc' | 'price-desc' | 'rating-desc' | 'stock-asc';
+export type CatalogViewMode = 'grid' | 'list';
+
+export interface CatalogFilterProduct {
+  id: number;
+  title?: string;
+  description?: string;
+  category?: string;
+  componentGroup?: ComponentGroup;
+  price: number;
+  quantity?: number;
+  stock?: number;
+  stockQuantity?: number;
+  ratingRate?: number;
+  ratingCount?: number;
+  addedByName?: string;
+}
+
+export interface CatalogFilterOptions {
+  categoryFilter?: string;
+  searchQuery?: string;
+  maxBudget?: number | null;
+  sortMode?: CatalogSortMode;
+  wishlistIds?: number[];
+}
+
+export interface CatalogFilterResult<T extends CatalogFilterProduct> {
+  items: T[];
+  visibleCount: number;
+  totalCount: number;
+  hasActiveFilters: boolean;
+  activeFilterLabels: string[];
+}
+
+export function filterAndSortCatalogProducts<T extends CatalogFilterProduct>(
+  products: T[],
+  options: CatalogFilterOptions = {}
+): CatalogFilterResult<T> {
+  const list = Array.isArray(products) ? products.slice() : [];
+  const totalCount = list.length;
+  const cat = (options.categoryFilter || 'all').trim().toLowerCase();
+  const query = (options.searchQuery || '').trim().toLowerCase();
+  const maxBudget =
+    typeof options.maxBudget === 'number' && Number.isFinite(options.maxBudget) && options.maxBudget > 0
+      ? options.maxBudget
+      : null;
+  const sortMode: CatalogSortMode = options.sortMode || 'featured';
+  const wishlistSet = new Set((options.wishlistIds || []).map((id) => Number(id)));
+
+  // 1. Sort
+  if (sortMode === 'price-asc') {
+    list.sort((a, b) => a.price - b.price);
+  } else if (sortMode === 'price-desc') {
+    list.sort((a, b) => b.price - a.price);
+  } else if (sortMode === 'rating-desc') {
+    list.sort((a, b) => {
+      const rDiff = (Number(b.ratingRate) || 0) - (Number(a.ratingRate) || 0);
+      if (Math.abs(rDiff) > 0.001) return rDiff;
+      return (Number(b.ratingCount) || 0) - (Number(a.ratingCount) || 0);
+    });
+  } else if (sortMode === 'stock-asc') {
+    list.sort((a, b) => getProductQuantity(a) - getProductQuantity(b));
+  }
+
+  // 2. Filter
+  const filtered = list.filter((p) => {
+    const group = p.componentGroup || classifyComponentGroup(p);
+    const sku = getProductSku(p);
+    if (query) {
+      const hay = `${p.title || ''} ${p.description || ''} ${p.category || ''} ${group} ${sku} ${p.addedByName || ''}`.toLowerCase();
+      if (!hay.includes(query)) return false;
+    }
+
+    if (cat === 'low-stock') {
+      if (!isLowStock(p)) return false;
+    } else if (cat === 'wishlist') {
+      if (!wishlistSet.has(Number(p.id))) return false;
+    } else if (cat !== 'all') {
+      if (group !== cat) return false;
+    }
+
+    if (maxBudget !== null && Number(p.price) > maxBudget) {
+      return false;
+    }
+
+    return true;
+  });
+
+  const activeFilterLabels: string[] = [];
+  if (cat !== 'all') activeFilterLabels.push(`Category: ${cat}`);
+  if (query) activeFilterLabels.push(`Search: "${query}"`);
+  if (maxBudget !== null) activeFilterLabels.push(`Under $${maxBudget}`);
+  if (sortMode !== 'featured') activeFilterLabels.push(`Sort: ${sortMode}`);
+
+  return {
+    items: filtered,
+    visibleCount: filtered.length,
+    totalCount,
+    hasActiveFilters: cat !== 'all' || query.length > 0 || maxBudget !== null || sortMode !== 'featured',
+    activeFilterLabels,
+  };
+}
+
+// ==========================================================================
+// WEB SPEECH API — HANDS-FREE VOICE SEARCH TRANSCRIPT PARSER
+// ==========================================================================
+
+export interface VoiceSearchParseResult {
+  rawTranscript: string;
+  query: string;
+  isClearCommand: boolean;
+  budgetMaxHint: number | null;
+  categoryHint: string | null;
+}
+
+/**
+ * Normalizes a spoken Web Speech API transcript into a clean product search query,
+ * stripping conversational filler ("search for", "show me", "find"), normalizing
+ * spoken hardware acronyms ("r t x" -> "RTX", "s s d" -> "SSD", "c p u" -> "CPU"),
+ * and detecting spoken clear commands or budget ceiling hints ("under $150").
+ */
+export function normalizeVoiceSearchTranscript(rawTranscript: string): VoiceSearchParseResult {
+  const raw = String(rawTranscript ?? '').trim();
+  if (!raw) {
+    return {
+      rawTranscript: '',
+      query: '',
+      isClearCommand: false,
+      budgetMaxHint: null,
+      categoryHint: null,
+    };
+  }
+
+  // Strip trailing punctuation often added by Web Speech API (., ?, !)
+  let cleaned = raw.replace(/[.?!,;]+$/g, '').trim();
+
+  // Detect explicit clear/reset voice commands
+  const lowerFull = cleaned.toLowerCase();
+  if (
+    lowerFull === 'clear' ||
+    lowerFull === 'clear search' ||
+    lowerFull === 'reset' ||
+    lowerFull === 'reset search' ||
+    lowerFull === 'show all' ||
+    lowerFull === 'show all products' ||
+    lowerFull === 'all products'
+  ) {
+    return {
+      rawTranscript: raw,
+      query: '',
+      isClearCommand: true,
+      budgetMaxHint: null,
+      categoryHint: null,
+    };
+  }
+
+  // Strip leading conversational filler phrases
+  cleaned = cleaned
+    .replace(
+      /^(?:please\s+)?(?:search\s+for|search|find\s+me|find|show\s+me|show|look\s+for|looking\s+for|filter\s+by|i\s+want|i\s+need)\s+/i,
+      ''
+    )
+    .trim();
+
+  // Detect optional budget ceiling hint: e.g. "under 150 dollars", "under $100", "below 200"
+  let budgetMaxHint: number | null = null;
+  const budgetMatch = cleaned.match(/\b(?:under|below|less\s+than)\s*\$?\s*(\d{2,4})(?:\s*(?:dollars|bucks|usd))?\b/i);
+  if (budgetMatch) {
+    const parsedBudget = Number(budgetMatch[1]);
+    if (Number.isFinite(parsedBudget) && parsedBudget > 0) {
+      budgetMaxHint = parsedBudget;
+    }
+    cleaned = cleaned.replace(budgetMatch[0], '').trim();
+  }
+
+  // Normalize spaced-out spoken hardware acronyms
+  const acronymReplacements: Array<[RegExp, string]> = [
+    [/\br\s+t\s+x\b/gi, 'RTX'],
+    [/\bg\s+t\s+x\b/gi, 'GTX'],
+    [/\bs\s+s\s+d\b/gi, 'SSD'],
+    [/\bn\s+v\s+m\s+e\b/gi, 'NVMe'],
+    [/\bc\s+p\s+u\s*s?\b/gi, 'CPU'],
+    [/\bg\s+p\s+u\s*s?\b/gi, 'GPU'],
+    [/\bd\s+d\s+r\s*5\b/gi, 'DDR5'],
+    [/\bp\s+s\s*5\b/gi, 'PS5'],
+    [/\ba\s+m\s+d\b/gi, 'AMD'],
+    [/\bm\s+s\s+i\b/gi, 'MSI'],
+    [/\bo\s+l\s+e\s+d\b/gi, 'OLED'],
+    [/\bu\s+s\s+b\s+c\b/gi, 'USB-C'],
+  ];
+
+  for (const [pattern, replacement] of acronymReplacements) {
+    cleaned = cleaned.replace(pattern, replacement);
+  }
+
+  // Collapse multiple spaces and trailing punctuation again
+  cleaned = cleaned.replace(/\s+/g, ' ').replace(/[.?!,;]+$/g, '').trim();
+
+  // Detect category hint if the spoken query maps to a catalog tab
+  let categoryHint: string | null = null;
+  const lowerClean = cleaned.toLowerCase();
+  if (/^(?:gpus?|graphics\s+cards?)$/.test(lowerClean)) {
+    categoryHint = 'gpus';
+  } else if (/^(?:cpus?|processors?)$/.test(lowerClean)) {
+    categoryHint = 'cpus';
+  } else if (/^(?:motherboards?|mainboards?)$/.test(lowerClean)) {
+    categoryHint = 'motherboards';
+  } else if (/^(?:storage|ssds?|hard\s+drives?)$/.test(lowerClean)) {
+    categoryHint = 'storage';
+  } else if (/^(?:audio|headphones?|microphones?)$/.test(lowerClean)) {
+    categoryHint = 'audio';
+  } else if (/^(?:gaming|consoles?|controllers?)$/.test(lowerClean)) {
+    categoryHint = 'gaming';
+  }
+
+  return {
+    rawTranscript: raw,
+    query: cleaned,
+    isClearCommand: false,
+    budgetMaxHint,
+    categoryHint,
+  };
+}
+
 

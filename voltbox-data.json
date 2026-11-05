@@ -346,6 +346,21 @@
       ],
       "wishlist": [
         19
+      ],
+      "priceAlerts": [
+        {
+          "id": "PA-19-ZO7",
+          "productId": 19,
+          "productTitle": "Nvidia RTX 5090",
+          "sku": "VB-GPU-019",
+          "email": "harshan.v.s2004@gmail.com",
+          "targetPrice": 190,
+          "priceAtCreation": 200,
+          "createdAt": 1793773549231,
+          "triggered": true,
+          "triggeredAt": 1793773549242,
+          "triggeredPrice": 182.4
+        }
       ]
     },
     {
@@ -569,7 +584,34 @@
       "billEmail": null,
       "role": "member",
       "cart": {},
-      "orders": [],
+      "orders": [
+        {
+          "id": "VB-EB32",
+          "placedAt": 1793773071154,
+          "count": 1,
+          "subtotal": 170,
+          "rigDiscount": 0,
+          "promoDiscount": 0,
+          "discountTotal": 0,
+          "promoCode": null,
+          "tax": 14.03,
+          "total": 184.03,
+          "lines": [
+            {
+              "productId": 25,
+              "title": "Sony Playstation 5 pro",
+              "image": "https://t3.ftcdn.net/jpg/05/62/73/08/360_F_562730828_RWKHyahgDFwinSf4vcID8jEG2ns1Bgfd.jpg",
+              "price": 170,
+              "qty": 1
+            }
+          ],
+          "shippingName": "Alex Chen",
+          "shippingAddress": "42 Circuit Lane, Silicon Bay",
+          "paymentMethod": "UPI (GPay · harish@okaxis)",
+          "status": "Paid · Verified",
+          "amountPaid": 184.03
+        }
+      ],
       "wishlist": []
     },
     {
@@ -620,7 +662,8 @@
     "13deede6-16d5-4dbe-877b-05903f1dcd98": "harish@voltbox.test",
     "18d48402-0534-4c03-8539-edbc30d05c9e": "alex.chen@gmail.com",
     "ed4022ee-370d-47f0-9f6b-b73599596582": "alex.chen@gmail.com",
-    "391b910a-f74f-48a2-abe1-72dd260b59ef": "harish@voltbox.test"
+    "391b910a-f74f-48a2-abe1-72dd260b59ef": "harish@voltbox.test",
+    "8ed81fb0-cc44-453d-b709-f168c7c66e83": "alex.chen@gmail.com"
   },
   "products": [
     {
@@ -968,7 +1011,7 @@
     {
       "id": 19,
       "title": "Nvidia RTX 5090",
-      "price": 200,
+      "price": 182.4,
       "description": "Flagship 32GB GDDR7 Blackwell GPU with triple-fan vapor chamber cooling and PCIe 5.0 interface.",
       "category": "memory",
       "image": "https://m.media-amazon.com/images/I/513TkgJXfYL._AC_UF1000,1000_QL80_.jpg",
@@ -1094,8 +1137,8 @@
       "official": false,
       "createdAt": 1785215654894,
       "takenDown": false,
-      "quantity": 6,
-      "stock": 6,
+      "quantity": 5,
+      "stock": 5,
       "lowStock": false
     },
     {

@@ -6,6 +6,7 @@ import com.voltbox.Store;
 import com.voltbox.entity.Cart;
 import com.voltbox.entity.ProductEntity;
 import com.voltbox.model.Order;
+import com.voltbox.model.PriceAlert;
 import com.voltbox.model.Product;
 import com.voltbox.model.User;
 import com.voltbox.service.CartService;
@@ -105,7 +106,173 @@ public class AccountController {
         res.put("cart", u.cart);
         res.put("cartDetails", cartService.buildCartEntity(u, null));
         res.put("wishlist", u.wishlist != null ? u.wishlist : Collections.emptyList());
+        res.put("priceAlerts", u.priceAlerts != null ? u.priceAlerts : Collections.emptyList());
         res.put("orderCount", u.orders.size());
+        return ResponseEntity.ok(res);
+    }
+
+    @GetMapping("/api/price-alerts")
+    public ResponseEntity<?> getPriceAlerts(@RequestHeader(value = "Authorization", required = false) String auth) {
+        User u = authUser(auth);
+        if (u == null) return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(Map.of("ok", false));
+        List<PriceAlert> alerts = u.priceAlerts != null ? u.priceAlerts : Collections.emptyList();
+        return ResponseEntity.ok(Map.of("ok", true, "count", alerts.size(), "alerts", alerts));
+    }
+
+    @PostMapping({"/api/price-alerts", "/api/products/{id}/price-alert"})
+    public ResponseEntity<?> upsertPriceAlert(
+            @RequestHeader(value = "Authorization", required = false) String auth,
+            @PathVariable(value = "id", required = false) Integer pathId,
+            @RequestBody Map<String, Object> body) {
+        User u = authUser(auth);
+        if (u == null) return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(Map.of("ok", false));
+
+        int productId = pathId != null ? pathId : 0;
+        if (productId <= 0 && body.get("productId") != null) {
+            try {
+                productId = Integer.parseInt(String.valueOf(body.get("productId")));
+            } catch (NumberFormatException ignored) {}
+        }
+        Product p = store.findProduct(productId);
+        if (p == null || p.takenDown) {
+            return ResponseEntity.status(HttpStatus.NOT_FOUND)
+                    .body(Map.of("ok", false, "message", "Product not found."));
+        }
+
+        String rawEmail = body.get("email") != null ? String.valueOf(body.get("email")).trim() : "";
+        if (rawEmail.isEmpty()) {
+            rawEmail = (u.billEmail != null && !u.billEmail.isBlank()) ? u.billEmail : u.email;
+        }
+        rawEmail = rawEmail.toLowerCase();
+        if (!rawEmail.contains("@") || !rawEmail.contains(".")) {
+            return ResponseEntity.badRequest()
+                    .body(Map.of("ok", false, "message", "Please enter a valid email address to receive price drop alerts."));
+        }
+
+        double targetPrice = 0;
+        Object rawTarget = body.containsKey("targetPrice") ? body.get("targetPrice") : body.get("threshold");
+        if (rawTarget != null) {
+            try {
+                targetPrice = Math.round(Double.parseDouble(String.valueOf(rawTarget)) * 100.0) / 100.0;
+            } catch (NumberFormatException ignored) {}
+        }
+        if (targetPrice <= 0) {
+            return ResponseEntity.badRequest()
+                    .body(Map.of("ok", false, "message", "Please enter a target price threshold greater than $0.00."));
+        }
+
+        if (u.priceAlerts == null) u.priceAlerts = new ArrayList<>();
+        final int pid = p.id;
+        PriceAlert existing = u.priceAlerts.stream().filter(a -> a.productId == pid).findFirst().orElse(null);
+        boolean isUpdate = existing != null;
+        PriceAlert alert = existing != null ? existing : new PriceAlert();
+        if (!isUpdate) {
+            alert.id = "PA-" + p.id + "-" + Long.toString(System.currentTimeMillis() % 100000, 36).toUpperCase();
+            u.priceAlerts.add(0, alert);
+        }
+        ProductEntity enriched = productService.enrich(p);
+        alert.productId = p.id;
+        alert.productTitle = p.title;
+        alert.sku = enriched.getSku();
+        alert.email = rawEmail;
+        alert.targetPrice = targetPrice;
+        alert.priceAtCreation = p.price;
+        alert.createdAt = System.currentTimeMillis();
+        alert.triggered = p.price <= targetPrice;
+        alert.triggeredAt = alert.triggered ? alert.createdAt : null;
+        alert.triggeredPrice = alert.triggered ? p.price : null;
+
+        Map<String, Object> emailNotification = null;
+        if (alert.triggered) {
+            emailNotification = mailer.sendPriceDropAlert(alert, p.price);
+        }
+        store.save();
+
+        Map<String, Object> res = new LinkedHashMap<>();
+        res.put("ok", true);
+        res.put("isUpdate", isUpdate);
+        res.put("subscription", alert);
+        res.put("alerts", u.priceAlerts);
+        res.put("emailNotification", emailNotification);
+        res.put("message", emailNotification != null
+                ? String.format("Price alert active & instant email dispatched to %s (%s is already $%.2f!)", rawEmail, p.title, p.price)
+                : String.format("Price alert set! We'll email %s as soon as %s drops below $%.2f.", rawEmail, p.title, targetPrice));
+        return ResponseEntity.ok(res);
+    }
+
+    @DeleteMapping({"/api/price-alerts/{productId}", "/api/products/{productId}/price-alert"})
+    public ResponseEntity<?> deletePriceAlert(
+            @RequestHeader(value = "Authorization", required = false) String auth,
+            @PathVariable("productId") int productId) {
+        User u = authUser(auth);
+        if (u == null) return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(Map.of("ok", false));
+        boolean removed = u.priceAlerts != null && u.priceAlerts.removeIf(a -> a.productId == productId);
+        store.save();
+        return ResponseEntity.ok(Map.of(
+                "ok", true,
+                "removed", removed,
+                "productId", productId,
+                "alerts", u.priceAlerts != null ? u.priceAlerts : Collections.emptyList(),
+                "message", "Price drop alert removed."));
+    }
+
+    @PostMapping("/api/price-alerts/{productId}/simulate-drop")
+    public ResponseEntity<?> simulatePriceDrop(
+            @RequestHeader(value = "Authorization", required = false) String auth,
+            @PathVariable("productId") int productId,
+            @RequestBody(required = false) Map<String, Object> body) {
+        User u = authUser(auth);
+        if (u == null) return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(Map.of("ok", false));
+
+        Product p = store.findProduct(productId);
+        if (p == null || p.takenDown) {
+            return ResponseEntity.status(HttpStatus.NOT_FOUND)
+                    .body(Map.of("ok", false, "message", "Product not found."));
+        }
+        if (u.priceAlerts == null) u.priceAlerts = new ArrayList<>();
+        PriceAlert alert = u.priceAlerts.stream().filter(a -> a.productId == productId).findFirst().orElse(null);
+        if (alert == null) {
+            alert = new PriceAlert();
+            alert.id = "PA-" + p.id + "-" + Long.toString(System.currentTimeMillis() % 100000, 36).toUpperCase();
+            alert.productId = p.id;
+            alert.productTitle = p.title;
+            alert.sku = productService.enrich(p).getSku();
+            alert.email = (u.billEmail != null && !u.billEmail.isBlank()) ? u.billEmail : u.email;
+            alert.targetPrice = Math.round(p.price * 0.95 * 100.0) / 100.0;
+            alert.priceAtCreation = p.price;
+            alert.createdAt = System.currentTimeMillis();
+            u.priceAlerts.add(0, alert);
+        }
+
+        double previousPrice = p.price;
+        double simulatedNewPrice = Math.max(1.0, Math.round((alert.targetPrice - Math.max(1.0, alert.targetPrice * 0.03)) * 100.0) / 100.0);
+        if (body != null && body.get("newPrice") != null) {
+            try {
+                double reqP = Double.parseDouble(String.valueOf(body.get("newPrice")));
+                if (reqP > 0) simulatedNewPrice = Math.round(reqP * 100.0) / 100.0;
+            } catch (NumberFormatException ignored) {}
+        }
+
+        p.price = simulatedNewPrice;
+        alert.triggered = simulatedNewPrice <= alert.targetPrice;
+        alert.triggeredAt = System.currentTimeMillis();
+        alert.triggeredPrice = simulatedNewPrice;
+
+        Map<String, Object> emailNotification = mailer.sendPriceDropAlert(alert, simulatedNewPrice);
+        store.save();
+
+        ProductEntity enriched = productService.enrich(p);
+        socket.broadcastToAll(Map.of("type", "product-restocked", "product", enriched, "actor", "Voltbox Price Watch"));
+
+        Map<String, Object> res = new LinkedHashMap<>();
+        res.put("ok", true);
+        res.put("previousPrice", previousPrice);
+        res.put("newPrice", simulatedNewPrice);
+        res.put("product", enriched);
+        res.put("subscription", alert);
+        res.put("alerts", u.priceAlerts);
+        res.put("emailNotification", emailNotification);
+        res.put("message", String.format("Price dropped to $%.2f! Email alert sent to %s.", simulatedNewPrice, alert.email));
         return ResponseEntity.ok(res);
     }
 

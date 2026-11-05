@@ -623,6 +623,10 @@ function handleLiveEvent(msg) {
     if (typeof window.onPresenceUpdate === "function") {
       window.onPresenceUpdate(msg.onlineCount);
     }
+  } else if (msg.type === "price-drop-alert") {
+    if (typeof window.onPriceDropAlertReceived === "function") {
+      window.onPriceDropAlertReceived(msg);
+    }
   }
 }
 

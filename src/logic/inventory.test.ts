@@ -31,6 +31,8 @@ import {
   buildWishlistSummary,
   generateProductShareUrl,
   generateProductSharePayload,
+  generateProductShareDescription,
+  buildSocialShareUrls,
   generateProductQrSvgAsync,
   generateProductQrDataUrl,
   VOLTBOX_QR_THEMES,
@@ -49,6 +51,20 @@ import {
   normalizeUpiAppId,
   buildUpiPaymentRequestPayload,
   buildProductComparison,
+  IpRateLimiter,
+  computeSuggestedPriceThresholds,
+  validatePriceAlertInput,
+  upsertPriceAlertSubscription,
+  removePriceAlertSubscription,
+  buildPriceAlertEmailPayload,
+  evaluatePriceDropAlerts,
+  MAX_SCAN_HISTORY_ITEMS,
+  recordScannedProduct,
+  removeScannedProduct,
+  clearScanHistory,
+  formatScanHistoryRelativeTime,
+  filterAndSortCatalogProducts,
+  normalizeVoiceSearchTranscript,
 } from './inventory';
 
 test('LOW_STOCK_THRESHOLD is 5', () => {
@@ -871,4 +887,296 @@ test('buildProductComparison builds side-by-side matrix, diff detection, and val
   assert.equal(emptyComp.count, 0);
   assert.equal(emptyComp.products.length, 0);
 });
+
+test('IpRateLimiter enforces Bucket4j per-IP token bucket rate limits, isolates IPs, and refills over time', () => {
+  const limiter = new IpRateLimiter({
+    generalCapacity: 3,
+    sensitiveCapacity: 2,
+    refillWindowMs: 60_000,
+  });
+
+  const t0 = 1_000_000;
+  // IP normalization
+  assert.equal(limiter.normalizeIp('::ffff:192.168.1.42, 10.0.0.1'), '192.168.1.42');
+  assert.equal(limiter.normalizeIp('::1'), '127.0.0.1');
+
+  // Sensitive route detection
+  assert.equal(limiter.isSensitiveEndpoint('/api/auth/login', 'POST'), true);
+  assert.equal(limiter.isSensitiveEndpoint('/api/orders', 'POST'), true);
+  assert.equal(limiter.isSensitiveEndpoint('/api/products', 'GET'), false);
+
+  // Consume general bucket for IP A (capacity 3)
+  const r1 = limiter.tryConsume('203.0.113.10', false, 1, t0);
+  assert.equal(r1.consumed, true);
+  assert.equal(r1.remainingTokens, 2);
+  assert.equal(r1.limitCapacity, 3);
+
+  const r2 = limiter.tryConsume('203.0.113.10', false, 1, t0);
+  assert.equal(r2.consumed, true);
+  assert.equal(r2.remainingTokens, 1);
+
+  const r3 = limiter.tryConsume('203.0.113.10', false, 1, t0);
+  assert.equal(r3.consumed, true);
+  assert.equal(r3.remainingTokens, 0);
+
+  // 4th request from IP A is rejected (429 Too Many Requests)
+  const r4 = limiter.tryConsume('203.0.113.10', false, 1, t0);
+  assert.equal(r4.consumed, false);
+  assert.equal(r4.remainingTokens, 0);
+  assert.ok(r4.retryAfterSeconds >= 1);
+
+  // Different IP B is isolated and still has full tokens
+  const otherIp = limiter.tryConsume('198.51.100.7', false, 1, t0);
+  assert.equal(otherIp.consumed, true);
+  assert.equal(otherIp.remainingTokens, 2);
+
+  // After 20 seconds (1/3 of 60s window), 1 token refills for IP A
+  const afterRefill = limiter.tryConsume('203.0.113.10', false, 1, t0 + 20_000);
+  assert.equal(afterRefill.consumed, true);
+  assert.equal(afterRefill.remainingTokens, 0);
+});
+
+test('Notify Me price drop alert logic validates inputs, computes presets, upserts/removes subscriptions, and dispatches email alerts when price drops below threshold', () => {
+  // 1. Preset thresholds
+  const presets = computeSuggestedPriceThresholds(200, 172);
+  assert.equal(presets.length, 4);
+  assert.equal(presets[0].key, 'drop5');
+  assert.equal(presets[0].targetPrice, 190);
+  assert.equal(presets[1].key, 'drop10');
+  assert.equal(presets[1].targetPrice, 180);
+  assert.equal(presets[2].key, 'drop15');
+  assert.equal(presets[2].targetPrice, 170);
+  assert.equal(presets[3].key, 'sixMonthLow');
+  assert.equal(presets[3].targetPrice, 172);
+
+  // 2. Input validation
+  const invalidEmail = validatePriceAlertInput({ productId: 19, email: 'not-an-email', targetPrice: 180 });
+  assert.equal(invalidEmail.ok, false);
+
+  const invalidPrice = validatePriceAlertInput({ productId: 19, email: 'harish@voltbox.test', targetPrice: -10 });
+  assert.equal(invalidPrice.ok, false);
+
+  const valid = validatePriceAlertInput({ productId: 19, email: '  Harish@Voltbox.Test ', targetPrice: 185.5 });
+  assert.equal(valid.ok, true);
+  assert.equal(valid.normalizedEmail, 'harish@voltbox.test');
+  assert.equal(valid.normalizedTargetPrice, 185.5);
+
+  // 3. Upsert subscription
+  const rtx5090 = { id: 19, title: 'NVIDIA GeForce RTX 5090', category: 'gpus', price: 200 };
+  const created = upsertPriceAlertSubscription([], {
+    product: rtx5090,
+    email: 'harish@voltbox.test',
+    targetPrice: 185,
+    nowMs: 1_700_000_000_000,
+  });
+  assert.equal(created.isUpdate, false);
+  assert.equal(created.alerts.length, 1);
+  assert.equal(created.subscription.productId, 19);
+  assert.equal(created.subscription.sku, 'VB-GPU-019');
+  assert.equal(created.subscription.targetPrice, 185);
+  assert.equal(created.subscription.triggered, false);
+
+  // Updating the same product alert updates targetPrice in-place
+  const updated = upsertPriceAlertSubscription(created.alerts, {
+    product: rtx5090,
+    email: 'harish@voltbox.test',
+    targetPrice: 180,
+    nowMs: 1_700_000_005_000,
+  });
+  assert.equal(updated.isUpdate, true);
+  assert.equal(updated.alerts.length, 1);
+  assert.equal(updated.subscription.targetPrice, 180);
+
+  // 4. Price stays above threshold ($189 > $180): no email triggered
+  const evalAbove = evaluatePriceDropAlerts(updated.alerts, 19, 189, 1_700_000_010_000);
+  assert.equal(evalAbove.triggeredNotifications.length, 0);
+  assert.equal(evalAbove.updatedAlerts[0].triggered, false);
+
+  // 5. Price drops below threshold ($175 <= $180): email notification triggered!
+  const evalDrop = evaluatePriceDropAlerts(updated.alerts, 19, 175, 1_700_000_020_000);
+  assert.equal(evalDrop.triggeredNotifications.length, 1);
+  assert.equal(evalDrop.updatedAlerts[0].triggered, true);
+  assert.equal(evalDrop.updatedAlerts[0].triggeredPrice, 175);
+
+  const emailPayload = evalDrop.triggeredNotifications[0];
+  assert.equal(emailPayload.toEmail, 'harish@voltbox.test');
+  assert.equal(emailPayload.newPrice, 175);
+  assert.equal(emailPayload.targetPrice, 180);
+  assert.equal(emailPayload.savingsAmount, 25);
+  assert.ok(emailPayload.subject.includes('RTX 5090'));
+  assert.ok(emailPayload.subject.includes('$175.00'));
+  assert.ok(emailPayload.body.includes('VB-GPU-019'));
+
+  // 6. Remove subscription
+  const removed = removePriceAlertSubscription(evalDrop.updatedAlerts, 19);
+  assert.equal(removed.removed, true);
+  assert.equal(removed.alerts.length, 0);
+});
+
+test('QR Scan History: records scanned products in most-recent-first order, deduplicates re-scans, and caps at 10 items', () => {
+  assert.equal(MAX_SCAN_HISTORY_ITEMS, 10);
+
+  let history = clearScanHistory();
+  assert.deepEqual(history, []);
+
+  // 1. Scan first product
+  history = recordScannedProduct(
+    history,
+    { id: 19, title: 'NVIDIA GeForce RTX 5090', category: 'gpus', price: 200 },
+    1_700_000_000_000
+  );
+  assert.equal(history.length, 1);
+  assert.equal(history[0].productId, 19);
+  assert.equal(history[0].sku, 'VB-GPU-019');
+  assert.equal(history[0].scanCount, 1);
+  assert.equal(formatScanHistoryRelativeTime(history[0].scannedAt, 1_700_000_010_000), 'Just now');
+  assert.equal(formatScanHistoryRelativeTime(history[0].scannedAt, 1_700_000_180_000), '3m ago');
+
+  // 2. Scan second product -> becomes index 0
+  history = recordScannedProduct(
+    history,
+    { id: 20, title: 'AMD Ryzen 9 9950X', category: 'cpus', price: 112 },
+    1_700_000_060_000
+  );
+  assert.equal(history.length, 2);
+  assert.equal(history[0].productId, 20);
+  assert.equal(history[1].productId, 19);
+
+  // 3. Re-scan product 19 -> moves back to index 0, deduplicates, increments scanCount to 2
+  history = recordScannedProduct(
+    history,
+    { id: 19, title: 'NVIDIA GeForce RTX 5090', category: 'gpus', price: 200 },
+    1_700_000_120_000
+  );
+  assert.equal(history.length, 2);
+  assert.equal(history[0].productId, 19);
+  assert.equal(history[0].scanCount, 2);
+  assert.equal(history[1].productId, 20);
+
+  // 4. Scan 12 distinct products -> strictly caps at 10 most recent items
+  for (let id = 1; id <= 12; id++) {
+    history = recordScannedProduct(
+      history,
+      { id, title: `Hardware Component #${id}`, category: 'components', price: 10 * id },
+      1_700_000_200_000 + id * 1000
+    );
+  }
+  assert.equal(history.length, 10);
+  assert.equal(history[0].productId, 12);
+  assert.equal(history[9].productId, 3);
+  assert.equal(history.some((item) => item.productId === 1), false);
+  assert.equal(history.some((item) => item.productId === 2), false);
+
+  // 5. Remove a single item from history
+  history = removeScannedProduct(history, 10);
+  assert.equal(history.length, 9);
+  assert.equal(history.some((item) => item.productId === 10), false);
+
+  // 6. Clear history
+  history = clearScanHistory();
+  assert.equal(history.length, 0);
+});
+
+test('filterAndSortCatalogProducts filters by category, budget ceiling, search query, and sorts by rating-desc', () => {
+  const sampleCatalog = [
+    { id: 19, title: 'NVIDIA GeForce RTX 5090', category: 'gpus', price: 200, quantity: 2, ratingRate: 4.9, ratingCount: 120 },
+    { id: 20, title: 'AMD Ryzen 9 9950X', category: 'cpus', price: 112, quantity: 12, ratingRate: 4.8, ratingCount: 95 },
+    { id: 21, title: 'MSI MAG B570 Tomahawk', category: 'motherboards', price: 145, quantity: 3, ratingRate: 4.6, ratingCount: 64 },
+    { id: 22, title: 'Samsung 990 Pro 2TB SSD', category: 'storage', price: 89, quantity: 8, ratingRate: 4.95, ratingCount: 210 },
+  ];
+
+  // Default state: all 4 items visible, no active filters
+  const base = filterAndSortCatalogProducts(sampleCatalog);
+  assert.equal(base.visibleCount, 4);
+  assert.equal(base.totalCount, 4);
+  assert.equal(base.hasActiveFilters, false);
+
+  // Budget ceiling filter: Under $150 -> excludes $200 RTX 5090
+  const under150 = filterAndSortCatalogProducts(sampleCatalog, { maxBudget: 150 });
+  assert.equal(under150.visibleCount, 3);
+  assert.equal(under150.hasActiveFilters, true);
+  assert.equal(under150.items.some((p) => p.id === 19), false);
+
+  // Under $100 -> only $89 SSD
+  const under100 = filterAndSortCatalogProducts(sampleCatalog, { maxBudget: 100 });
+  assert.equal(under100.visibleCount, 1);
+  assert.equal(under100.items[0].id, 22);
+
+  // Sort by highest rating first
+  const byRating = filterAndSortCatalogProducts(sampleCatalog, { sortMode: 'rating-desc' });
+  assert.deepEqual(
+    byRating.items.map((p) => p.id),
+    [22, 19, 20, 21]
+  );
+});
+
+test('Product Spec Drawer Share: generates descriptions across tones and builds Twitter, WhatsApp, and Facebook share URLs', () => {
+  const gpu = {
+    id: 19,
+    title: 'Nvidia RTX 5090',
+    price: 182.4,
+    sku: 'VB-GPU-019',
+    category: 'gpus',
+  };
+
+  const payload = generateProductSharePayload('https://voltbox.test', gpu, 'spec');
+  assert.equal(payload.url, 'https://voltbox.test/?product=19');
+  assert.ok(payload.generatedDescription.includes('Nvidia RTX 5090'));
+  assert.ok(payload.generatedDescription.includes('$182.40'));
+  assert.ok(payload.generatedDescription.includes('VB-GPU-019'));
+  assert.ok(payload.generatedDescription.includes('Blackwell'));
+
+  // Tone variants
+  assert.ok(payload.descriptionsByTone.deal.includes('5% Rig Builder Bundle'));
+  assert.ok(payload.descriptionsByTone.concise.includes('Check out Nvidia RTX 5090'));
+
+  // Social share URLs for Twitter, WhatsApp, and Facebook
+  assert.ok(payload.socialUrls.twitter.startsWith('https://twitter.com/intent/tweet?text='));
+  assert.ok(payload.socialUrls.twitter.includes(encodeURIComponent('https://voltbox.test/?product=19')));
+  assert.ok(payload.socialUrls.twitter.includes('hashtags='));
+
+  assert.ok(payload.socialUrls.whatsapp.startsWith('https://wa.me/?text='));
+  assert.ok(payload.socialUrls.whatsapp.includes(encodeURIComponent('https://voltbox.test/?product=19')));
+  assert.ok(payload.socialUrls.whatsapp.includes(encodeURIComponent('Nvidia RTX 5090')));
+
+  assert.ok(payload.socialUrls.facebook.startsWith('https://www.facebook.com/sharer/sharer.php?u='));
+  assert.ok(payload.socialUrls.facebook.includes(encodeURIComponent('https://voltbox.test/?product=19')));
+  assert.ok(payload.socialUrls.facebook.includes('quote='));
+
+  // Custom edited description updates social URLs accurately
+  const customUrls = buildSocialShareUrls(
+    payload.url,
+    'Custom rig build post for RTX 5090!',
+    ['Voltbox', 'RTX5090']
+  );
+  assert.ok(customUrls.twitter.includes(encodeURIComponent('Custom rig build post for RTX 5090!')));
+  assert.ok(customUrls.whatsapp.includes(encodeURIComponent('Custom rig build post for RTX 5090! https://voltbox.test/?product=19')));
+  assert.ok(customUrls.facebook.includes(encodeURIComponent('Custom rig build post for RTX 5090!')));
+});
+
+test('Web Speech API Voice Search: normalizeVoiceSearchTranscript strips filler, normalizes hardware acronyms, extracts budget hints, and handles clear commands', () => {
+  // 1. Conversational filler + spaced hardware acronym + trailing period
+  const res1 = normalizeVoiceSearchTranscript('Search for Nvidia R T X 5090.');
+  assert.equal(res1.query, 'Nvidia RTX 5090');
+  assert.equal(res1.isClearCommand, false);
+  assert.equal(res1.budgetMaxHint, null);
+
+  // 2. Spoken budget hint + SSD acronym
+  const res2 = normalizeVoiceSearchTranscript('show me Samsung S S D under 150 dollars!');
+  assert.equal(res2.query, 'Samsung SSD');
+  assert.equal(res2.budgetMaxHint, 150);
+  assert.equal(res2.isClearCommand, false);
+
+  // 3. Spoken category hint
+  const res3 = normalizeVoiceSearchTranscript('find graphics cards');
+  assert.equal(res3.query, 'graphics cards');
+  assert.equal(res3.categoryHint, 'gpus');
+
+  // 4. Clear search command
+  const res4 = normalizeVoiceSearchTranscript('Clear search.');
+  assert.equal(res4.query, '');
+  assert.equal(res4.isClearCommand, true);
+});
+
+
 

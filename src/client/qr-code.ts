@@ -168,15 +168,264 @@ export function parseScannedProduct(
   return { productId: null, rawText: clean, matchedBy: null };
 }
 
+export const MAX_SCAN_HISTORY_ITEMS = 10;
+
+export interface QrScanHistoryEntry {
+  productId: number;
+  title: string;
+  sku: string;
+  category: string;
+  price: number;
+  image: string;
+  scannedAt: number;
+  scanCount: number;
+}
+
+export function recordScannedProduct(
+  existingHistory: QrScanHistoryEntry[],
+  product: {
+    id: number;
+    title?: string;
+    name?: string;
+    sku?: string;
+    category?: string;
+    price?: number;
+    image?: string;
+  },
+  nowMs?: number
+): QrScanHistoryEntry[] {
+  var list: QrScanHistoryEntry[] = Array.isArray(existingHistory)
+    ? existingHistory.filter(function (item) { return item && typeof item.productId === 'number' && item.productId > 0; })
+    : [];
+  if (!product || typeof product.id !== 'number' || product.id <= 0) {
+    return list.slice(0, MAX_SCAN_HISTORY_ITEMS);
+  }
+  var pid = Number(product.id);
+  var existingIdx = list.findIndex(function (item) { return Number(item.productId) === pid; });
+  var prevCount = existingIdx !== -1 ? Math.max(1, Number(list[existingIdx].scanCount || 1)) : 0;
+  if (existingIdx !== -1) {
+    list.splice(existingIdx, 1);
+  }
+  var entry: QrScanHistoryEntry = {
+    productId: pid,
+    title: String(product.title || product.name || ('Part #' + pid)).trim(),
+    sku: String(product.sku || ('VB-PRT-' + String(pid).padStart(3, '0'))).trim(),
+    category: String(product.category || 'components').trim(),
+    price: Math.round(Number(product.price || 0) * 100) / 100,
+    image: String(product.image || ''),
+    scannedAt: Number(nowMs) || Date.now(),
+    scanCount: prevCount + 1,
+  };
+  return [entry].concat(list).slice(0, MAX_SCAN_HISTORY_ITEMS);
+}
+
+export function removeScannedProduct(existingHistory: QrScanHistoryEntry[], productId: number): QrScanHistoryEntry[] {
+  if (!Array.isArray(existingHistory)) return [];
+  var targetId = Number(productId);
+  return existingHistory
+    .filter(function (item) { return item && Number(item.productId) !== targetId; })
+    .slice(0, MAX_SCAN_HISTORY_ITEMS);
+}
+
+export function clearScanHistory(): QrScanHistoryEntry[] {
+  return [];
+}
+
+export function formatScanHistoryRelativeTime(scannedAt: number, nowMs?: number): string {
+  var ts = Number(scannedAt);
+  var now = Number(nowMs) || Date.now();
+  if (!isFinite(ts) || ts <= 0) return 'Recently';
+  var diffSec = Math.max(0, Math.floor((now - ts) / 1000));
+  if (diffSec < 45) return 'Just now';
+  var diffMin = Math.floor(diffSec / 60);
+  if (diffMin < 60) return diffMin + 'm ago';
+  var diffHr = Math.floor(diffMin / 60);
+  if (diffHr < 24) return diffHr + 'h ago';
+  var diffDays = Math.floor(diffHr / 24);
+  return diffDays + 'd ago';
+}
+
+export type ShareDescriptionTone = 'spec' | 'deal' | 'concise';
+
+export function generateProductShareDescription(
+  product: {
+    id: number;
+    title?: string;
+    price?: number;
+    sku?: string;
+    category?: string;
+    description?: string;
+    specs?: {
+      architecture?: string;
+      interfaceSpec?: string;
+      powerDraw?: string;
+    };
+  },
+  shareUrl?: string,
+  tone: ShareDescriptionTone = 'spec'
+): string {
+  var title = String(product.title || ('Component #' + product.id)).trim();
+  var price = Math.round((Number(product.price) || 0) * 100) / 100;
+  var sku = String(product.sku || ('VB-PRT-' + String(product.id).padStart(3, '0'))).trim();
+  var arch = (product.specs && product.specs.architecture) || 'Precision Solid-State';
+  var iface = (product.specs && product.specs.interfaceSpec) || 'PCIe 4.0 / USB-C';
+  var pwr = (product.specs && product.specs.powerDraw) || '65W Nominal';
+  var urlSuffix = shareUrl ? (' ' + shareUrl) : '';
+
+  if (tone === 'deal') {
+    return '⚡ Hardware Drop on Voltbox: ' + title + ' (' + sku + ') is live at $' + price.toFixed(2) + '! Features ' + arch + ' & ' + iface + ' — qualifies for the 5% Rig Builder Bundle.' + urlSuffix;
+  }
+  if (tone === 'concise') {
+    return 'Check out ' + title + ' ($' + price.toFixed(2) + ' · SKU ' + sku + ') on Voltbox Electronics!' + urlSuffix;
+  }
+  return '🔧 ' + title + ' [$' + price.toFixed(2) + ' · ' + sku + '] on Voltbox Electronics — ' + arch + ', ' + iface + ', ' + pwr + '. Bench-verified & ready to ship!' + urlSuffix;
+}
+
+export function buildSocialShareUrls(
+  url: string,
+  description: string,
+  hashtags?: string[]
+): { twitter: string; whatsapp: string; facebook: string } {
+  var cleanUrl = (url || (typeof window !== 'undefined' ? window.location.origin : 'http://localhost:3000')).trim();
+  var cleanDesc = (description || 'Check out this component on Voltbox Electronics!').trim();
+  var escapedUrl = cleanUrl.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  var descWithoutTrailingUrl = cleanDesc.replace(new RegExp('\\s*' + escapedUrl + '\\s*$'), '').trim();
+  var tags = Array.isArray(hashtags) && hashtags.length > 0 ? hashtags : ['Voltbox', 'PCHardware', 'BuildARig'];
+  var tagString = tags.filter(Boolean).join(',');
+
+  var twitter =
+    'https://twitter.com/intent/tweet?text=' + encodeURIComponent(descWithoutTrailingUrl) +
+    '&url=' + encodeURIComponent(cleanUrl) +
+    (tagString ? ('&hashtags=' + encodeURIComponent(tagString)) : '');
+
+  var whatsappMessage = cleanDesc.indexOf(cleanUrl) !== -1 ? cleanDesc : (cleanDesc + ' ' + cleanUrl);
+  var whatsapp = 'https://wa.me/?text=' + encodeURIComponent(whatsappMessage);
+
+  var facebook =
+    'https://www.facebook.com/sharer/sharer.php?u=' + encodeURIComponent(cleanUrl) +
+    '&quote=' + encodeURIComponent(descWithoutTrailingUrl);
+
+  return {
+    twitter: twitter,
+    whatsapp: whatsapp,
+    facebook: facebook,
+  };
+}
+
+export function normalizeVoiceSearchTranscript(rawTranscript: string): {
+  rawTranscript: string;
+  query: string;
+  isClearCommand: boolean;
+  budgetMaxHint: number | null;
+  categoryHint: string | null;
+} {
+  var raw = String(rawTranscript || '').trim();
+  if (!raw) {
+    return {
+      rawTranscript: '',
+      query: '',
+      isClearCommand: false,
+      budgetMaxHint: null,
+      categoryHint: null,
+    };
+  }
+  var cleaned = raw.replace(/[.?!,;]+$/g, '').trim();
+  var lowerFull = cleaned.toLowerCase();
+  if (
+    lowerFull === 'clear' ||
+    lowerFull === 'clear search' ||
+    lowerFull === 'reset' ||
+    lowerFull === 'reset search' ||
+    lowerFull === 'show all' ||
+    lowerFull === 'show all products' ||
+    lowerFull === 'all products'
+  ) {
+    return {
+      rawTranscript: raw,
+      query: '',
+      isClearCommand: true,
+      budgetMaxHint: null,
+      categoryHint: null,
+    };
+  }
+  cleaned = cleaned
+    .replace(
+      /^(?:please\s+)?(?:search\s+for|search|find\s+me|find|show\s+me|show|look\s+for|looking\s+for|filter\s+by|i\s+want|i\s+need)\s+/i,
+      ''
+    )
+    .trim();
+
+  var budgetMaxHint: number | null = null;
+  var budgetMatch = cleaned.match(/\b(?:under|below|less\s+than)\s*\$?\s*(\d{2,4})(?:\s*(?:dollars|bucks|usd))?\b/i);
+  if (budgetMatch) {
+    var parsedBudget = Number(budgetMatch[1]);
+    if (isFinite(parsedBudget) && parsedBudget > 0) {
+      budgetMaxHint = parsedBudget;
+    }
+    cleaned = cleaned.replace(budgetMatch[0], '').trim();
+  }
+
+  cleaned = cleaned
+    .replace(/\br\s+t\s+x\b/gi, 'RTX')
+    .replace(/\bg\s+t\s+x\b/gi, 'GTX')
+    .replace(/\bs\s+s\s+d\b/gi, 'SSD')
+    .replace(/\bn\s+v\s+m\s+e\b/gi, 'NVMe')
+    .replace(/\bc\s+p\s+u\s*s?\b/gi, 'CPU')
+    .replace(/\bg\s+p\s+u\s*s?\b/gi, 'GPU')
+    .replace(/\bd\s+d\s+r\s*5\b/gi, 'DDR5')
+    .replace(/\bp\s+s\s*5\b/gi, 'PS5')
+    .replace(/\ba\s+m\s+d\b/gi, 'AMD')
+    .replace(/\bm\s+s\s+i\b/gi, 'MSI')
+    .replace(/\bo\s+l\s+e\s+d\b/gi, 'OLED')
+    .replace(/\bu\s+s\s+b\s+c\b/gi, 'USB-C')
+    .replace(/\s+/g, ' ')
+    .replace(/[.?!,;]+$/g, '')
+    .trim();
+
+  var categoryHint: string | null = null;
+  var lowerClean = cleaned.toLowerCase();
+  if (/^(?:gpus?|graphics\s+cards?)$/.test(lowerClean)) {
+    categoryHint = 'gpus';
+  } else if (/^(?:cpus?|processors?)$/.test(lowerClean)) {
+    categoryHint = 'cpus';
+  } else if (/^(?:motherboards?|mainboards?)$/.test(lowerClean)) {
+    categoryHint = 'motherboards';
+  } else if (/^(?:storage|ssds?|hard\s+drives?)$/.test(lowerClean)) {
+    categoryHint = 'storage';
+  } else if (/^(?:audio|headphones?|microphones?)$/.test(lowerClean)) {
+    categoryHint = 'audio';
+  } else if (/^(?:gaming|consoles?|controllers?)$/.test(lowerClean)) {
+    categoryHint = 'gaming';
+  }
+
+  return {
+    rawTranscript: raw,
+    query: cleaned,
+    isClearCommand: false,
+    budgetMaxHint: budgetMaxHint,
+    categoryHint: categoryHint,
+  };
+}
+
 // Expose globally on window for app.js
 if (typeof window !== 'undefined') {
   (window as any).VoltboxQR = {
     themes: VOLTBOX_QR_THEMES,
+    MAX_SCAN_HISTORY_ITEMS,
     generateProductUrl,
     generateQrSvg,
     generateQrDataUrl,
     renderQrIntoElement,
     decodeQrFromImageData,
     parseScannedProduct,
+    recordScannedProduct,
+    removeScannedProduct,
+    clearScanHistory,
+    formatScanHistoryRelativeTime,
+    generateProductShareDescription,
+    buildSocialShareUrls,
+    normalizeVoiceSearchTranscript,
   };
 }
+
+

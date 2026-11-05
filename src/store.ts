@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import crypto from 'node:crypto';
-import { getProductQuantity, isLowStock, resolveProductImageUrl } from './logic/inventory';
+import { getProductQuantity, isLowStock, resolveProductImageUrl, PriceAlertSubscription } from './logic/inventory';
 
 export interface OrderLine {
   productId: number;
@@ -41,6 +41,7 @@ export interface User {
   cart: Record<string, number>;
   orders: Order[];
   wishlist?: number[];
+  priceAlerts?: PriceAlertSubscription[];
 }
 
 export interface Product {

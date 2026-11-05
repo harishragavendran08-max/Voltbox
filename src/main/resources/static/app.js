@@ -23,15 +23,22 @@ var STORE = {
 var cart = {};
 var products = [];
 var wishlist = [];
+var priceAlerts = [];
+var activePriceAlertProductId = null;
 var me = null;
 var shownOrder = null;
 var saveTimer = null;
 var activeCategoryFilter = "all";
 var activeSortMode = "featured";
+var activeBudgetMax = null;
+var activeCatalogView = "grid";
 var activePromoCode = null;
 var expandedCharts = {};
 var activeSpecProductId = null;
 var toastTimer = null;
+var QR_SCAN_HISTORY_STORAGE_KEY = "voltbox_qr_scan_history";
+var MAX_QR_SCAN_HISTORY = 10;
+var qrScanHistory = [];
 
 // ── grab DOM elements once ──
 var gridEl      = document.getElementById("product-grid");
@@ -248,11 +255,13 @@ function loadMe(retriedWithDemoToken) {
       me = data;
       cart = data.cart || {};
       wishlist = Array.isArray(data.wishlist) ? data.wishlist : [];
+      priceAlerts = Array.isArray(data.priceAlerts) ? data.priceAlerts : [];
       if (data.cartDetails) {
         window.serverCartState = data.cartDetails;
       }
       paintProfile();
       paintWishlist();
+      paintPriceAlerts();
       fetchProducts();
       fetchCart();
       fetchInventorySummary();
@@ -511,6 +520,421 @@ function toggleWishlistPanel() {
   if (chev) chev.classList.toggle("up", opening);
 }
 
+// ── 'Notify Me' Price Drop Email Alert Helpers & Modal Controller ──
+
+function getPriceAlertForProduct(productId) {
+  var id = Number(productId);
+  if (!Array.isArray(priceAlerts)) return null;
+  for (var i = 0; i < priceAlerts.length; i++) {
+    if (Number(priceAlerts[i].productId) === id) {
+      return priceAlerts[i];
+    }
+  }
+  return null;
+}
+
+function isProductInPriceAlerts(productId) {
+  return Boolean(getPriceAlertForProduct(productId));
+}
+
+function updatePriceAlertCardButtons(productId) {
+  var id = Number(productId);
+  var alertSub = getPriceAlertForProduct(id);
+  var isActive = Boolean(alertSub);
+  var p = findProductById(id);
+  var pTitle = p ? p.title : ("Component #" + id);
+
+  var cardBellBtn = document.getElementById("notify-btn-" + id);
+  if (cardBellBtn) {
+    cardBellBtn.classList.toggle("active", isActive);
+    cardBellBtn.classList.toggle("triggered", Boolean(alertSub && alertSub.triggered));
+    var bellTitle = isActive
+      ? ("Price Alert active: Notify at $" + Number(alertSub.targetPrice).toFixed(2) + " (" + alertSub.email + ")")
+      : ("Notify Me when price drops for " + pTitle);
+    cardBellBtn.setAttribute("title", bellTitle);
+    cardBellBtn.setAttribute("aria-label", bellTitle);
+    cardBellBtn.setAttribute("aria-pressed", isActive ? "true" : "false");
+    cardBellBtn.innerHTML =
+      icon(isActive ? "bell-ring" : "bell", 14) +
+      '<span class="notify-btn-label">' +
+        (isActive ? ("Alert &lt; $" + Number(alertSub.targetPrice).toFixed(0)) : "Notify Me") +
+      '</span>';
+  }
+
+  var drawerNotifyBtn = document.getElementById("spec-notify-btn");
+  if (drawerNotifyBtn && activeSpecProductId === id) {
+    drawerNotifyBtn.classList.toggle("active", isActive);
+    drawerNotifyBtn.innerHTML =
+      icon(isActive ? "bell-ring" : "bell", 15) +
+      " <span>" +
+        (isActive ? ("Alert Set (&lt; $" + Number(alertSub.targetPrice).toFixed(2) + ")") : "Notify Me") +
+      "</span>";
+  }
+}
+
+function paintPriceAlerts() {
+  var countEl = document.getElementById("profile-price-alerts-count");
+  var listEl = document.getElementById("profile-price-alerts-list");
+  var count = Array.isArray(priceAlerts) ? priceAlerts.length : 0;
+
+  if (countEl) {
+    countEl.textContent = count + " active";
+  }
+  if (!listEl) return;
+
+  if (count === 0) {
+    listEl.innerHTML =
+      '<p class="sheet-empty">No price drop alerts set.<br/><small>Click the Notify Me bell icon on any component to get emailed when the price drops.</small></p>';
+    return;
+  }
+
+  var html = "";
+  for (var i = 0; i < priceAlerts.length; i++) {
+    var al = priceAlerts[i];
+    var p = findProductById(al.productId);
+    var title = p ? p.title : (al.productTitle || ("Component #" + al.productId));
+    var currentP = p ? p.price : (al.priceAtCreation || al.targetPrice);
+    var img = p ? getProductImageUrl(p) : tileFor("components");
+    var statusText = al.triggered
+      ? ('Triggered at $' + Number(al.triggeredPrice || currentP).toFixed(2))
+      : ('Target: &lt; $' + Number(al.targetPrice).toFixed(2));
+
+    html +=
+      '<div class="wishlist-item price-alert-sheet-item" data-product-id="' + al.productId + '">' +
+        '<img class="wishlist-thumb" src="' + esc(img) + '" alt="" onerror="this.onerror=null;this.src=NO_IMAGE" />' +
+        '<div class="wishlist-item-main" onclick="closeAllSheets(); openPriceAlertModal(null, ' + al.productId + ')">' +
+          '<strong class="wishlist-item-title">' + esc(title) + '</strong>' +
+          '<div class="wishlist-item-meta">' +
+            '<span class="wishlist-item-price">' + statusText + '</span>' +
+            '<span class="wishlist-item-stock">' + esc(al.email) + '</span>' +
+          '</div>' +
+        '</div>' +
+        '<div class="wishlist-item-actions">' +
+          '<button type="button" class="wishlist-remove-btn" onclick="removePriceAlert(' + al.productId + ')" title="Remove price alert" aria-label="Remove price alert for ' + esc(title) + '">&times;</button>' +
+        '</div>' +
+      '</div>';
+  }
+  listEl.innerHTML = html;
+}
+
+function togglePriceAlertsPanel() {
+  var panel = document.getElementById("profile-price-alerts-panel");
+  var toggle = document.getElementById("price-alerts-toggle");
+  var chev = document.getElementById("price-alerts-chevron");
+  if (!panel || !toggle) return;
+  var opening = panel.hidden;
+  panel.hidden = !opening;
+  toggle.setAttribute("aria-expanded", opening ? "true" : "false");
+  if (chev) chev.classList.toggle("up", opening);
+}
+
+function updatePriceAlertSavingsCallout(currentPrice, targetVal, emailVal) {
+  var calloutTextEl = document.getElementById("price-alert-savings-text");
+  if (!calloutTextEl) return;
+  var target = parseFloat(targetVal);
+  var recipient = (emailVal && emailVal.trim()) ? emailVal.trim() : ((me && (me.billEmail || me.email)) || "your email");
+  if (isNaN(target) || target <= 0) {
+    calloutTextEl.textContent = "Enter a valid target price threshold above $0.00.";
+    return;
+  }
+  if (target < currentPrice) {
+    var diff = round(currentPrice - target);
+    var pct = Math.max(1, Math.round((diff / currentPrice) * 100));
+    calloutTextEl.innerHTML =
+      "We'll email <b>" + esc(recipient) + "</b> as soon as this part drops to <b>$" +
+      target.toFixed(2) + "</b> — saving you <b>$" + diff.toFixed(2) + " (" + pct + "% off)</b>.";
+  } else {
+    calloutTextEl.innerHTML =
+      "Current price ($" + currentPrice.toFixed(2) + ") is already at or below <b>$" +
+      target.toFixed(2) + "</b> — setting this alert will dispatch an instant email to <b>" + esc(recipient) + "</b>!";
+  }
+}
+
+function renderPriceAlertEmailPreview(notification) {
+  var previewBox = document.getElementById("price-alert-email-preview");
+  if (!previewBox) return;
+  if (!notification) {
+    previewBox.hidden = true;
+    return;
+  }
+  var toEl = document.getElementById("price-alert-email-to");
+  var subjEl = document.getElementById("price-alert-email-subject");
+  var bodyEl = document.getElementById("price-alert-email-body");
+  if (toEl) toEl.textContent = "To: " + (notification.toEmail || "");
+  if (subjEl) subjEl.textContent = notification.subject || "Price Drop Alert";
+  if (bodyEl) bodyEl.textContent = notification.body || "";
+  previewBox.hidden = false;
+}
+
+function openPriceAlertModal(e, productId) {
+  if (e) {
+    if (e.stopPropagation) e.stopPropagation();
+    if (e.preventDefault) e.preventDefault();
+  }
+  var id = Number(productId);
+  var p = findProductById(id);
+  if (!p) return;
+
+  activePriceAlertProductId = id;
+  var overlay = document.getElementById("price-alert-overlay");
+  if (!overlay) return;
+
+  var existing = getPriceAlertForProduct(id);
+  var sku = getSkuFor(p);
+  var history = getPriceHistoryFor(p);
+  var prices = history.map(function (h) { return h.price; });
+  var min6m = Math.min.apply(null, prices);
+
+  var imgEl = document.getElementById("price-alert-prod-img");
+  var skuEl = document.getElementById("price-alert-prod-sku");
+  var titleEl = document.getElementById("price-alert-prod-title");
+  var curValEl = document.getElementById("price-alert-current-val");
+  var lowValEl = document.getElementById("price-alert-low-val");
+  var thresholdInput = document.getElementById("price-alert-threshold-input");
+  var emailInput = document.getElementById("price-alert-email-input");
+  var saveLabelEl = document.getElementById("price-alert-save-label");
+  var removeBtnEl = document.getElementById("price-alert-remove-btn");
+  var msgEl = document.getElementById("price-alert-msg");
+  var presetsGridEl = document.getElementById("price-alert-presets-grid");
+
+  if (imgEl) {
+    imgEl.src = getProductImageUrl(p);
+    imgEl.alt = p.title;
+  }
+  if (skuEl) skuEl.textContent = sku;
+  if (titleEl) titleEl.textContent = p.title;
+  if (curValEl) curValEl.textContent = "$" + p.price.toFixed(2);
+  if (lowValEl) lowValEl.textContent = "$" + min6m.toFixed(2);
+
+  var defaultThreshold = existing
+    ? Number(existing.targetPrice)
+    : Math.max(1, round(p.price * 0.95));
+  var defaultEmail = existing && existing.email
+    ? existing.email
+    : ((me && (me.billEmail || me.email)) || "harish@voltbox.test");
+
+  if (thresholdInput) thresholdInput.value = defaultThreshold.toFixed(2);
+  if (emailInput) emailInput.value = defaultEmail;
+  if (saveLabelEl) saveLabelEl.textContent = existing ? "Update Price Alert" : "Set Price Drop Alert";
+  if (removeBtnEl) removeBtnEl.hidden = !existing;
+  if (msgEl) msgEl.hidden = true;
+  renderPriceAlertEmailPreview(null);
+
+  // Build 4 quick-select preset buttons
+  if (presetsGridEl) {
+    var p5 = Math.max(1, round(p.price * 0.95));
+    var p10 = Math.max(1, round(p.price * 0.90));
+    var p15 = Math.max(1, round(p.price * 0.85));
+    var lowPreset = (min6m > 0 && min6m < p.price) ? round(min6m) : Math.max(1, round(p.price * 0.88));
+    var presets = [
+      { label: "5% Drop", val: p5 },
+      { label: "10% Drop", val: p10 },
+      { label: "15% Drop", val: p15 },
+      { label: "6M Low", val: lowPreset }
+    ];
+    var presetsHtml = "";
+    for (var i = 0; i < presets.length; i++) {
+      var pr = presets[i];
+      var isSel = Math.abs(pr.val - defaultThreshold) < 0.05;
+      presetsHtml +=
+        '<button type="button" class="price-preset-chip' + (isSel ? ' active' : '') + '" data-target-price="' + pr.val.toFixed(2) + '">' +
+          '<span class="preset-chip-label">' + esc(pr.label) + '</span>' +
+          '<strong class="preset-chip-val">$' + pr.val.toFixed(2) + '</strong>' +
+        '</button>';
+    }
+    presetsGridEl.innerHTML = presetsHtml;
+  }
+
+  updatePriceAlertSavingsCallout(p.price, defaultThreshold, defaultEmail);
+  openModal(overlay);
+}
+
+function closePriceAlertModal() {
+  var overlay = document.getElementById("price-alert-overlay");
+  if (!overlay) return;
+  closeModal(overlay);
+  activePriceAlertProductId = null;
+}
+
+function showPriceAlertMsg(text, isError) {
+  var msgEl = document.getElementById("price-alert-msg");
+  if (!msgEl) return;
+  msgEl.textContent = text;
+  msgEl.className = isError ? "modal-msg error" : "modal-msg";
+  msgEl.hidden = false;
+}
+
+function savePriceAlert(e) {
+  if (e && e.preventDefault) e.preventDefault();
+  if (!activePriceAlertProductId) return;
+
+  var thresholdInput = document.getElementById("price-alert-threshold-input");
+  var emailInput = document.getElementById("price-alert-email-input");
+  var saveBtn = document.getElementById("price-alert-save-btn");
+  var removeBtn = document.getElementById("price-alert-remove-btn");
+  var saveLabelEl = document.getElementById("price-alert-save-label");
+
+  var targetPrice = parseFloat(thresholdInput ? thresholdInput.value : "0");
+  var email = emailInput ? emailInput.value.trim() : "";
+
+  if (!targetPrice || targetPrice <= 0) {
+    showPriceAlertMsg("Please enter a target price threshold greater than $0.00.", true);
+    return;
+  }
+  if (!email || email.indexOf("@") === -1) {
+    showPriceAlertMsg("Please enter a valid email address for the alert.", true);
+    return;
+  }
+
+  if (saveBtn) saveBtn.disabled = true;
+
+  api("/api/price-alerts", {
+    method: "POST",
+    body: JSON.stringify({
+      productId: activePriceAlertProductId,
+      targetPrice: targetPrice,
+      email: email
+    })
+  })
+    .then(function (res) {
+      return res.json().then(function (data) { return { ok: res.ok, data: data }; });
+    })
+    .then(function (result) {
+      if (saveBtn) saveBtn.disabled = false;
+      if (!result.ok || !result.data) {
+        showPriceAlertMsg((result.data && result.data.message) || "Couldn't save price alert.", true);
+        return;
+      }
+      if (Array.isArray(result.data.alerts)) {
+        priceAlerts = result.data.alerts;
+      }
+      updatePriceAlertCardButtons(activePriceAlertProductId);
+      paintPriceAlerts();
+      if (saveLabelEl) saveLabelEl.textContent = "Update Price Alert";
+      if (removeBtn) removeBtn.hidden = false;
+
+      showPriceAlertMsg(result.data.message || "Price drop alert saved!", false);
+      if (result.data.emailNotification) {
+        renderPriceAlertEmailPreview(result.data.emailNotification);
+      }
+      showActivityToast(result.data.message || "Price drop alert activated!");
+    })
+    .catch(function () {
+      if (saveBtn) saveBtn.disabled = false;
+      showPriceAlertMsg("Can't reach the server right now.", true);
+    });
+}
+
+function removePriceAlert(productId) {
+  var id = Number(productId || activePriceAlertProductId);
+  if (!id) return;
+
+  api("/api/price-alerts/" + id, { method: "DELETE" })
+    .then(function (res) { return res.json(); })
+    .then(function (data) {
+      if (data && Array.isArray(data.alerts)) {
+        priceAlerts = data.alerts;
+      } else {
+        priceAlerts = priceAlerts.filter(function (a) { return Number(a.productId) !== id; });
+      }
+      updatePriceAlertCardButtons(id);
+      paintPriceAlerts();
+      if (activePriceAlertProductId === id) {
+        var removeBtn = document.getElementById("price-alert-remove-btn");
+        var saveLabelEl = document.getElementById("price-alert-save-label");
+        if (removeBtn) removeBtn.hidden = true;
+        if (saveLabelEl) saveLabelEl.textContent = "Set Price Drop Alert";
+        renderPriceAlertEmailPreview(null);
+        showPriceAlertMsg("Price drop alert removed.", false);
+      }
+      showActivityToast("Removed price drop alert.");
+    })
+    .catch(function () {});
+}
+
+function simulatePriceDropAlert() {
+  if (!activePriceAlertProductId) return;
+  var id = activePriceAlertProductId;
+  var testBtn = document.getElementById("price-alert-test-btn");
+  var thresholdInput = document.getElementById("price-alert-threshold-input");
+  var emailInput = document.getElementById("price-alert-email-input");
+  var targetVal = parseFloat(thresholdInput ? thresholdInput.value : "0");
+  var emailVal = emailInput ? emailInput.value.trim() : "";
+
+  if (testBtn) testBtn.disabled = true;
+
+  // Ensure the current form threshold & email are saved first, then trigger simulated price drop
+  api("/api/price-alerts", {
+    method: "POST",
+    body: JSON.stringify({
+      productId: id,
+      targetPrice: targetVal > 0 ? targetVal : undefined,
+      email: emailVal || undefined
+    })
+  })
+    .then(function () {
+      var simulatedPrice = targetVal > 1 ? Math.max(1, round(targetVal - Math.max(1, round(targetVal * 0.04)))) : undefined;
+      return api("/api/price-alerts/" + id + "/simulate-drop", {
+        method: "POST",
+        body: JSON.stringify({ newPrice: simulatedPrice })
+      });
+    })
+    .then(function (res) {
+      return res.json().then(function (data) { return { ok: res.ok, data: data }; });
+    })
+    .then(function (result) {
+      if (testBtn) testBtn.disabled = false;
+      if (!result.ok || !result.data) {
+        showPriceAlertMsg((result.data && result.data.message) || "Couldn't simulate price drop.", true);
+        return;
+      }
+      var d = result.data;
+      if (Array.isArray(d.alerts)) {
+        priceAlerts = d.alerts;
+      }
+      var p = findProductById(id);
+      if (p && typeof d.newPrice === "number") {
+        p.price = d.newPrice;
+        var cardPriceEl = document.querySelector("#card-" + id + " .card-price");
+        if (cardPriceEl) cardPriceEl.textContent = "$" + p.price.toFixed(2);
+        var curValEl = document.getElementById("price-alert-current-val");
+        if (curValEl) curValEl.textContent = "$" + p.price.toFixed(2);
+        recalc(false);
+      }
+      updatePriceAlertCardButtons(id);
+      paintPriceAlerts();
+      var removeBtn = document.getElementById("price-alert-remove-btn");
+      if (removeBtn) removeBtn.hidden = false;
+
+      showPriceAlertMsg(d.message || "Price drop triggered and email alert sent!", false);
+      if (d.emailNotification) {
+        renderPriceAlertEmailPreview(d.emailNotification);
+      }
+      showActivityToast(d.message || "Price drop email alert sent!");
+    })
+    .catch(function () {
+      if (testBtn) testBtn.disabled = false;
+      showPriceAlertMsg("Can't reach the server right now.", true);
+    });
+}
+
+window.onPriceDropAlertReceived = function (msg) {
+  if (!msg || !msg.notification) return;
+  var notif = msg.notification;
+  if (msg.product && msg.product.id) {
+    var p = findProductById(msg.product.id);
+    if (p) {
+      p.price = msg.product.price;
+      var cardPriceEl = document.querySelector("#card-" + p.id + " .card-price");
+      if (cardPriceEl) cardPriceEl.textContent = "$" + p.price.toFixed(2);
+    }
+    updatePriceAlertCardButtons(msg.product.id);
+  }
+  showActivityToast(
+    "Price Drop Alert Emailed to " + notif.toEmail + ": " + notif.productTitle + " is now $" + Number(notif.newPrice).toFixed(2) + "!"
+  );
+};
+
 function addAllWishlistToCart() {
   if (wishlist.length === 0) return;
   var addAllBtn = document.getElementById("wishlist-add-all-btn");
@@ -706,6 +1130,8 @@ function fetchProducts(filterParams) {
         var current = findProductById(activeSpecProductId);
         if (current) populateSpecDrawer(current);
       }
+      loadQrScanHistory();
+      renderQrScanHistory();
       checkDeepLinkProduct();
       return products;
     })
@@ -831,6 +1257,12 @@ function getSortedProductsList() {
     copy.sort(function (a, b) { return a.price - b.price; });
   } else if (activeSortMode === "price-desc") {
     copy.sort(function (a, b) { return b.price - a.price; });
+  } else if (activeSortMode === "rating-desc") {
+    copy.sort(function (a, b) {
+      var diff = (Number(b.ratingRate) || 0) - (Number(a.ratingRate) || 0);
+      if (Math.abs(diff) > 0.001) return diff;
+      return (Number(b.ratingCount) || 0) - (Number(a.ratingCount) || 0);
+    });
   } else if (activeSortMode === "stock-asc") {
     copy.sort(function (a, b) { return getEffectiveStock(a) - getEffectiveStock(b); });
   }
@@ -933,6 +1365,24 @@ function renderAllCards() {
         icon("heart", 15) +
       '</button>';
 
+    var alertSub = getPriceAlertForProduct(p.id);
+    var hasAlert = Boolean(alertSub);
+    var notifyBtnTitle = hasAlert
+      ? ("Price Alert active: Notify at $" + Number(alertSub.targetPrice).toFixed(2) + " (" + alertSub.email + ")")
+      : ("Notify Me when price drops for " + p.title);
+    var notifyBtn =
+      '<button class="card-notify-btn' + (hasAlert ? ' active' : '') + (alertSub && alertSub.triggered ? ' triggered' : '') + '" ' +
+      '        id="notify-btn-' + p.id + '" ' +
+      '        data-testid="notify-bell-btn-' + p.id + '" ' +
+      '        type="button" ' +
+      '        onclick="event.stopPropagation(); openPriceAlertModal(event, ' + p.id + ')" ' +
+      '        title="' + esc(notifyBtnTitle) + '" ' +
+      '        aria-label="' + esc(notifyBtnTitle) + '" ' +
+      '        aria-pressed="' + (hasAlert ? 'true' : 'false') + '">' +
+        icon(hasAlert ? "bell-ring" : "bell", 14) +
+        '<span class="notify-btn-label">' + (hasAlert ? ('Alert &lt; $' + Number(alertSub.targetPrice).toFixed(0)) : 'Notify Me') + '</span>' +
+      '</button>';
+
     var flag =
       '<button class="card-flag" onclick="reportProduct(' + p.id + ')" ' +
       '        title="Report this listing" aria-label="Report ' + esc(p.title) + '">' +
@@ -949,6 +1399,7 @@ function renderAllCards() {
         '     loading="lazy"' +
         '     onerror="this.onerror=null;this.src=\'' + tileFor(p.category) + '\'" />' +
         lowStockBadge +
+        notifyBtn +
         wishBtn +
         flag +
       '</div>' +
@@ -1009,12 +1460,20 @@ function renderAllCards() {
       }
     });
 
-    // Cursor radial spotlight + 3D parallax tilt tracking on tactile card surface
+    // Cursor radial spotlight + 3D parallax tilt tracking (strictly desktop > 1024px only; locked on mobile & iPad)
     card.addEventListener("mousemove", function (ev) {
+      if (window.innerWidth <= 1024 || (window.matchMedia && window.matchMedia("(pointer: coarse)").matches)) {
+        this.classList.remove("is-tilting");
+        this.style.setProperty("--card-rx", "0deg");
+        this.style.setProperty("--card-ry", "0deg");
+        this.style.setProperty("--parallax-x", "0px");
+        this.style.setProperty("--parallax-y", "0px");
+        return;
+      }
       var rect = this.getBoundingClientRect();
       var ox = ev.clientX - rect.left;
       var oy = ev.clientY - rect.top;
-      var tilt = computeCardParallaxTilt(ox, oy, rect.width, rect.height, 6, 4.5);
+      var tilt = computeCardParallaxTilt(ox, oy, rect.width, rect.height, 4, 3);
 
       this.classList.remove("stagger-in");
       this.classList.add("is-tilting");
@@ -1217,8 +1676,8 @@ function populateSpecDrawer(p) {
     '</button>';
 
   var shareBtnHtml =
-    '<button class="spec-share-btn" id="spec-share-btn" type="button" onclick="toggleProductShareCard()" title="Share Product QR Code" aria-label="Share product with QR code">' +
-      icon("share", 15) + ' <span>Share &amp; QR</span>' +
+    '<button class="spec-share-btn" id="spec-share-btn" type="button" onclick="toggleProductShareCard()" title="Share product to Twitter, WhatsApp, or Facebook" aria-label="Share product link and generated description">' +
+      icon("share", 15) + ' <span>Share</span>' +
     '</button>';
 
   var restockBtnHtml = canCurrentUserRestock()
@@ -1233,21 +1692,26 @@ function populateSpecDrawer(p) {
       icon(isSpecInComp ? "check" : "sliders", 15) + ' <span>' + (isSpecInComp ? 'Comparing' : 'Compare') + '</span>' +
     '</button>';
 
+  var specAlertSub = getPriceAlertForProduct(p.id);
+  var notifySpecBtnHtml =
+    '<button class="spec-notify-btn' + (specAlertSub ? ' active' : '') + '" id="spec-notify-btn" type="button" onclick="openPriceAlertModal(event, ' + p.id + ')" title="Receive an email alert when price drops below your threshold" aria-label="Notify Me when price drops for ' + esc(p.title) + '">' +
+      icon(specAlertSub ? "bell-ring" : "bell", 15) +
+      ' <span>' + (specAlertSub ? ('Alert Set (&lt; $' + Number(specAlertSub.targetPrice).toFixed(2) + ')') : 'Notify Me') + '</span>' +
+    '</button>';
+
   document.getElementById("spec-actions-bar").innerHTML =
     '<div class="spec-qty-control">' +
       '<button class="qty-btn" onclick="dec(' + p.id + ')" ' + (q <= 0 ? 'disabled' : '') + ' aria-label="Decrease quantity in drawer">−</button>' +
       '<span class="qty-value' + (q > 0 ? ' active' : '') + '">' + q + ' in cart</span>' +
       '<button class="qty-btn" onclick="inc(' + p.id + ')" aria-label="Increase quantity in drawer">+</button>' +
     '</div>' +
+    notifySpecBtnHtml +
     compareBtnHtml +
     wishBtnHtml +
     shareBtnHtml +
     restockBtnHtml;
 
-  var shareCard = document.getElementById("spec-share-card");
-  if (shareCard && !shareCard.hidden) {
-    prepareProductShare(p);
-  }
+  prepareProductShare(p);
 
   var chartContainer = document.getElementById("drawer-chart-container");
   if (chartContainer && typeof window.renderVoltboxPriceChart === "function") {
@@ -1263,8 +1727,9 @@ function populateSpecDrawer(p) {
   }
 }
 
-// ── Product URL & QR Code Sharing Generator ──
+// ── Product URL, Social Share & QR Code Generator ──
 var activeQrTheme = "gold"; // Voltbox Signature Electric Gold
+var activeShareTone = "spec"; // 'spec' | 'deal' | 'concise'
 var qrScanStream = null;
 var qrScanAnimFrame = null;
 var qrFacingMode = "environment";
@@ -1280,11 +1745,144 @@ function getProductShareUrl(productId) {
   return window.location.origin + "/?product=" + encodeURIComponent(String(id));
 }
 
+function buildClientProductShareDescription(p, tone) {
+  if (!p) return "Check out this PC hardware component on Voltbox Electronics!";
+  var selectedTone = tone || activeShareTone || "spec";
+  var rawSpecs = (p.specs && typeof p.specs === "object") ? p.specs : {};
+  var skuStr = (typeof getSkuFor === "function") ? getSkuFor(p) : (p.sku || ("VBX-" + p.id));
+
+  if (window.VoltboxQR && typeof window.VoltboxQR.generateProductShareDescription === "function") {
+    return window.VoltboxQR.generateProductShareDescription({
+      id: p.id,
+      title: p.title,
+      price: Number(p.price || 0),
+      category: p.category || "Hardware",
+      sku: skuStr,
+      specs: {
+        architecture: rawSpecs.architecture,
+        interfaceSpec: rawSpecs.interfaceSpec,
+        powerDraw: rawSpecs.powerDraw
+      }
+    }, "", selectedTone);
+  }
+  var priceStr = "$" + Number(p.price || 0).toFixed(2);
+  var arch = rawSpecs.architecture || "Precision Solid-State";
+  var iface = rawSpecs.interfaceSpec || "PCIe 4.0 / USB-C";
+  var pwr = rawSpecs.powerDraw || "65W Nominal";
+  if (selectedTone === "deal") {
+    return "⚡ Hardware Drop on Voltbox: " + p.title + " (" + skuStr + ") is live at " + priceStr + "! Features " + arch + " & " + iface + " — qualifies for the 5% Rig Builder Bundle.";
+  }
+  if (selectedTone === "concise") {
+    return "Check out " + p.title + " (" + priceStr + " · SKU " + skuStr + ") on Voltbox Electronics!";
+  }
+  return "🔧 " + p.title + " [" + priceStr + " · " + skuStr + "] on Voltbox Electronics — " + arch + ", " + iface + ", " + pwr + ". Bench-verified & ready to ship!";
+}
+
+function computeSocialShareLinks(shareUrl, description) {
+  var cleanUrl = String(shareUrl || window.location.origin).trim();
+  var cleanDesc = String(description || "").trim();
+  if (window.VoltboxQR && typeof window.VoltboxQR.buildSocialShareUrls === "function") {
+    return window.VoltboxQR.buildSocialShareUrls(cleanUrl, cleanDesc);
+  }
+  var combined = cleanDesc ? (cleanDesc + " " + cleanUrl) : cleanUrl;
+  return {
+    twitter: "https://twitter.com/intent/tweet?text=" + encodeURIComponent(cleanDesc) + "&url=" + encodeURIComponent(cleanUrl) + "&hashtags=" + encodeURIComponent("Voltbox,PCHardware"),
+    whatsapp: "https://wa.me/?text=" + encodeURIComponent(combined),
+    facebook: "https://www.facebook.com/sharer/sharer.php?u=" + encodeURIComponent(cleanUrl) + "&quote=" + encodeURIComponent(cleanDesc)
+  };
+}
+
+function syncSpecSocialShareLinks() {
+  var url = getProductShareUrl(activeSpecProductId);
+  var descEl = document.getElementById("spec-share-generated-desc");
+  var charCountEl = document.getElementById("spec-social-char-count");
+  var desc = descEl ? descEl.value : "";
+  if (charCountEl) {
+    charCountEl.textContent = String(desc.length) + " chars";
+  }
+  var links = computeSocialShareLinks(url, desc);
+  var twBtn = document.getElementById("spec-share-twitter-btn");
+  var waBtn = document.getElementById("spec-share-whatsapp-btn");
+  var fbBtn = document.getElementById("spec-share-facebook-btn");
+  if (twBtn) twBtn.setAttribute("href", links.twitter);
+  if (waBtn) waBtn.setAttribute("href", links.whatsapp);
+  if (fbBtn) fbBtn.setAttribute("href", links.facebook);
+  return links;
+}
+
+function setShareDescriptionTone(tone) {
+  activeShareTone = tone || "spec";
+  var toneGroup = document.getElementById("spec-share-tone-group");
+  if (toneGroup) {
+    var buttons = toneGroup.querySelectorAll(".spec-tone-chip");
+    for (var i = 0; i < buttons.length; i++) {
+      var isMatch = buttons[i].getAttribute("data-share-tone") === activeShareTone;
+      buttons[i].classList.toggle("active", isMatch);
+      buttons[i].setAttribute("aria-pressed", isMatch ? "true" : "false");
+    }
+  }
+  var p = findProductById(activeSpecProductId);
+  var descEl = document.getElementById("spec-share-generated-desc");
+  if (p && descEl) {
+    descEl.value = buildClientProductShareDescription(p, activeShareTone);
+  }
+  syncSpecSocialShareLinks();
+}
+
+function copyGeneratedSharePost() {
+  var url = getProductShareUrl(activeSpecProductId);
+  var descEl = document.getElementById("spec-share-generated-desc");
+  var desc = descEl ? descEl.value.trim() : "";
+  var fullPost = desc ? (desc + "\n" + url) : url;
+  showSocialShareStatus("Generated description + product link copied to clipboard!");
+  showActivityToast("Share post & link copied to clipboard!");
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    navigator.clipboard.writeText(fullPost).catch(function () {
+      fallbackCopy(fullPost);
+    });
+  } else {
+    fallbackCopy(fullPost);
+  }
+}
+
+function showSocialShareStatus(msg) {
+  var statusEl = document.getElementById("spec-social-share-status");
+  if (!statusEl) return;
+  statusEl.textContent = msg;
+  statusEl.hidden = false;
+}
+
+function handleSocialPlatformShareClick(e, platformName) {
+  var links = syncSpecSocialShareLinks();
+  var key = String(platformName || "").toLowerCase();
+  var targetHref = links[key] || links.twitter;
+  var url = getProductShareUrl(activeSpecProductId);
+  var descEl = document.getElementById("spec-share-generated-desc");
+  var desc = descEl ? descEl.value.trim() : "";
+  var fullPost = desc ? (desc + " " + url) : url;
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    navigator.clipboard.writeText(fullPost).catch(function () {});
+  }
+  showSocialShareStatus(platformName + " share link ready & post copied! Opening " + platformName + " composer (" + targetHref.slice(0, 48) + "...)");
+  showActivityToast("Sharing to " + platformName + " — post & link ready!");
+}
+
 function prepareProductShare(p) {
   if (!p) return;
   var url = getProductShareUrl(p.id);
   var inputEl = document.getElementById("spec-share-url-input");
   if (inputEl) inputEl.value = url;
+
+  var descEl = document.getElementById("spec-share-generated-desc");
+  if (descEl) {
+    descEl.value = buildClientProductShareDescription(p, activeShareTone);
+  }
+  var statusEl = document.getElementById("spec-social-share-status");
+  if (statusEl) {
+    statusEl.hidden = true;
+    statusEl.textContent = "";
+  }
+  syncSpecSocialShareLinks();
 
   var mountEl = document.getElementById("spec-qr-mount");
   if (!mountEl) return;
@@ -1354,7 +1952,8 @@ function shareProductNative() {
   var p = findProductById(activeSpecProductId);
   var url = getProductShareUrl(activeSpecProductId);
   var title = p ? p.title : "Voltbox Component";
-  var text = "Check out " + title + " on Voltbox Electronics!";
+  var descEl = document.getElementById("spec-share-generated-desc");
+  var text = (descEl && descEl.value.trim()) ? descEl.value.trim() : ("Check out " + title + " on Voltbox Electronics!");
 
   if (navigator.share) {
     navigator.share({
@@ -1363,11 +1962,11 @@ function shareProductNative() {
       url: url
     }).catch(function (err) {
       if (err.name !== "AbortError") {
-        copyProductShareUrl();
+        copyGeneratedSharePost();
       }
     });
   } else {
-    copyProductShareUrl();
+    copyGeneratedSharePost();
   }
 }
 
@@ -1431,6 +2030,8 @@ function playScanSuccessChime() {
 function openQrScannerModal() {
   var overlay = document.getElementById("qr-scanner-overlay");
   if (!overlay) return;
+  loadQrScanHistory();
+  renderQrScanHistory();
   openModal(overlay);
   startQrCamera();
 }
@@ -1489,7 +2090,7 @@ function startQrCamera() {
     })
     .catch(function (err) {
       console.warn("Camera sensor unavailable:", err);
-      updateScannerStatus("Camera permission needed or sensor busy. Upload image or simulate below.", true);
+      updateScannerStatus("Camera unavailable — upload QR image or simulate below", true);
     });
 }
 
@@ -1586,10 +2187,23 @@ function handleSuccessfulQrScan(rawPayload) {
   var targetId = parseRes ? parseRes.productId : null;
 
   if (targetId) {
+    var targetProduct = findProductById(targetId);
+    if (targetProduct) {
+      recordProductInQrScanHistory(targetProduct);
+    } else {
+      recordProductInQrScanHistory({
+        id: Number(targetId),
+        title: "Hardware Component #" + targetId,
+        sku: "VB-PRT-" + String(targetId).padStart(3, "0"),
+        category: "components",
+        price: 0,
+        image: tileFor("components")
+      });
+    }
+
     playScanSuccessChime();
     closeQrScannerModal();
 
-    var targetProduct = findProductById(targetId);
     var card = document.getElementById("card-" + targetId);
     if (card) {
       card.scrollIntoView({ behavior: "smooth", block: "center" });
@@ -1608,6 +2222,232 @@ function handleSuccessfulQrScan(rawPayload) {
     }, 1800);
   }
 }
+
+// ── QR Scanner 'Scan History' (Last 10 Scanned Products) ──
+
+function loadQrScanHistory() {
+  try {
+    var raw = localStorage.getItem(QR_SCAN_HISTORY_STORAGE_KEY);
+    if (!raw) {
+      qrScanHistory = [];
+      return qrScanHistory;
+    }
+    var parsed = JSON.parse(raw);
+    if (!Array.isArray(parsed)) {
+      qrScanHistory = [];
+      return qrScanHistory;
+    }
+    qrScanHistory = parsed
+      .filter(function (item) {
+        return item && typeof item.productId === "number" && item.productId > 0;
+      })
+      .map(function (item) {
+        var liveProduct = findProductById(item.productId);
+        if (liveProduct) {
+          return {
+            productId: Number(liveProduct.id),
+            title: liveProduct.title || item.title || ("Part #" + liveProduct.id),
+            sku: getSkuFor(liveProduct),
+            category: liveProduct.category || item.category || "components",
+            price: typeof liveProduct.price === "number" ? liveProduct.price : Number(item.price || 0),
+            image: getProductImageUrl(liveProduct),
+            scannedAt: Number(item.scannedAt) || Date.now(),
+            scanCount: Math.max(1, Number(item.scanCount || 1))
+          };
+        }
+        return {
+          productId: Number(item.productId),
+          title: String(item.title || ("Part #" + item.productId)),
+          sku: String(item.sku || ("VB-PRT-" + String(item.productId).padStart(3, "0"))),
+          category: String(item.category || "components"),
+          price: Number(item.price || 0),
+          image: item.image || tileFor(item.category || "components"),
+          scannedAt: Number(item.scannedAt) || Date.now(),
+          scanCount: Math.max(1, Number(item.scanCount || 1))
+        };
+      })
+      .slice(0, MAX_QR_SCAN_HISTORY);
+  } catch (e) {
+    qrScanHistory = [];
+  }
+  return qrScanHistory;
+}
+
+function saveQrScanHistory() {
+  try {
+    localStorage.setItem(
+      QR_SCAN_HISTORY_STORAGE_KEY,
+      JSON.stringify((qrScanHistory || []).slice(0, MAX_QR_SCAN_HISTORY))
+    );
+  } catch (e) {}
+}
+
+function recordProductInQrScanHistory(product) {
+  if (!product || !product.id) return;
+  loadQrScanHistory();
+  var pid = Number(product.id);
+  var sku = getSkuFor(product);
+  var imgUrl = getProductImageUrl(product);
+  var normalizedProduct = {
+    id: pid,
+    title: product.title || product.name || ("Part #" + pid),
+    sku: sku,
+    category: product.category || "components",
+    price: typeof product.price === "number" ? product.price : Number(product.price || 0),
+    image: imgUrl
+  };
+
+  if (window.VoltboxQR && typeof window.VoltboxQR.recordScannedProduct === "function") {
+    qrScanHistory = window.VoltboxQR.recordScannedProduct(qrScanHistory, normalizedProduct, Date.now());
+  } else {
+    var existingIdx = -1;
+    for (var i = 0; i < qrScanHistory.length; i++) {
+      if (Number(qrScanHistory[i].productId) === pid) {
+        existingIdx = i;
+        break;
+      }
+    }
+    var prevCount = existingIdx !== -1 ? Math.max(1, Number(qrScanHistory[existingIdx].scanCount || 1)) : 0;
+    if (existingIdx !== -1) {
+      qrScanHistory.splice(existingIdx, 1);
+    }
+    qrScanHistory.unshift({
+      productId: pid,
+      title: normalizedProduct.title,
+      sku: normalizedProduct.sku,
+      category: normalizedProduct.category,
+      price: normalizedProduct.price,
+      image: normalizedProduct.image,
+      scannedAt: Date.now(),
+      scanCount: prevCount + 1
+    });
+    qrScanHistory = qrScanHistory.slice(0, MAX_QR_SCAN_HISTORY);
+  }
+
+  saveQrScanHistory();
+  renderQrScanHistory();
+}
+
+function formatScanTimeAgo(scannedAt) {
+  if (window.VoltboxQR && typeof window.VoltboxQR.formatScanHistoryRelativeTime === "function") {
+    return window.VoltboxQR.formatScanHistoryRelativeTime(scannedAt, Date.now());
+  }
+  var ts = Number(scannedAt);
+  if (!isFinite(ts) || ts <= 0) return "Recently";
+  var diffSec = Math.max(0, Math.floor((Date.now() - ts) / 1000));
+  if (diffSec < 45) return "Just now";
+  var diffMin = Math.floor(diffSec / 60);
+  if (diffMin < 60) return diffMin + "m ago";
+  var diffHr = Math.floor(diffMin / 60);
+  if (diffHr < 24) return diffHr + "h ago";
+  return Math.floor(diffHr / 24) + "d ago";
+}
+
+function renderQrScanHistory() {
+  var listEl = document.getElementById("qr-scan-history-list");
+  var countEl = document.getElementById("qr-scan-history-count");
+  var clearBtnEl = document.getElementById("qr-scan-history-clear-btn");
+  if (!listEl) return;
+
+  var items = Array.isArray(qrScanHistory) ? qrScanHistory.slice(0, MAX_QR_SCAN_HISTORY) : [];
+
+  if (countEl) {
+    countEl.textContent = items.length + " / " + MAX_QR_SCAN_HISTORY;
+  }
+  if (clearBtnEl) {
+    clearBtnEl.hidden = items.length === 0;
+  }
+
+  if (items.length === 0) {
+    listEl.innerHTML =
+      '<div class="qr-scan-history-empty" data-testid="qr-scan-history-empty">' +
+        '<span class="qr-scan-history-empty-icon">' + icon("qr", 18) + '</span>' +
+        '<div class="qr-scan-history-empty-copy">' +
+          '<strong>No products scanned yet</strong>' +
+          '<span>Your last 10 scanned components will appear here for one-click revisit.</span>' +
+        '</div>' +
+      '</div>';
+    return;
+  }
+
+  var html = "";
+  for (var i = 0; i < items.length; i++) {
+    var entry = items[i];
+    var liveProduct = findProductById(entry.productId);
+    var title = (liveProduct && liveProduct.title) ? liveProduct.title : entry.title;
+    var sku = (liveProduct ? getSkuFor(liveProduct) : entry.sku) || ("VB-PRT-" + entry.productId);
+    var price = (liveProduct && typeof liveProduct.price === "number") ? liveProduct.price : Number(entry.price || 0);
+    var imgSrc = liveProduct ? getProductImageUrl(liveProduct) : (entry.image || tileFor(entry.category || "components"));
+    var fallbackTile = tileFor((liveProduct && liveProduct.category) || entry.category || "components");
+    var timeLabel = formatScanTimeAgo(entry.scannedAt);
+    var countBadge = entry.scanCount > 1
+      ? '<span class="qr-history-scan-count" title="Scanned ' + entry.scanCount + ' times">' + entry.scanCount + 'x</span>'
+      : '';
+
+    html +=
+      '<div class="qr-scan-history-item" role="listitem" data-testid="qr-scan-history-item" data-product-id="' + entry.productId + '">' +
+        '<button type="button" class="qr-history-revisit-btn" data-testid="qr-history-revisit-' + entry.productId + '" onclick="revisitScannedProduct(' + entry.productId + ')" title="Revisit ' + esc(title) + '">' +
+          '<span class="qr-history-rank">#' + (i + 1) + '</span>' +
+          '<img class="qr-history-thumb" src="' + esc(imgSrc) + '" alt="' + esc(title) + '" onerror="this.onerror=null;this.src=\'' + esc(fallbackTile) + '\';" />' +
+          '<span class="qr-history-info">' +
+            '<span class="qr-history-item-title">' + esc(title) + '</span>' +
+            '<span class="qr-history-item-meta">' +
+              '<span class="qr-history-sku">' + esc(sku) + '</span>' +
+              '<span class="qr-history-dot">&bull;</span>' +
+              '<span class="qr-history-price">$' + price.toFixed(2) + '</span>' +
+              '<span class="qr-history-dot">&bull;</span>' +
+              '<span class="qr-history-time">' + esc(timeLabel) + '</span>' +
+              countBadge +
+            '</span>' +
+          '</span>' +
+          '<span class="qr-history-open-pill">Revisit &rarr;</span>' +
+        '</button>' +
+        '<button type="button" class="qr-history-remove-btn" data-testid="qr-history-remove-' + entry.productId + '" onclick="removeQrScanHistoryItem(event, ' + entry.productId + ')" aria-label="Remove ' + esc(title) + ' from scan history" title="Remove from history">' +
+          icon("x", 14) +
+        '</button>' +
+      '</div>';
+  }
+
+  listEl.innerHTML = html;
+}
+
+window.revisitScannedProduct = function (productId) {
+  var pid = Number(productId);
+  if (!pid) return;
+  closeQrScannerModal();
+
+  var targetProduct = findProductById(pid);
+  var card = document.getElementById("card-" + pid);
+  if (card) {
+    card.scrollIntoView({ behavior: "smooth", block: "center" });
+    card.classList.add("restock-flash");
+    setTimeout(function () { card.classList.remove("restock-flash"); }, 2000);
+  }
+
+  openSpecDrawer(pid);
+  showActivityToast("Revisited scanned item: " + (targetProduct ? targetProduct.title : ("Part #" + pid)));
+};
+
+window.removeQrScanHistoryItem = function (event, productId) {
+  if (event && event.stopPropagation) event.stopPropagation();
+  var pid = Number(productId);
+  if (window.VoltboxQR && typeof window.VoltboxQR.removeScannedProduct === "function") {
+    qrScanHistory = window.VoltboxQR.removeScannedProduct(qrScanHistory, pid);
+  } else {
+    qrScanHistory = (qrScanHistory || []).filter(function (item) {
+      return item && Number(item.productId) !== pid;
+    });
+  }
+  saveQrScanHistory();
+  renderQrScanHistory();
+};
+
+window.clearQrScanHistory = function () {
+  qrScanHistory = [];
+  saveQrScanHistory();
+  renderQrScanHistory();
+  showActivityToast("QR Scan History cleared.");
+};
 
 function parseFallbackScannedProduct(rawText) {
   var clean = String(rawText || "").trim();
@@ -1778,7 +2618,12 @@ function applyFiltersAndSearch(explicitQuery) {
       catMatch = (group === activeCategoryFilter);
     }
 
-    var visible = textMatch && catMatch;
+    var budgetMatch = true;
+    if (typeof activeBudgetMax === "number" && isFinite(activeBudgetMax) && activeBudgetMax > 0) {
+      budgetMatch = Number(p.price) <= activeBudgetMax;
+    }
+
+    var visible = textMatch && catMatch && budgetMatch;
     card.style.display = visible ? "" : "none";
     if (visible) {
       card.style.setProperty("--stagger-idx", String(shown));
@@ -1789,6 +2634,16 @@ function applyFiltersAndSearch(explicitQuery) {
     }
   }
 
+  var visibleCountEl = document.getElementById("catalog-visible-count");
+  var totalCountEl = document.getElementById("catalog-total-count");
+  var resetBtnEl = document.getElementById("catalog-reset-filters-btn");
+  if (visibleCountEl) visibleCountEl.textContent = String(shown);
+  if (totalCountEl) totalCountEl.textContent = String(products.length);
+  if (resetBtnEl) {
+    var hasActive = activeCategoryFilter !== "all" || query !== "" || activeBudgetMax !== null || activeSortMode !== "featured";
+    resetBtnEl.hidden = !hasActive;
+  }
+
   if (!noResultsEl) {
     noResultsEl = document.createElement("p");
     noResultsEl.className = "no-results";
@@ -1797,6 +2652,8 @@ function applyFiltersAndSearch(explicitQuery) {
   if (shown === 0) {
     if (activeCategoryFilter === "wishlist") {
       noResultsEl.textContent = "Your wishlist is empty. Click the heart icon on any hardware part to save items here.";
+    } else if (activeBudgetMax !== null) {
+      noResultsEl.textContent = 'No components found under $' + activeBudgetMax + (query ? (' matching "' + query + '"') : '') + ' in this category.';
     } else {
       noResultsEl.textContent = query
         ? ('No parts match "' + query + '" in this view.')
@@ -1805,6 +2662,297 @@ function applyFiltersAndSearch(explicitQuery) {
     noResultsEl.style.display = "";
   } else {
     noResultsEl.style.display = "none";
+  }
+}
+
+function resetAllCatalogFilters() {
+  activeCategoryFilter = "all";
+  activeBudgetMax = null;
+  var prevSort = activeSortMode;
+  activeSortMode = "featured";
+
+  if (searchEl) searchEl.value = "";
+  if (sortSelectEl) sortSelectEl.value = "featured";
+
+  if (filterBarEl) {
+    var tabs = filterBarEl.querySelectorAll(".filter-tab");
+    for (var i = 0; i < tabs.length; i++) {
+      var isAll = (tabs[i].getAttribute("data-filter") || "all") === "all";
+      tabs[i].classList.toggle("active", isAll);
+      tabs[i].setAttribute("aria-selected", isAll ? "true" : "false");
+    }
+  }
+
+  var budgetStripEl = document.getElementById("budget-filter-strip");
+  if (budgetStripEl) {
+    var chips = budgetStripEl.querySelectorAll(".budget-chip");
+    for (var j = 0; j < chips.length; j++) {
+      var isAllBudget = (chips[j].getAttribute("data-budget") || "all") === "all";
+      chips[j].classList.toggle("active", isAllBudget);
+      chips[j].setAttribute("aria-pressed", isAllBudget ? "true" : "false");
+    }
+  }
+
+  if (prevSort !== "featured") {
+    renderAllCards();
+  } else {
+    applyFiltersAndSearch("");
+  }
+}
+
+function setCatalogViewMode(mode) {
+  activeCatalogView = (mode === "list") ? "list" : "grid";
+  if (gridEl) {
+    gridEl.classList.toggle("list-view", activeCatalogView === "list");
+  }
+  var gridBtn = document.getElementById("view-grid-btn");
+  var listBtn = document.getElementById("view-list-btn");
+  if (gridBtn) {
+    var isGrid = activeCatalogView === "grid";
+    gridBtn.classList.toggle("active", isGrid);
+    gridBtn.setAttribute("aria-pressed", isGrid ? "true" : "false");
+  }
+  if (listBtn) {
+    var isList = activeCatalogView === "list";
+    listBtn.classList.toggle("active", isList);
+    listBtn.setAttribute("aria-pressed", isList ? "true" : "false");
+  }
+}
+
+// ── Hands-Free Web Speech API Voice Search ──
+var voiceRecognitionInstance = null;
+var isVoiceSearchListening = false;
+var voiceAutoHideTimer = null;
+
+function parseClientVoiceTranscript(rawTranscript) {
+  if (window.VoltboxQR && typeof window.VoltboxQR.normalizeVoiceSearchTranscript === "function") {
+    return window.VoltboxQR.normalizeVoiceSearchTranscript(rawTranscript);
+  }
+  var raw = String(rawTranscript || "").trim();
+  var cleaned = raw.replace(/[.?!,;]+$/g, "").trim();
+  var lower = cleaned.toLowerCase();
+  if (lower === "clear" || lower === "clear search" || lower === "reset" || lower === "show all") {
+    return { rawTranscript: raw, query: "", isClearCommand: true, budgetMaxHint: null, categoryHint: null };
+  }
+  cleaned = cleaned
+    .replace(/^(?:please\s+)?(?:search\s+for|search|find\s+me|find|show\s+me|show|look\s+for|looking\s+for)\s+/i, "")
+    .trim();
+  var budgetMaxHint = null;
+  var budgetMatch = cleaned.match(/\b(?:under|below|less\s+than)\s*\$?\s*(\d{2,4})(?:\s*(?:dollars|bucks|usd))?\b/i);
+  if (budgetMatch) {
+    budgetMaxHint = Number(budgetMatch[1]);
+    cleaned = cleaned.replace(budgetMatch[0], "").trim();
+  }
+  cleaned = cleaned
+    .replace(/\br\s+t\s+x\b/gi, "RTX")
+    .replace(/\bs\s+s\s+d\b/gi, "SSD")
+    .replace(/\bn\s+v\s+m\s+e\b/gi, "NVMe")
+    .replace(/\bc\s+p\s+u\s*s?\b/gi, "CPU")
+    .replace(/\bg\s+p\s+u\s*s?\b/gi, "GPU")
+    .replace(/\bp\s+s\s*5\b/gi, "PS5")
+    .replace(/\s+/g, " ")
+    .replace(/[.?!,;]+$/g, "")
+    .trim();
+  return {
+    rawTranscript: raw,
+    query: cleaned,
+    isClearCommand: false,
+    budgetMaxHint: budgetMaxHint,
+    categoryHint: null
+  };
+}
+
+function updateVoiceSearchUiState(listening, stateLabel, transcriptText, isError) {
+  isVoiceSearchListening = Boolean(listening);
+  var btn = document.getElementById("search-voice-btn");
+  var wrap = document.getElementById("topbar-search-wrap");
+  var popover = document.getElementById("voice-search-popover");
+  var stateEl = document.getElementById("voice-popover-state");
+  var transcriptEl = document.getElementById("voice-popover-transcript");
+  var dotEl = document.getElementById("voice-live-dot");
+
+  if (btn) {
+    btn.classList.toggle("listening", isVoiceSearchListening);
+    btn.setAttribute("aria-pressed", isVoiceSearchListening ? "true" : "false");
+  }
+  if (wrap) {
+    wrap.classList.toggle("voice-listening", isVoiceSearchListening);
+  }
+  if (searchEl) {
+    searchEl.placeholder = isVoiceSearchListening
+      ? "Listening… Speak a component, SKU, or budget…"
+      : "Search parts, GPUs, CPUs…";
+  }
+  if (stateEl && stateLabel) {
+    stateEl.textContent = stateLabel;
+  }
+  if (transcriptEl && transcriptText) {
+    transcriptEl.textContent = transcriptText;
+  }
+  if (dotEl) {
+    dotEl.classList.toggle("listening", isVoiceSearchListening);
+    dotEl.classList.toggle("error", Boolean(isError));
+  }
+  if (popover && (isVoiceSearchListening || stateLabel)) {
+    popover.hidden = false;
+  }
+}
+
+function closeVoiceSearchPopover() {
+  if (isVoiceSearchListening && voiceRecognitionInstance) {
+    try { voiceRecognitionInstance.stop(); } catch (e) {}
+  }
+  updateVoiceSearchUiState(false, "", "", false);
+  var popover = document.getElementById("voice-search-popover");
+  if (popover) popover.hidden = true;
+}
+
+function applyVoiceSearchTranscript(rawText, isFinal) {
+  var parsed = parseClientVoiceTranscript(rawText);
+  if (parsed.isClearCommand) {
+    resetAllCatalogFilters();
+    updateVoiceSearchUiState(
+      false,
+      "Voice Command Applied",
+      'Cleared search & filters ("' + parsed.rawTranscript + '")',
+      false
+    );
+    showActivityToast("Voice search: Cleared all catalog filters.");
+    return parsed;
+  }
+
+  // Apply optional spoken budget ceiling hint if it matches a budget chip or arbitrary threshold
+  if (parsed.budgetMaxHint !== null && isFinal !== false) {
+    activeBudgetMax = parsed.budgetMaxHint;
+    var budgetStripEl = document.getElementById("budget-filter-strip");
+    if (budgetStripEl) {
+      var chips = budgetStripEl.querySelectorAll(".budget-chip");
+      for (var i = 0; i < chips.length; i++) {
+        var chipVal = chips[i].getAttribute("data-budget");
+        var isMatch = chipVal !== "all" && Number(chipVal) === parsed.budgetMaxHint;
+        chips[i].classList.toggle("active", isMatch);
+        chips[i].setAttribute("aria-pressed", isMatch ? "true" : "false");
+      }
+    }
+  }
+
+  if (searchEl) {
+    searchEl.value = parsed.query;
+  }
+  applyFiltersAndSearch(parsed.query);
+
+  var visibleCountEl = document.getElementById("catalog-visible-count");
+  var matchCount = visibleCountEl ? Number(visibleCountEl.textContent || 0) : 0;
+
+  if (isFinal !== false) {
+    var summary = 'Heard: "' + parsed.rawTranscript + '" → Searching "' + (parsed.query || "All") + '"' +
+      (parsed.budgetMaxHint ? (" (Under $" + parsed.budgetMaxHint + ")") : "") +
+      " · " + matchCount + (matchCount === 1 ? " match" : " matches");
+    updateVoiceSearchUiState(false, "Voice Search Complete", summary, false);
+    showActivityToast('Voice search: "' + (parsed.query || parsed.rawTranscript) + '" (' + matchCount + ' found)');
+  } else {
+    updateVoiceSearchUiState(true, "Listening — Recognizing…", 'Hearing: "' + parsed.rawTranscript + '"', false);
+  }
+  return parsed;
+}
+
+window.applyVoiceSearchTranscript = applyVoiceSearchTranscript;
+
+function toggleVoiceSearch() {
+  clearTimeout(voiceAutoHideTimer);
+  var popover = document.getElementById("voice-search-popover");
+
+  if (isVoiceSearchListening) {
+    if (voiceRecognitionInstance) {
+      try { voiceRecognitionInstance.stop(); } catch (e) {}
+    }
+    updateVoiceSearchUiState(false, "Voice Search Paused", "Click the microphone or choose a voice phrase below.", false);
+    return;
+  }
+
+  var SpeechRecognitionCtor = window.SpeechRecognition || window.webkitSpeechRecognition;
+  if (!SpeechRecognitionCtor) {
+    updateVoiceSearchUiState(
+      false,
+      "Hands-Free Voice Search Ready",
+      "Select a spoken hardware query below or use a Web Speech API enabled microphone:",
+      false
+    );
+    if (popover) popover.hidden = false;
+    return;
+  }
+
+  try {
+    var recognition = new SpeechRecognitionCtor();
+    voiceRecognitionInstance = recognition;
+    recognition.lang = navigator.language || "en-US";
+    recognition.continuous = false;
+    recognition.interimResults = true;
+    recognition.maxAlternatives = 1;
+
+    recognition.onstart = function () {
+      updateVoiceSearchUiState(
+        true,
+        "Listening — Speak now…",
+        'Say a component name, SKU, or budget (e.g. "Nvidia RTX 5090" or "SSD under 150 dollars")',
+        false
+      );
+    };
+
+    recognition.onresult = function (event) {
+      var interimTranscript = "";
+      var finalTranscript = "";
+      for (var i = event.resultIndex; i < event.results.length; i++) {
+        var piece = event.results[i][0].transcript;
+        if (event.results[i].isFinal) {
+          finalTranscript += piece;
+        } else {
+          interimTranscript += piece;
+        }
+      }
+      if (finalTranscript) {
+        applyVoiceSearchTranscript(finalTranscript, true);
+      } else if (interimTranscript) {
+        applyVoiceSearchTranscript(interimTranscript, false);
+      }
+    };
+
+    recognition.onerror = function (event) {
+      var errCode = (event && event.error) ? event.error : "unknown";
+      var friendlyMsg = "Click any voice phrase below to test hands-free search immediately:";
+      if (errCode === "not-allowed" || errCode === "service-not-allowed") {
+        friendlyMsg = "Microphone permission blocked in this frame — tap a voice phrase below to search hands-free:";
+      } else if (errCode === "no-speech") {
+        friendlyMsg = "No speech detected — tap the mic again or choose a voice command below:";
+      }
+      updateVoiceSearchUiState(false, "Voice Assistant Ready", friendlyMsg, false);
+    };
+
+    recognition.onend = function () {
+      if (isVoiceSearchListening) {
+        updateVoiceSearchUiState(
+          false,
+          "Voice Search Ready",
+          "Tap the microphone to speak again or pick a quick voice command below.",
+          false
+        );
+      }
+    };
+
+    updateVoiceSearchUiState(
+      true,
+      "Listening — Speak now…",
+      'Say a component name, SKU, or budget (e.g. "Nvidia RTX 5090" or "SSD under 150 dollars")',
+      false
+    );
+    recognition.start();
+  } catch (err) {
+    updateVoiceSearchUiState(
+      false,
+      "Voice Assistant Ready",
+      "Tap a voice command below to filter the catalog hands-free:",
+      false
+    );
   }
 }
 
@@ -2208,13 +3356,13 @@ function updateFilterTabCounts() {
   for (var t = 0; t < tabs.length; t++) {
     var key = tabs[t].getAttribute("data-filter") || "all";
     if (key === "wishlist") {
-      tabs[t].innerHTML = icon("heart", 13) + ' <span>Wishlist</span> <span class="filter-count" id="wishlist-filter-count">' + wishlist.length + '</span>';
+      tabs[t].innerHTML = icon("heart", 13) + '<span class="filter-tab-label">Wishlist</span><span class="filter-count" id="wishlist-filter-count">' + wishlist.length + '</span>';
       continue;
     }
     var baseLabel = labels[key] || key;
     var icName = catIcons[key] || "cat-all";
     var c = counts[key] !== undefined ? counts[key] : 0;
-    tabs[t].innerHTML = icon(icName, 13) + ' <span>' + esc(baseLabel) + '</span> <span class="filter-count">' + c + '</span>';
+    tabs[t].innerHTML = icon(icName, 13) + '<span class="filter-tab-label">' + esc(baseLabel) + '</span><span class="filter-count">' + c + '</span>';
   }
 }
 
@@ -2711,6 +3859,38 @@ function wireUpButtons() {
     });
   }
 
+  // Budget ceiling filter strip & reset button
+  var budgetStripEl = document.getElementById("budget-filter-strip");
+  if (budgetStripEl) {
+    budgetStripEl.addEventListener("click", function (e) {
+      var chip = e.target.closest(".budget-chip");
+      if (!chip) return;
+      var val = chip.getAttribute("data-budget") || "all";
+      activeBudgetMax = (val === "all") ? null : Number(val);
+      var chips = budgetStripEl.querySelectorAll(".budget-chip");
+      for (var i = 0; i < chips.length; i++) {
+        var isCur = chips[i] === chip;
+        chips[i].classList.toggle("active", isCur);
+        chips[i].setAttribute("aria-pressed", isCur ? "true" : "false");
+      }
+      applyFiltersAndSearch();
+    });
+  }
+  var catalogResetBtnEl = document.getElementById("catalog-reset-filters-btn");
+  if (catalogResetBtnEl) {
+    catalogResetBtnEl.addEventListener("click", resetAllCatalogFilters);
+  }
+
+  // Grid / Compact Spec List view toggle
+  var viewGridBtnEl = document.getElementById("view-grid-btn");
+  var viewListBtnEl = document.getElementById("view-list-btn");
+  if (viewGridBtnEl) {
+    viewGridBtnEl.addEventListener("click", function () { setCatalogViewMode("grid"); });
+  }
+  if (viewListBtnEl) {
+    viewListBtnEl.addEventListener("click", function () { setCatalogViewMode("list"); });
+  }
+
   // Rig Builder drawer
   if (rigBuilderBtnEl) {
     rigBuilderBtnEl.addEventListener("click", openRigDrawer);
@@ -2753,8 +3933,78 @@ function wireUpButtons() {
   if (specShareDownloadBtn) {
     specShareDownloadBtn.addEventListener("click", downloadProductQrCode);
   }
+  var specShareToneGroup = document.getElementById("spec-share-tone-group");
+  if (specShareToneGroup) {
+    specShareToneGroup.addEventListener("click", function (e) {
+      var chip = e.target.closest(".spec-tone-chip");
+      if (!chip) return;
+      var tone = chip.getAttribute("data-share-tone") || "spec";
+      setShareDescriptionTone(tone);
+    });
+  }
+  var specShareDescInput = document.getElementById("spec-share-generated-desc");
+  if (specShareDescInput) {
+    specShareDescInput.addEventListener("input", function () {
+      syncSpecSocialShareLinks();
+    });
+  }
+  var specShareCopyDescBtn = document.getElementById("spec-share-copy-desc-btn");
+  if (specShareCopyDescBtn) {
+    specShareCopyDescBtn.addEventListener("click", copyGeneratedSharePost);
+  }
+  var specShareTwitterBtn = document.getElementById("spec-share-twitter-btn");
+  if (specShareTwitterBtn) {
+    specShareTwitterBtn.addEventListener("click", function (e) {
+      handleSocialPlatformShareClick(e, "Twitter");
+    });
+  }
+  var specShareWhatsappBtn = document.getElementById("spec-share-whatsapp-btn");
+  if (specShareWhatsappBtn) {
+    specShareWhatsappBtn.addEventListener("click", function (e) {
+      handleSocialPlatformShareClick(e, "WhatsApp");
+    });
+  }
+  var specShareFacebookBtn = document.getElementById("spec-share-facebook-btn");
+  if (specShareFacebookBtn) {
+    specShareFacebookBtn.addEventListener("click", function (e) {
+      handleSocialPlatformShareClick(e, "Facebook");
+    });
+  }
 
-  // Global Camera QR Scanner
+  // Global Camera QR Scanner & Hands-Free Web Speech API Voice Search
+  var searchVoiceBtn = document.getElementById("search-voice-btn");
+  if (searchVoiceBtn) {
+    searchVoiceBtn.addEventListener("click", function (e) {
+      e.stopPropagation();
+      toggleVoiceSearch();
+    });
+  }
+  var voicePopoverClose = document.getElementById("voice-popover-close");
+  if (voicePopoverClose) {
+    voicePopoverClose.addEventListener("click", function (e) {
+      e.stopPropagation();
+      closeVoiceSearchPopover();
+    });
+  }
+  var voiceSuggestionsEl = document.getElementById("voice-popover-suggestions");
+  if (voiceSuggestionsEl) {
+    voiceSuggestionsEl.addEventListener("click", function (e) {
+      var chip = e.target.closest(".voice-suggestion-chip");
+      if (!chip) return;
+      var sample = chip.getAttribute("data-voice-sample") || "";
+      if (sample) {
+        applyVoiceSearchTranscript(sample, true);
+      }
+    });
+  }
+  document.addEventListener("click", function (e) {
+    var popover = document.getElementById("voice-search-popover");
+    var wrap = document.getElementById("topbar-search-wrap");
+    if (popover && !popover.hidden && wrap && !wrap.contains(e.target)) {
+      closeVoiceSearchPopover();
+    }
+  });
+
   var searchScanQrBtn = document.getElementById("search-scan-qr-btn");
   if (searchScanQrBtn) {
     searchScanQrBtn.addEventListener("click", openQrScannerModal);
@@ -2785,6 +4035,12 @@ function wireUpButtons() {
   if (qrManualForm) {
     qrManualForm.addEventListener("submit", handleManualQrSubmit);
   }
+  var qrScanHistoryClearBtn = document.getElementById("qr-scan-history-clear-btn");
+  if (qrScanHistoryClearBtn) {
+    qrScanHistoryClearBtn.addEventListener("click", window.clearQrScanHistory);
+  }
+  loadQrScanHistory();
+  renderQrScanHistory();
 
   // Promo code controls
   if (promoApplyBtnEl) {
@@ -2828,6 +4084,71 @@ function wireUpButtons() {
   var wishClearBtnEl = document.getElementById("wishlist-clear-btn");
   if (wishClearBtnEl) {
     wishClearBtnEl.addEventListener("click", clearWishlist);
+  }
+
+  // Price Drop Alerts listeners (Profile Sheet & Modal)
+  var priceAlertsToggleEl = document.getElementById("price-alerts-toggle");
+  if (priceAlertsToggleEl) {
+    priceAlertsToggleEl.addEventListener("click", togglePriceAlertsPanel);
+  }
+  var priceAlertOverlayEl = document.getElementById("price-alert-overlay");
+  var priceAlertCloseEl = document.getElementById("price-alert-close");
+  var priceAlertFormEl = document.getElementById("price-alert-form");
+  var priceAlertTestBtnEl = document.getElementById("price-alert-test-btn");
+  var priceAlertRemoveBtnEl = document.getElementById("price-alert-remove-btn");
+  var priceAlertPresetsGridEl = document.getElementById("price-alert-presets-grid");
+  var priceAlertThresholdInputEl = document.getElementById("price-alert-threshold-input");
+  var priceAlertEmailInputEl = document.getElementById("price-alert-email-input");
+
+  if (priceAlertCloseEl) {
+    priceAlertCloseEl.addEventListener("click", closePriceAlertModal);
+  }
+  if (priceAlertOverlayEl) {
+    priceAlertOverlayEl.addEventListener("click", function (e) {
+      if (e.target === priceAlertOverlayEl) closePriceAlertModal();
+    });
+  }
+  if (priceAlertFormEl) {
+    priceAlertFormEl.addEventListener("submit", savePriceAlert);
+  }
+  if (priceAlertTestBtnEl) {
+    priceAlertTestBtnEl.addEventListener("click", simulatePriceDropAlert);
+  }
+  if (priceAlertRemoveBtnEl) {
+    priceAlertRemoveBtnEl.addEventListener("click", function () {
+      removePriceAlert(activePriceAlertProductId);
+    });
+  }
+  if (priceAlertPresetsGridEl) {
+    priceAlertPresetsGridEl.addEventListener("click", function (e) {
+      var chip = e.target.closest(".price-preset-chip");
+      if (!chip) return;
+      var val = chip.getAttribute("data-target-price");
+      if (val && priceAlertThresholdInputEl) {
+        priceAlertThresholdInputEl.value = val;
+        var allChips = priceAlertPresetsGridEl.querySelectorAll(".price-preset-chip");
+        for (var i = 0; i < allChips.length; i++) {
+          allChips[i].classList.toggle("active", allChips[i] === chip);
+        }
+        var p = findProductById(activePriceAlertProductId);
+        if (p) {
+          updatePriceAlertSavingsCallout(p.price, val, priceAlertEmailInputEl ? priceAlertEmailInputEl.value : "");
+        }
+      }
+    });
+  }
+  function onPriceAlertFieldInput() {
+    var p = findProductById(activePriceAlertProductId);
+    if (!p) return;
+    var tVal = priceAlertThresholdInputEl ? priceAlertThresholdInputEl.value : "";
+    var eVal = priceAlertEmailInputEl ? priceAlertEmailInputEl.value : "";
+    updatePriceAlertSavingsCallout(p.price, tVal, eVal);
+  }
+  if (priceAlertThresholdInputEl) {
+    priceAlertThresholdInputEl.addEventListener("input", onPriceAlertFieldInput);
+  }
+  if (priceAlertEmailInputEl) {
+    priceAlertEmailInputEl.addEventListener("input", onPriceAlertFieldInput);
   }
 
   checkoutEl.addEventListener("click", openCheckoutModal);
@@ -3048,6 +4369,7 @@ function wireUpButtons() {
     if (e.key !== "Escape") return;
     if (overlayEl.classList.contains("open")) closeReceipt();
     else if (checkoutOverlayEl.classList.contains("open")) closeModal(checkoutOverlayEl);
+    else if (priceAlertOverlayEl && priceAlertOverlayEl.classList.contains("open")) closePriceAlertModal();
     else if (pwaInstallOverlayEl && pwaInstallOverlayEl.classList.contains("open")) closePwaInstallModal();
     else if (messengerOverlayEl && messengerOverlayEl.classList.contains("open")) closeMessenger();
     else if (specDrawerOverlayEl && specDrawerOverlayEl.classList.contains("open")) closeSpecDrawer();

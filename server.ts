@@ -31,6 +31,14 @@ import {
   resolveProductImageUrl,
   formatPaymentMethodSummary,
   buildProductComparison,
+  IpRateLimiter,
+  PriceAlertEmailNotification,
+  validatePriceAlertInput,
+  upsertPriceAlertSubscription,
+  removePriceAlertSubscription,
+  buildPriceAlertEmailPayload,
+  evaluatePriceDropAlerts,
+  computeSuggestedPriceThresholds,
 } from './src/logic/inventory';
 
 const PORT = 3000;
@@ -43,6 +51,11 @@ const MAIL_READY = Boolean(process.env.VOLTBOX_MAIL_USERNAME && process.env.VOLT
 
 const store = new Store();
 const inventoryTransactions: InventoryTransactionEntity[] = [];
+const ipRateLimiter = new IpRateLimiter({
+  generalCapacity: 120,
+  sensitiveCapacity: 30,
+  refillWindowMs: 60_000,
+});
 const app = express();
 const server = http.createServer(app);
 
@@ -80,6 +93,32 @@ app.use(express.json());
 // Permissive headers allowing embedding in AI Studio iFrame preview
 app.use((req: Request, res: Response, next: NextFunction) => {
   res.setHeader('Content-Security-Policy', "default-src 'self' 'unsafe-inline' 'unsafe-eval' data: blob: https:; img-src 'self' data: blob: https:; connect-src 'self' ws: wss: https:; frame-ancestors *;");
+  next();
+});
+
+// Bucket4j IP-Based Rate Limiter Middleware for /api/*
+app.use('/api', (req: Request, res: Response, next: NextFunction) => {
+  const fullPath = req.originalUrl || req.url || '';
+  const forwardedFor = req.header('X-Forwarded-For') || req.header('X-Real-IP') || req.socket.remoteAddress || '127.0.0.1';
+  const isSensitive = ipRateLimiter.isSensitiveEndpoint(fullPath, req.method);
+  const probe = ipRateLimiter.tryConsume(forwardedFor, isSensitive);
+
+  res.setHeader('X-RateLimit-Limit', String(probe.limitCapacity));
+  res.setHeader('X-RateLimit-Remaining', String(probe.remainingTokens));
+
+  if (!probe.consumed) {
+    res.setHeader('Retry-After', String(probe.retryAfterSeconds));
+    res.setHeader('X-RateLimit-Retry-After-Seconds', String(probe.retryAfterSeconds));
+    res.status(429).json({
+      status: 429,
+      error: 'Too Many Requests',
+      message: `Rate limit exceeded for IP ${probe.clientIp}. Please wait before retrying.`,
+      retryAfterSeconds: probe.retryAfterSeconds,
+      limit: probe.limitCapacity,
+    });
+    return;
+  }
+
   next();
 });
 
@@ -407,6 +446,7 @@ app.put('/api/products/:id', (req, res) => {
   if (typeof req.body?.image === 'string' && req.body.image.trim()) {
     p.image = req.body.image.trim();
   }
+  const prevPrice = p.price;
   if (req.body?.price !== undefined && !Number.isNaN(Number(req.body.price)) && Number(req.body.price) > 0) {
     p.price = roundMoney(Number(req.body.price));
   }
@@ -417,11 +457,34 @@ app.put('/api/products/:id', (req, res) => {
     p.stock = nextQty;
     p.lowStock = isLowStock({ quantity: nextQty });
   }
+
+  const triggeredEmails: PriceAlertEmailNotification[] = [];
+  if (p.price < prevPrice) {
+    for (const u of store.getUsers()) {
+      if (!Array.isArray(u.priceAlerts) || u.priceAlerts.length === 0) continue;
+      const evalRes = evaluatePriceDropAlerts(u.priceAlerts, p.id, p.price);
+      u.priceAlerts = evalRes.updatedAlerts;
+      for (const notif of evalRes.triggeredNotifications) {
+        triggeredEmails.push(notif);
+        broadcastToUser(u.email, {
+          type: 'price-drop-alert',
+          notification: notif,
+          product: enrichProduct(p),
+        });
+      }
+    }
+  }
   store.save();
 
   const enriched = enrichProduct(p);
-  broadcastToAll({ type: 'product-restocked', product: enriched, actor: user.name });
-  return res.json(enriched);
+  broadcastToAll({
+    type: 'product-restocked',
+    product: enriched,
+    actor: user.name,
+    priceDropped: p.price < prevPrice,
+    triggeredAlertCount: triggeredEmails.length,
+  });
+  return res.json({ ...enriched, triggeredAlerts: triggeredEmails });
 });
 
 app.patch('/api/products/:id/stock', (req, res) => {
@@ -679,12 +742,172 @@ app.get('/api/me', (req, res) => {
     cartDetails,
     wishlist: user.wishlist || [],
     wishlistSummary,
+    priceAlerts: user.priceAlerts || [],
     orderCount: (user.orders || []).length,
     mailReady: MAIL_READY,
     donateUrl: DONATE_URL,
     upiId: UPI_ID,
     donateQr: DONATE_QR,
     donateImages: splitDonateImages(DONATE_IMAGES_RAW),
+  });
+});
+
+// ── 'Notify Me' Price Drop Email Alert Controller ──
+app.get('/api/price-alerts', (req, res) => {
+  const user = userFromReq(req);
+  if (!user) return notSignedIn(res);
+
+  const alerts = Array.isArray(user.priceAlerts) ? user.priceAlerts : [];
+  return res.json({
+    ok: true,
+    count: alerts.length,
+    alerts,
+  });
+});
+
+app.post(['/api/price-alerts', '/api/products/:id/price-alert'], (req, res) => {
+  const user = userFromReq(req);
+  if (!user) return notSignedIn(res);
+
+  const rawPid = req.params.id ?? req.body?.productId;
+  const productId = Number.parseInt(String(rawPid || '0'), 10);
+  const product = Number.isNaN(productId) ? null : store.findProduct(productId);
+  if (!product || product.takenDown) {
+    return notFound(res, 'Product not found.');
+  }
+
+  const rawEmail =
+    typeof req.body?.email === 'string' && req.body.email.trim()
+      ? req.body.email.trim()
+      : user.billEmail || user.email;
+  const rawTarget = req.body?.targetPrice ?? req.body?.threshold;
+
+  const validation = validatePriceAlertInput({
+    productId: product.id,
+    email: rawEmail,
+    targetPrice: Number(rawTarget),
+    currentPrice: product.price,
+  });
+  if (!validation.ok) {
+    return badRequest(res, validation.message || 'Invalid price alert configuration.');
+  }
+
+  const upserted = upsertPriceAlertSubscription(user.priceAlerts, {
+    product,
+    email: validation.normalizedEmail,
+    targetPrice: validation.normalizedTargetPrice,
+  });
+  user.priceAlerts = upserted.alerts;
+
+  let emailNotification: PriceAlertEmailNotification | null = null;
+  if (product.price <= validation.normalizedTargetPrice) {
+    upserted.subscription.triggered = true;
+    upserted.subscription.triggeredAt = Date.now();
+    upserted.subscription.triggeredPrice = roundMoney(product.price);
+    emailNotification = buildPriceAlertEmailPayload(upserted.subscription, product.price);
+  }
+  store.save();
+
+  const specs = getProductSpecs(product);
+  const presets = computeSuggestedPriceThresholds(product.price, specs.lowestPrice);
+
+  return res.json({
+    ok: true,
+    isUpdate: upserted.isUpdate,
+    subscription: upserted.subscription,
+    alerts: user.priceAlerts,
+    presets,
+    emailNotification,
+    message: emailNotification
+      ? `Price alert active & instant email dispatched to ${validation.normalizedEmail} (${product.title} is already $${product.price.toFixed(2)}!)`
+      : `Price alert set! We'll email ${validation.normalizedEmail} as soon as ${product.title} drops below $${validation.normalizedTargetPrice.toFixed(2)}.`,
+  });
+});
+
+app.delete(['/api/price-alerts/:productId', '/api/products/:productId/price-alert'], (req, res) => {
+  const user = userFromReq(req);
+  if (!user) return notSignedIn(res);
+
+  const productId = Number.parseInt(String(req.params.productId || '0'), 10);
+  if (Number.isNaN(productId) || productId <= 0) {
+    return badRequest(res, 'Valid product ID required.');
+  }
+
+  const removedRes = removePriceAlertSubscription(user.priceAlerts, productId);
+  user.priceAlerts = removedRes.alerts;
+  store.save();
+
+  return res.json({
+    ok: true,
+    removed: removedRes.removed,
+    productId,
+    alerts: user.priceAlerts,
+    message: 'Price drop alert removed.',
+  });
+});
+
+app.post('/api/price-alerts/:productId/simulate-drop', (req, res) => {
+  const user = userFromReq(req);
+  if (!user) return notSignedIn(res);
+
+  const productId = Number.parseInt(String(req.params.productId || '0'), 10);
+  const product = Number.isNaN(productId) ? null : store.findProduct(productId);
+  if (!product || product.takenDown) {
+    return notFound(res, 'Product not found.');
+  }
+
+  const userAlerts = Array.isArray(user.priceAlerts) ? user.priceAlerts : [];
+  let sub = userAlerts.find((a) => a.productId === productId);
+  if (!sub) {
+    const defaultTarget = roundMoney(product.price * 0.95);
+    const created = upsertPriceAlertSubscription(userAlerts, {
+      product,
+      email: user.billEmail || user.email,
+      targetPrice: defaultTarget,
+    });
+    user.priceAlerts = created.alerts;
+    sub = created.subscription;
+  }
+
+  const requestedPrice = Number(req.body?.newPrice);
+  const simulatedNewPrice =
+    !Number.isNaN(requestedPrice) && requestedPrice > 0
+      ? roundMoney(requestedPrice)
+      : Math.max(1, roundMoney(sub.targetPrice - Math.max(1, roundMoney(sub.targetPrice * 0.03))));
+
+  const previousPrice = product.price;
+  product.price = simulatedNewPrice;
+
+  const evalRes = evaluatePriceDropAlerts(user.priceAlerts, product.id, simulatedNewPrice);
+  user.priceAlerts = evalRes.updatedAlerts;
+  const updatedSub = user.priceAlerts.find((a) => a.productId === product.id) || sub;
+  const emailNotification =
+    evalRes.triggeredNotifications[0] || buildPriceAlertEmailPayload(updatedSub, simulatedNewPrice);
+
+  store.save();
+
+  const enriched = enrichProduct(product);
+  broadcastToUser(user.email, {
+    type: 'price-drop-alert',
+    notification: emailNotification,
+    product: enriched,
+  });
+  broadcastToAll({
+    type: 'product-restocked',
+    product: enriched,
+    actor: 'Voltbox Price Watch',
+    priceDropped: simulatedNewPrice < previousPrice,
+  });
+
+  return res.json({
+    ok: true,
+    previousPrice,
+    newPrice: simulatedNewPrice,
+    product: enriched,
+    subscription: updatedSub,
+    alerts: user.priceAlerts,
+    emailNotification,
+    message: `Price dropped to $${simulatedNewPrice.toFixed(2)}! Email alert sent to ${emailNotification.toEmail}.`,
   });
 });
 
