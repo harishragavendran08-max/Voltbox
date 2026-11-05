@@ -6724,6 +6724,7 @@ body.can-report .card-flag {
 .qr-scanner-kicker {
   display: flex;
   align-items: center;
+  justify-content: space-between;
   gap: 8px;
   font-family: 'JetBrains Mono', monospace;
   font-size: 11px;
@@ -6731,6 +6732,41 @@ body.can-report .card-flag {
   color: #ffd23f;
   letter-spacing: 1px;
   margin-bottom: 6px;
+}
+
+.qr-kicker-left {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.qr-audio-kicker-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 3px 9px;
+  border-radius: 999px;
+  background: rgba(16, 185, 129, 0.12);
+  border: 1px solid rgba(16, 185, 129, 0.35);
+  color: #10b981;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.8px;
+  transition: all 0.2s ease;
+}
+
+.qr-audio-kicker-pill.muted {
+  background: rgba(239, 68, 68, 0.1);
+  border-color: rgba(239, 68, 68, 0.3);
+  color: #f87171;
+}
+
+.qr-audio-kicker-pill.ping-active {
+  background: rgba(16, 185, 129, 0.28);
+  border-color: #10b981;
+  color: #ffffff;
+  box-shadow: 0 0 14px rgba(16, 185, 129, 0.5);
+  transform: scale(1.06);
 }
 
 /* Live Viewfinder Box */
@@ -6829,6 +6865,74 @@ body.can-report .card-flag {
     top: 95%;
     opacity: 0.3;
   }
+}
+
+/* Reticle QR Code Detected State (Synchronized with Audio Ping) */
+.qr-scanner-reticle.scan-detected .qr-scanner-corner {
+  border-color: #10b981 !important;
+  box-shadow: 0 0 16px rgba(16, 185, 129, 0.7);
+  transition: all 0.15s ease-out;
+}
+
+.qr-scanner-reticle.scan-detected .qr-scanner-laser {
+  background: #10b981 !important;
+  box-shadow: 0 0 16px #10b981, 0 0 28px rgba(16, 185, 129, 0.9) !important;
+  top: 50% !important;
+  animation: none !important;
+  height: 3px;
+}
+
+/* Visual Ping Confirmation Flash */
+.qr-scanner-ping-flash {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: radial-gradient(circle, rgba(16, 185, 129, 0.28) 0%, rgba(5, 7, 12, 0.65) 75%);
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.12s ease-out;
+  z-index: 10;
+}
+
+.qr-scanner-ping-flash.active {
+  opacity: 1;
+  animation: qrPingFlashIn 0.38s ease-out forwards;
+}
+
+@keyframes qrPingFlashIn {
+  0% {
+    opacity: 0;
+    transform: scale(0.92);
+  }
+  35% {
+    opacity: 1;
+    transform: scale(1.05);
+  }
+  100% {
+    opacity: 0.95;
+    transform: scale(1.0);
+  }
+}
+
+.qr-ping-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  background: rgba(5, 7, 12, 0.92);
+  border: 1.5px solid #10b981;
+  border-radius: 999px;
+  padding: 8px 18px;
+  color: #ffffff;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 13px;
+  font-weight: 700;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.75), 0 0 20px rgba(16, 185, 129, 0.45);
+}
+
+.qr-ping-badge .ic {
+  color: #10b981;
 }
 
 /* Camera Live Status Badge */
@@ -6936,6 +7040,69 @@ body.can-report .card-flag {
   border-color: var(--muted);
   background: rgba(255, 255, 255, 0.05);
   color: #ffffff;
+}
+
+.qr-scanner-btn.audio-toggle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 9px 12px;
+  background: rgba(16, 185, 129, 0.12);
+  border: 1px solid rgba(16, 185, 129, 0.35);
+  border-radius: 9px;
+  color: #34d399;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.16s ease;
+  white-space: nowrap;
+}
+
+.qr-scanner-btn.audio-toggle:hover {
+  background: rgba(16, 185, 129, 0.22);
+  border-color: #10b981;
+  color: #6ee7b7;
+}
+
+.qr-scanner-btn.audio-toggle.muted {
+  background: rgba(239, 68, 68, 0.08);
+  border-color: rgba(239, 68, 68, 0.25);
+  color: #f87171;
+}
+
+.qr-scanner-btn.audio-toggle.muted:hover {
+  background: rgba(239, 68, 68, 0.15);
+  border-color: #ef4444;
+}
+
+.qr-scanner-btn.audio-test {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  padding: 9px 11px;
+  background: rgba(255, 210, 63, 0.08);
+  border: 1px solid rgba(255, 210, 63, 0.28);
+  border-radius: 9px;
+  color: #ffd23f;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.16s ease;
+  white-space: nowrap;
+}
+
+.qr-scanner-btn.audio-test:hover {
+  background: rgba(255, 210, 63, 0.2);
+  border-color: #ffd23f;
+  transform: translateY(-1px);
+}
+
+.qr-scanner-actions-row {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(105px, 1fr));
+  gap: 8px;
 }
 
 /* Simulation Chips */
@@ -13881,5 +14048,931 @@ body[data-ui-theme] .card:hover {
   color: #f87171;
 }
 
+/* ═══════════════════════════════════════════════════════════════════════════
+   CROSS-PLATFORM & MULTI-DEVICE RESPONSIVE ALIGNMENTS (MOBILE / TABLET / DESKTOP)
+   ═══════════════════════════════════════════════════════════════════════════ */
 
+/* Mobile & Small Handheld Optimizations (<= 680px) */
+@media (max-width: 680px) {
+  .catalog-subbar {
+    display: flex !important;
+    flex-direction: column !important;
+    align-items: stretch !important;
+    gap: 8px !important;
+    padding: 8px 0 !important;
+  }
 
+  .catalog-subbar-left {
+    display: flex !important;
+    flex-direction: column !important;
+    align-items: stretch !important;
+    gap: 8px !important;
+    width: 100% !important;
+  }
+
+  .catalog-quick-filters-wrap {
+    display: flex !important;
+    flex-wrap: wrap !important;
+    align-items: center !important;
+    gap: 6px !important;
+    width: 100% !important;
+  }
+
+  .catalog-best-deal-pill {
+    padding: 4px 9px !important;
+    font-size: 11px !important;
+    min-height: 28px !important;
+  }
+
+  .stock-quick-filter-strip {
+    padding: 3px 6px !important;
+    gap: 4px !important;
+    max-width: 100% !important;
+    overflow-x: auto !important;
+    scrollbar-width: none !important;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .stock-quick-filter-strip::-webkit-scrollbar {
+    display: none !important;
+  }
+
+  .stock-filter-chip {
+    font-size: 11px !important;
+    padding: 0 7px !important;
+    height: 25px !important;
+    min-height: 25px !important;
+  }
+
+  .budget-filter-strip {
+    padding: 3px 6px !important;
+    gap: 4px !important;
+    max-width: 100% !important;
+    overflow-x: auto !important;
+    scrollbar-width: none !important;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .budget-filter-strip::-webkit-scrollbar {
+    display: none !important;
+  }
+
+  .budget-chip {
+    font-size: 11px !important;
+    padding: 0 7px !important;
+    height: 25px !important;
+    min-height: 25px !important;
+  }
+
+  /* Badges stacking on mobile product cards */
+  .card.is-low-stock .card-deal-badge,
+  .card.is-backorder .card-deal-badge {
+    top: 32px !important;
+    font-size: 9.5px !important;
+    padding: 2px 5px !important;
+  }
+
+  .card-img-wrap {
+    aspect-ratio: 4 / 3 !important;
+    overflow: hidden !important;
+  }
+
+  .card-notify-btn {
+    height: 26px !important;
+    padding: 0 7px !important;
+    font-size: 10px !important;
+    bottom: 6px !important;
+    right: 6px !important;
+  }
+
+  .card-wishlist-btn {
+    width: 28px !important;
+    height: 28px !important;
+    top: 6px !important;
+    right: 6px !important;
+  }
+
+  /* Price Alert Modal mobile ergonomics */
+  .price-alert-modal-card {
+    padding: 16px 14px !important;
+    max-height: 88vh !important;
+    border-radius: 12px !important;
+  }
+
+  .price-alert-sparkline-section {
+    padding: 9px 10px !important;
+  }
+}
+
+/* Extra Small Phones (<= 480px, e.g. iPhone SE, iPhone 12/13/14/15/16 mini, Pixel Fold cover) */
+@media (max-width: 480px) {
+  .catalog-count-pill {
+    align-self: flex-start !important;
+    font-size: 10.5px !important;
+  }
+
+  .catalog-quick-filters-wrap {
+    flex-direction: column !important;
+    align-items: stretch !important;
+    gap: 6px !important;
+  }
+
+  .catalog-best-deal-pill {
+    align-self: flex-start !important;
+  }
+
+  .stock-quick-filter-strip,
+  .budget-filter-strip {
+    width: 100% !important;
+    display: flex !important;
+    flex-wrap: nowrap !important;
+  }
+
+  .card {
+    padding: 10px !important;
+    border-radius: 12px !important;
+  }
+
+  .card-title {
+    font-size: 12.5px !important;
+    line-height: 1.3 !important;
+    margin-bottom: 4px !important;
+  }
+
+  .card-footer-actions {
+    flex-direction: column !important;
+    align-items: stretch !important;
+    gap: 6px !important;
+  }
+
+  .card-footer-actions .qty {
+    width: 100% !important;
+    justify-content: space-between !important;
+  }
+
+  .card-footer-actions .card-compare-btn {
+    width: 100% !important;
+    justify-content: center !important;
+    min-height: 32px !important;
+  }
+
+  .price-alert-expiry-input-row {
+    flex-direction: column !important;
+    align-items: stretch !important;
+    gap: 6px !important;
+  }
+
+  .price-alert-expiry-input-row input[type="date"] {
+    width: 100% !important;
+    min-width: 100% !important;
+  }
+
+  .price-alert-expiry-presets {
+    width: 100% !important;
+    justify-content: space-between !important;
+  }
+
+  .expiry-preset-chip {
+    flex: 1 1 auto !important;
+    text-align: center !important;
+    padding: 4px 5px !important;
+  }
+}
+
+/* Tablets (681px - 1024px, e.g. iPad 10th gen, iPad Air, iPad Pro 11", Galaxy Tab) */
+@media (min-width: 681px) and (max-width: 1024px) {
+  .catalog-subbar {
+    flex-wrap: wrap !important;
+    gap: 10px !important;
+  }
+
+  .catalog-quick-filters-wrap {
+    gap: 8px !important;
+  }
+
+  .stock-quick-filter-strip {
+    padding: 4px 8px !important;
+  }
+
+  .card {
+    padding: 13px !important;
+  }
+}
+
+/* Large Displays & Desktop (> 1024px) */
+@media (min-width: 1025px) {
+  .catalog-quick-filters-wrap {
+    display: inline-flex !important;
+    align-items: center !important;
+    gap: 10px !important;
+  }
+
+  .catalog-best-deal-pill {
+    cursor: pointer;
+  }
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   CATALOG GRID KEYBOARD NAVIGATION & FOCUS INDICATORS
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+/* Focus ring and elevation on active card */
+.card:focus,
+.card:focus-visible,
+.card.keyboard-focused {
+  outline: none !important;
+  border-color: #38bdf8 !important;
+  box-shadow: 0 0 0 2px #38bdf8, 0 8px 30px rgba(56, 189, 248, 0.35) !important;
+  transform: translateY(-4px) scale3d(1.015, 1.015, 1) !important;
+  z-index: 8 !important;
+}
+
+.card:focus .card-title-btn,
+.card:focus-visible .card-title-btn,
+.card.keyboard-focused .card-title-btn {
+  color: #38bdf8 !important;
+}
+
+/* Catalog Toolbar Keyboard Shortcuts Pill */
+.catalog-keyboard-hint {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  margin-left: 10px;
+  padding: 3px 9px;
+  border-radius: 6px;
+  background: rgba(17, 24, 39, 0.75);
+  border: 1px solid rgba(56, 189, 248, 0.2);
+  color: #94a3b8;
+  font-size: 11px;
+  line-height: 1;
+  user-select: none;
+}
+
+.kbd-label {
+  font-size: 10.5px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: #64748b;
+  margin-right: 2px;
+}
+
+.kbd-key {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 4px;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 10px;
+  font-weight: 700;
+  color: #38bdf8;
+  background: #090d16;
+  border: 1px solid rgba(56, 189, 248, 0.35);
+  border-radius: 4px;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.5);
+}
+
+.kbd-action {
+  font-size: 10.5px;
+  font-weight: 600;
+  color: #cbd5e1;
+}
+
+.kbd-sep {
+  color: #475569;
+  font-weight: 700;
+  margin: 0 1px;
+}
+
+/* Touch devices: hide physical keyboard hint on mobile */
+@media (max-width: 768px), (pointer: coarse) {
+  .catalog-keyboard-hint {
+    display: none !important;
+  }
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   REAL-TIME ORDER TRACKING DASHBOARD & PROGRESS TIMELINE
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+.tracking-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(5, 8, 15, 0.85);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  z-index: 10000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 32px 16px;
+  overflow-y: auto;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.22s ease-out;
+}
+
+.tracking-overlay.open {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.tracking-card {
+  position: relative;
+  background: #0b111e;
+  border: 1px solid #1e2a42;
+  border-radius: 18px;
+  width: 100%;
+  max-width: 720px;
+  max-height: calc(100vh - 64px);
+  margin: auto;
+  overflow-y: auto;
+  box-shadow: 0 25px 60px -12px rgba(0, 0, 0, 0.85), 0 0 0 1px rgba(56, 189, 248, 0.18);
+  padding: 24px 28px;
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  color: #f1f5f9;
+  scrollbar-width: thin;
+  scrollbar-color: #24324a #0b111e;
+}
+
+.tracking-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  border-bottom: 1px solid #1a2538;
+  padding-bottom: 14px;
+}
+
+.tracking-header-badge-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 4px;
+}
+
+.tracking-kicker {
+  font-size: 10px;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: #38bdf8;
+}
+
+.tracking-live-indicator {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 2px 8px;
+  border-radius: 100px;
+  background: rgba(16, 185, 129, 0.15);
+  border: 1px solid rgba(16, 185, 129, 0.4);
+  color: #10b981;
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+}
+
+.tracking-pulse-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: #10b981;
+  box-shadow: 0 0 8px #10b981;
+  animation: trackingPulse 1.8s infinite;
+}
+
+@keyframes trackingPulse {
+  0% { transform: scale(0.9); opacity: 0.8; box-shadow: 0 0 4px #10b981; }
+  50% { transform: scale(1.25); opacity: 1; box-shadow: 0 0 12px #10b981; }
+  100% { transform: scale(0.9); opacity: 0.8; box-shadow: 0 0 4px #10b981; }
+}
+
+.tracking-title {
+  font-size: 20px;
+  font-weight: 800;
+  color: #f8fafc;
+  margin: 0;
+  letter-spacing: -0.01em;
+}
+
+.tracking-meta-row {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  font-size: 12px;
+  color: #94a3b8;
+  margin-top: 4px;
+}
+
+.tracking-status-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 8px;
+  border-radius: 6px;
+  font-size: 11px;
+  font-weight: 700;
+  background: rgba(56, 189, 248, 0.14);
+  border: 1px solid rgba(56, 189, 248, 0.35);
+  color: #38bdf8;
+}
+
+.tracking-status-badge.status-delivered {
+  background: rgba(16, 185, 129, 0.16);
+  border-color: rgba(16, 185, 129, 0.4);
+  color: #34d399;
+}
+
+.tracking-status-badge.status-processing {
+  background: rgba(251, 191, 36, 0.14);
+  border-color: rgba(251, 191, 36, 0.35);
+  color: #fbbf24;
+}
+
+.tracking-close-btn {
+  background: #151f30;
+  border: 1px solid #24324a;
+  color: #94a3b8;
+  width: 34px;
+  height: 34px;
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: all 0.18s ease;
+  flex-shrink: 0;
+}
+
+.tracking-close-btn:hover {
+  background: #1e2d44;
+  color: #fff;
+  border-color: #38bdf8;
+}
+
+/* Courier & ETA Dispatch Banner */
+.tracking-courier-card {
+  background: #111a2a;
+  border: 1px solid #1f2d45;
+  border-radius: 12px;
+  padding: 14px 18px;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+}
+
+.tracking-courier-col {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.courier-subhead {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: #64748b;
+}
+
+.courier-eta-val {
+  font-size: 16px;
+  font-weight: 800;
+  color: #38bdf8;
+}
+
+.courier-transit-note,
+.courier-dest-val {
+  font-size: 11px;
+  color: #94a3b8;
+}
+
+.courier-awb-row {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.courier-name {
+  font-size: 13px;
+  font-weight: 700;
+  color: #f1f5f9;
+}
+
+.courier-copy-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  background: #182438;
+  border: 1px solid #283a57;
+  color: #38bdf8;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 11px;
+  font-weight: 600;
+  padding: 3px 8px;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.courier-copy-btn:hover {
+  background: #20314c;
+  border-color: #38bdf8;
+}
+
+/* Timeline Stepper Container */
+.tracking-timeline-section {
+  background: #0f1828;
+  border: 1px solid #1a273e;
+  border-radius: 14px;
+  padding: 18px 20px 22px;
+}
+
+.tracking-section-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 18px;
+}
+
+.tracking-progress-pct {
+  font-size: 12px;
+  font-weight: 800;
+  color: #10b981;
+  font-family: 'JetBrains Mono', monospace;
+}
+
+.tracking-stepper-container {
+  position: relative;
+  margin: 10px 0 6px;
+}
+
+.stepper-track-bg {
+  position: absolute;
+  top: 22px;
+  left: 36px;
+  right: 36px;
+  height: 4px;
+  background: #1b263b;
+  border-radius: 2px;
+  z-index: 1;
+}
+
+.stepper-track-fill {
+  height: 100%;
+  background: linear-gradient(90deg, #10b981 0%, #0284c7 50%, #38bdf8 100%);
+  border-radius: 2px;
+  transition: width 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+  box-shadow: 0 0 10px rgba(56, 189, 248, 0.6);
+}
+
+.stepper-nodes-row {
+  position: relative;
+  z-index: 2;
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.timeline-step {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  flex: 1;
+  min-width: 0;
+}
+
+.step-indicator {
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  background: #0e1522;
+  border: 2px solid #23314a;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #64748b;
+  transition: all 0.25s ease;
+  box-shadow: 0 4px 10px rgba(0, 0, 0, 0.4);
+}
+
+.timeline-step.completed .step-indicator {
+  background: #064e3b;
+  border-color: #10b981;
+  color: #34d399;
+  box-shadow: 0 0 14px rgba(16, 185, 129, 0.45);
+}
+
+.timeline-step.current .step-indicator {
+  background: #0c4a6e;
+  border-color: #38bdf8;
+  color: #38bdf8;
+  box-shadow: 0 0 18px rgba(56, 189, 248, 0.65);
+  animation: currentStepGlow 2s infinite ease-in-out;
+}
+
+@keyframes currentStepGlow {
+  0% { box-shadow: 0 0 10px rgba(56, 189, 248, 0.4); transform: scale(1); }
+  50% { box-shadow: 0 0 20px rgba(56, 189, 248, 0.85); transform: scale(1.06); }
+  100% { box-shadow: 0 0 10px rgba(56, 189, 248, 0.4); transform: scale(1); }
+}
+
+.timeline-step.upcoming .step-indicator {
+  background: #0c121e;
+  border-color: #1a2538;
+  color: #475569;
+}
+
+.step-info {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  margin-top: 10px;
+  width: 100%;
+}
+
+.step-title {
+  font-size: 13px;
+  font-weight: 700;
+  color: #f1f5f9;
+  white-space: nowrap;
+}
+
+.timeline-step.current .step-title {
+  color: #38bdf8;
+}
+
+.timeline-step.completed .step-title {
+  color: #34d399;
+}
+
+.step-time {
+  font-size: 10.5px;
+  font-family: 'JetBrains Mono', monospace;
+  color: #94a3b8;
+  margin-top: 2px;
+}
+
+.step-detail {
+  font-size: 10px;
+  color: #64748b;
+  margin-top: 3px;
+  line-height: 1.25;
+  max-width: 130px;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+/* Shipment Contents List */
+.tracking-items-section {
+  background: #0f1828;
+  border: 1px solid #1a273e;
+  border-radius: 14px;
+  padding: 16px 18px;
+}
+
+.tracking-total-amount {
+  font-size: 14px;
+  font-weight: 800;
+  color: #38bdf8;
+  font-family: 'JetBrains Mono', monospace;
+}
+
+.tracking-items-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-height: 140px;
+  overflow-y: auto;
+  margin-top: 10px;
+  padding-right: 4px;
+  scrollbar-width: thin;
+}
+
+.tracking-item-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 8px 12px;
+  background: #131e30;
+  border: 1px solid #1c2b42;
+  border-radius: 8px;
+}
+
+.tracking-item-left {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+
+.tracking-item-thumb {
+  width: 34px;
+  height: 34px;
+  border-radius: 6px;
+  object-fit: cover;
+  background: #090d16;
+  border: 1px solid #24324a;
+  flex-shrink: 0;
+}
+
+.tracking-item-title {
+  font-size: 12px;
+  font-weight: 600;
+  color: #e2e8f0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 280px;
+}
+
+.tracking-item-qty {
+  font-size: 11px;
+  color: #94a3b8;
+  margin-top: 1px;
+}
+
+.tracking-item-price {
+  font-size: 12.5px;
+  font-weight: 700;
+  color: #f1f5f9;
+  font-family: 'JetBrains Mono', monospace;
+  flex-shrink: 0;
+}
+
+/* Footer & Live Simulation Controls */
+.tracking-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 12px;
+  border-top: 1px solid #1a2538;
+  padding-top: 14px;
+}
+
+.tracking-live-controls {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.tracking-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 14px;
+  border-radius: 8px;
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all 0.18s ease;
+}
+
+.tracking-btn.advance-btn {
+  background: linear-gradient(135deg, #0284c7 0%, #0369a1 100%);
+  border: 1px solid #38bdf8;
+  color: #ffffff;
+  box-shadow: 0 4px 12px rgba(2, 132, 199, 0.35);
+}
+
+.tracking-btn.advance-btn:hover {
+  background: linear-gradient(135deg, #0369a1 0%, #0284c7 100%);
+  box-shadow: 0 6px 18px rgba(56, 189, 248, 0.45);
+  transform: translateY(-1px);
+}
+
+.tracking-btn.advance-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+  transform: none;
+}
+
+.tracking-btn.refresh-btn {
+  background: #152032;
+  border: 1px solid #24354f;
+  color: #94a3b8;
+}
+
+.tracking-btn.refresh-btn:hover {
+  background: #1c2b42;
+  color: #f1f5f9;
+  border-color: #38bdf8;
+}
+
+.tracking-footer-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.tracking-btn.secondary {
+  background: #152032;
+  border: 1px solid #24354f;
+  color: #94a3b8;
+}
+
+.tracking-btn.secondary:hover {
+  background: #1c2b42;
+  color: #f1f5f9;
+}
+
+.tracking-btn.primary {
+  background: #38bdf8;
+  border: 1px solid #7dd3fc;
+  color: #090d16;
+  font-weight: 800;
+}
+
+.tracking-btn.primary:hover {
+  background: #7dd3fc;
+  box-shadow: 0 4px 14px rgba(56, 189, 248, 0.4);
+}
+
+/* History Item Track Badge */
+.history-track-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 8px;
+  border-radius: 4px;
+  font-size: 11px;
+  font-weight: 700;
+  background: rgba(56, 189, 248, 0.15);
+  border: 1px solid rgba(56, 189, 248, 0.35);
+  color: #38bdf8;
+  margin-left: 8px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.history-track-badge:hover {
+  background: #0284c7;
+  color: #ffffff;
+}
+
+/* Responsive Overrides for Mobile & Tablet */
+@media (max-width: 640px) {
+  .tracking-card {
+    padding: 18px 14px;
+    max-height: 95vh;
+    gap: 14px;
+  }
+
+  .tracking-courier-card {
+    grid-template-columns: 1fr;
+    gap: 10px;
+    padding: 12px;
+  }
+
+  .stepper-track-bg {
+    left: 20px;
+    right: 20px;
+    top: 18px;
+  }
+
+  .step-indicator {
+    width: 36px;
+    height: 36px;
+  }
+
+  .step-title {
+    font-size: 11.5px;
+  }
+
+  .step-time {
+    font-size: 9.5px;
+  }
+
+  .step-detail {
+    display: none; /* Hide deep text on tiny mobile screens for crisp alignment */
+  }
+
+  .tracking-footer {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .tracking-live-controls,
+  .tracking-footer-actions {
+    width: 100%;
+    justify-content: stretch;
+  }
+
+  .tracking-btn {
+    flex: 1;
+    justify-content: center;
+  }
+}

@@ -1492,6 +1492,121 @@ function computeCardParallaxTilt(offsetX, offsetY, width, height, maxTiltDeg, ma
   };
 }
 
+/* ═══════════════════════════════════════════════════════════════════════════
+   CATALOG GRID KEYBOARD NAVIGATION ENGINE
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+function getActualGridColumns() {
+  if (activeCatalogView === "list") return 1;
+  var cards = Array.from(gridEl.querySelectorAll(".card:not([hidden])"));
+  if (cards.length <= 1) return 1;
+  var firstTop = cards[0].offsetTop;
+  var count = 0;
+  for (var i = 0; i < cards.length; i++) {
+    if (Math.abs(cards[i].offsetTop - firstTop) < 14) {
+      count++;
+    } else {
+      break;
+    }
+  }
+  return Math.max(1, count);
+}
+
+function computeGridNavIndex(curr, total, cols, key) {
+  if (total <= 0) return 0;
+  var c = Math.max(1, Math.floor(cols));
+  var cur = Math.min(Math.max(0, curr), total - 1);
+  if (key === "ArrowRight") return Math.min(total - 1, cur + 1);
+  if (key === "ArrowLeft") return Math.max(0, cur - 1);
+  if (key === "ArrowDown") {
+    var nextDown = cur + c;
+    if (nextDown < total) return nextDown;
+    var currentRow = Math.floor(cur / c);
+    var totalRows = Math.ceil(total / c);
+    if (currentRow < totalRows - 1) return total - 1;
+    return cur;
+  }
+  if (key === "ArrowUp") return Math.max(0, cur - c);
+  if (key === "Home") return 0;
+  if (key === "End") return Math.max(0, total - 1);
+  if (key === "PageDown") return Math.min(total - 1, cur + c * 2);
+  if (key === "PageUp") return Math.max(0, cur - c * 2);
+  return cur;
+}
+
+function showToast(msg) {
+  if (typeof window.showActivityToast === "function") {
+    window.showActivityToast(msg);
+  }
+}
+
+function handleCardKeyNavigation(e, cardEl, p) {
+  var target = e.target;
+  var isChildInput = target !== cardEl && (target.tagName === "INPUT" || target.tagName === "TEXTAREA" || target.tagName === "SELECT");
+  if (isChildInput) return;
+
+  var key = e.key;
+
+  // Selection via Enter or Space: Opens spec drawer
+  if (key === "Enter" || key === " " || key === "Spacebar") {
+    if (target !== cardEl && target.tagName === "BUTTON") {
+      return; // allow button native behavior
+    }
+    e.preventDefault();
+    e.stopPropagation();
+    openSpecDrawer(p.id);
+    return;
+  }
+
+  // Quick Action Shortcuts
+  if (key === "+" || key === "=") {
+    e.preventDefault();
+    inc(p.id);
+    showToast("Added " + p.title + " to cart", "cart");
+    return;
+  }
+  if (key === "-" || key === "_") {
+    e.preventDefault();
+    dec(p.id);
+    return;
+  }
+  var lk = key.toLowerCase();
+  if (lk === "c") {
+    e.preventDefault();
+    toggleCompareItem(p.id);
+    return;
+  }
+  if (lk === "w") {
+    e.preventDefault();
+    toggleWishlist(null, p.id);
+    return;
+  }
+  if (lk === "p") {
+    e.preventDefault();
+    toggleCardChart(p.id);
+    return;
+  }
+  if (lk === "s") {
+    e.preventDefault();
+    openSpecDrawer(p.id);
+    return;
+  }
+
+  // Arrow key grid navigation
+  if (key === "ArrowRight" || key === "ArrowLeft" || key === "ArrowDown" || key === "ArrowUp" || key === "Home" || key === "End" || key === "PageDown" || key === "PageUp") {
+    e.preventDefault();
+    var cards = Array.from(gridEl.querySelectorAll(".card:not([hidden])"));
+    if (!cards.length) return;
+    var currentIdx = cards.indexOf(cardEl);
+    if (currentIdx === -1) currentIdx = 0;
+    var cols = getActualGridColumns();
+    var nextIdx = computeGridNavIndex(currentIdx, cards.length, cols, key);
+    if (cards[nextIdx]) {
+      cards[nextIdx].focus();
+      cards[nextIdx].scrollIntoView({ block: "nearest", inline: "nearest", behavior: "smooth" });
+    }
+  }
+}
 
 // ── build the card HTML for every product and drop it in the grid ──
 
@@ -1527,6 +1642,11 @@ function renderAllCards() {
     var card = document.createElement("article");
     card.className = "card" + (lowStock ? " is-low-stock" : "") + (isBackorder ? " is-backorder" : "") + (dealMetrics.isDeal ? " has-deal-drop" : "");
     card.id = "card-" + p.id;
+    card.setAttribute("tabindex", "0");
+    card.setAttribute("role", "article");
+    card.setAttribute("aria-label", p.title + ", $" + p.price.toFixed(2) + (lowStock ? ", Low Stock" : "") + (isBackorder ? ", Backorder" : ""));
+    card.setAttribute("data-product-id", String(p.id));
+    card.setAttribute("data-card-index", String(i));
     card.setAttribute("data-stock", String(stockQty));
     card.setAttribute("data-stock-status", isBackorder ? "backorder" : "available-now");
     card.setAttribute("data-deal-drop", String(dealMetrics.dropPct));
@@ -1697,6 +1817,25 @@ function renderAllCards() {
       this.style.setProperty("--glare-x", "50%");
       this.style.setProperty("--glare-y", "50%");
     });
+
+    // Keyboard navigation focus management
+    (function (currentCard, currentProd) {
+      currentCard.addEventListener("focus", function () {
+        var allCards = gridEl.querySelectorAll(".card");
+        for (var k = 0; k < allCards.length; k++) {
+          if (allCards[k] !== this) allCards[k].classList.remove("keyboard-focused");
+        }
+        this.classList.add("keyboard-focused");
+      });
+
+      currentCard.addEventListener("blur", function () {
+        this.classList.remove("keyboard-focused");
+      });
+
+      currentCard.addEventListener("keydown", function (ev) {
+        handleCardKeyNavigation(ev, this, currentProd);
+      });
+    })(card, p);
 
     gridEl.appendChild(card);
 
@@ -2205,32 +2344,196 @@ function triggerDownload(dataUrl, filename) {
 
 // ── Camera QR Code Scanner Implementation ──
 
-function playScanSuccessChime() {
+var qrAudioContext = null;
+var QR_AUDIO_PING_STORAGE_KEY = "voltbox_qr_audio_ping_enabled";
+
+function isQrAudioPingEnabled() {
   try {
-    if (!qrAudioContext) {
-      var AudioCtx = window.AudioContext || window.webkitAudioContext;
-      if (AudioCtx) qrAudioContext = new AudioCtx();
-    }
-    if (qrAudioContext && qrAudioContext.state !== "suspended") {
-      var osc = qrAudioContext.createOscillator();
-      var gain = qrAudioContext.createGain();
-      osc.type = "sine";
-      osc.frequency.setValueAtTime(880, qrAudioContext.currentTime); // A5
-      osc.frequency.exponentialRampToValueAtTime(1320, qrAudioContext.currentTime + 0.12); // E6
-      gain.gain.setValueAtTime(0.25, qrAudioContext.currentTime);
-      gain.gain.exponentialRampToValueAtTime(0.001, qrAudioContext.currentTime + 0.18);
-      osc.connect(gain);
-      gain.connect(qrAudioContext.destination);
-      osc.start();
-      osc.stop(qrAudioContext.currentTime + 0.18);
-    }
-    if (navigator.vibrate) navigator.vibrate([40, 30, 60]);
+    var stored = localStorage.getItem(QR_AUDIO_PING_STORAGE_KEY);
+    if (stored !== null) return stored === "true";
   } catch (e) {}
+  return true;
+}
+
+function setQrAudioPingEnabled(enabled) {
+  try {
+    localStorage.setItem(QR_AUDIO_PING_STORAGE_KEY, enabled ? "true" : "false");
+  } catch (e) {}
+  updateQrAudioToggleUi();
+}
+
+function initOrResumeQrAudioContext() {
+  try {
+    var AudioCtx = window.AudioContext || window.webkitAudioContext;
+    if (!AudioCtx) return null;
+    if (!qrAudioContext) {
+      qrAudioContext = new AudioCtx();
+    }
+    if (qrAudioContext.state === "suspended") {
+      qrAudioContext.resume().catch(function () {});
+    }
+    return qrAudioContext;
+  } catch (e) {
+    return null;
+  }
+}
+
+function updateQrAudioToggleUi() {
+  var enabled = isQrAudioPingEnabled();
+  var toggleBtn = document.getElementById("qr-audio-toggle-btn");
+  var toggleLabel = document.getElementById("qr-audio-toggle-label");
+  var kickerPill = document.getElementById("qr-audio-kicker-pill");
+  var kickerLabel = document.getElementById("qr-audio-kicker-label");
+
+  var stateInfo = (window.VoltboxQR && typeof window.VoltboxQR.formatAudioPingToggleState === "function")
+    ? window.VoltboxQR.formatAudioPingToggleState(enabled)
+    : {
+        enabled: enabled,
+        label: enabled ? "Audio Ping: ON" : "Audio Ping: MUTED",
+        icon: enabled ? "volume-2" : "volume-x",
+        ariaLabel: enabled ? "Audio ping feedback enabled. Click to mute sound." : "Audio ping feedback muted. Click to enable sound."
+      };
+
+  if (toggleBtn) {
+    toggleBtn.className = "qr-scanner-btn audio-toggle" + (enabled ? "" : " muted");
+    toggleBtn.setAttribute("aria-pressed", String(enabled));
+    toggleBtn.setAttribute("aria-label", stateInfo.ariaLabel);
+    var iconSpan = toggleBtn.querySelector("[data-icon]");
+    if (iconSpan) {
+      iconSpan.setAttribute("data-icon", stateInfo.icon);
+      if (typeof renderIcons === "function") renderIcons(toggleBtn);
+    }
+  }
+  if (toggleLabel) {
+    toggleLabel.textContent = stateInfo.label;
+  }
+  if (kickerPill) {
+    kickerPill.className = "qr-audio-kicker-pill" + (enabled ? "" : " muted");
+    var pillIconSpan = kickerPill.querySelector("[data-icon]");
+    if (pillIconSpan) {
+      pillIconSpan.setAttribute("data-icon", stateInfo.icon);
+      if (typeof renderIcons === "function") renderIcons(kickerPill);
+    }
+  }
+  if (kickerLabel) {
+    kickerLabel.textContent = enabled ? "AUDIO PING ON" : "AUDIO PING MUTED";
+  }
+}
+
+function playScanSuccessChime(forcePreview) {
+  var enabled = isQrAudioPingEnabled();
+  if (!enabled && !forcePreview) return;
+
+  try {
+    var ctx = initOrResumeQrAudioContext();
+    if (!ctx) return;
+
+    var scheduleAudioPing = function (audioCtx) {
+      try {
+        var now = audioCtx.currentTime;
+        var cfg = (window.VoltboxQR && typeof window.VoltboxQR.getScanPingAudioConfig === "function")
+          ? window.VoltboxQR.getScanPingAudioConfig("subtle")
+          : {
+              masterGain: 0.22,
+              tones: [
+                { freq: 1046.50, type: "sine", gain: 0.18, durationSec: 0.18, delaySec: 0 },
+                { freq: 1567.98, type: "sine", gain: 0.075, durationSec: 0.12, delaySec: 0.012 }
+              ],
+              vibrationPattern: [30, 20, 40]
+            };
+
+        var masterGainNode = audioCtx.createGain();
+        masterGainNode.gain.setValueAtTime(cfg.masterGain || 0.22, now);
+        masterGainNode.connect(audioCtx.destination);
+
+        cfg.tones.forEach(function (tone) {
+          var toneStart = now + (tone.delaySec || 0);
+          var attackDur = 0.003;
+          var peakTime = toneStart + attackDur;
+          var stopTime = toneStart + Math.max(0.04, tone.durationSec || 0.18);
+
+          var osc = audioCtx.createOscillator();
+          var toneGain = audioCtx.createGain();
+
+          osc.type = tone.type || "sine";
+          osc.frequency.setValueAtTime(tone.freq, toneStart);
+
+          toneGain.gain.setValueAtTime(0.0001, toneStart);
+          toneGain.gain.linearRampToValueAtTime(tone.gain || 0.15, peakTime);
+          toneGain.gain.exponentialRampToValueAtTime(0.0001, stopTime);
+
+          osc.connect(toneGain);
+          toneGain.connect(masterGainNode);
+
+          osc.start(toneStart);
+          osc.stop(stopTime + 0.02);
+        });
+
+        if (navigator.vibrate && cfg.vibrationPattern) {
+          navigator.vibrate(cfg.vibrationPattern);
+        }
+      } catch (scheduleErr) {
+        console.warn("Audio ping scheduler error:", scheduleErr);
+      }
+    };
+
+    if (ctx.state === "suspended") {
+      ctx.resume().then(function () {
+        scheduleAudioPing(ctx);
+      }).catch(function () {});
+    } else {
+      scheduleAudioPing(ctx);
+    }
+  } catch (e) {
+    console.warn("AudioContext error:", e);
+  }
+}
+
+function triggerQrScanPingFeedback(customLabel) {
+  // 1. Acoustic confirmation chime
+  playScanSuccessChime();
+
+  // 2. Kicker pill pulse
+  var kickerPill = document.getElementById("qr-audio-kicker-pill");
+  if (kickerPill) {
+    kickerPill.classList.add("ping-active");
+    setTimeout(function () { kickerPill.classList.remove("ping-active"); }, 750);
+  }
+
+  // 3. Reticle emerald lock
+  var reticle = document.getElementById("qr-scanner-reticle");
+  if (reticle) {
+    reticle.classList.add("scan-detected");
+  }
+
+  // 4. Visual viewfinder flash
+  var flash = document.getElementById("qr-scanner-ping-flash");
+  var badgeText = document.getElementById("qr-ping-badge-text");
+  if (badgeText && customLabel) {
+    badgeText.textContent = customLabel;
+  }
+  if (flash) {
+    flash.classList.add("active");
+  }
+}
+
+function resetQrScanPingFeedback() {
+  var reticle = document.getElementById("qr-scanner-reticle");
+  if (reticle) {
+    reticle.classList.remove("scan-detected");
+  }
+  var flash = document.getElementById("qr-scanner-ping-flash");
+  if (flash) {
+    flash.classList.remove("active");
+  }
 }
 
 function openQrScannerModal() {
   var overlay = document.getElementById("qr-scanner-overlay");
   if (!overlay) return;
+  initOrResumeQrAudioContext();
+  updateQrAudioToggleUi();
+  resetQrScanPingFeedback();
   loadQrScanHistory();
   renderQrScanHistory();
   openModal(overlay);
@@ -2241,6 +2544,7 @@ function closeQrScannerModal() {
   var overlay = document.getElementById("qr-scanner-overlay");
   if (!overlay) return;
   stopQrCamera();
+  resetQrScanPingFeedback();
   closeModal(overlay);
 }
 
@@ -2402,18 +2706,23 @@ function handleSuccessfulQrScan(rawPayload) {
       });
     }
 
-    playScanSuccessChime();
-    closeQrScannerModal();
+    var productLabel = targetProduct ? targetProduct.title : ("Part #" + targetId);
+    triggerQrScanPingFeedback("✓ " + productLabel);
+    updateScannerStatus("Recognized " + productLabel + " · Specs loading…", false);
 
-    var card = document.getElementById("card-" + targetId);
-    if (card) {
-      card.scrollIntoView({ behavior: "smooth", block: "center" });
-      card.classList.add("restock-flash");
-      setTimeout(function () { card.classList.remove("restock-flash"); }, 2000);
-    }
+    setTimeout(function () {
+      closeQrScannerModal();
 
-    openSpecDrawer(targetId);
-    showActivityToast("QR Code recognized: " + (targetProduct ? targetProduct.title : ("Part #" + targetId)));
+      var card = document.getElementById("card-" + targetId);
+      if (card) {
+        card.scrollIntoView({ behavior: "smooth", block: "center" });
+        card.classList.add("restock-flash");
+        setTimeout(function () { card.classList.remove("restock-flash"); }, 2000);
+      }
+
+      openSpecDrawer(targetId);
+      showActivityToast("QR Code recognized: " + productLabel);
+    }, 380);
   } else {
     updateScannerStatus("Unrecognized QR payload: " + rawPayload.slice(0, 36), true);
     setTimeout(function () {
@@ -4045,7 +4354,8 @@ function loadHistory() {
                  'onerror="this.onerror=null;this.src=NO_IMAGE" />';
         }
         html +=
-          '<button class="history-item" onclick="openOrderFromHistory(\'' + o.id + '\')">' +
+          '<div class="history-item-container" style="display:flex;align-items:center;gap:6px;width:100%;margin-bottom:6px;">' +
+          '<button class="history-item" style="flex:1;" onclick="openOrderFromHistory(\'' + o.id + '\')">' +
             (thumbsHtml ? '<span class="history-item-thumbs">' + thumbsHtml + '</span>' : '') +
             '<span class="history-item-main">' +
               '<span class="history-item-id">' + esc(o.id) + '</span>' +
@@ -4053,7 +4363,11 @@ function loadHistory() {
               o.count + (o.count === 1 ? " item" : " items") + ' · ' + esc(o.paymentMethod || o.status || 'Paid') + '</span>' +
             '</span>' +
             '<span class="history-item-total">$' + o.total.toFixed(2) + '</span>' +
-          '</button>';
+          '</button>' +
+          '<button type="button" class="history-track-badge" title="Track Order ' + esc(o.id) + '" onclick="event.stopPropagation();closeAllSheets();openOrderTrackingDashboard(\'' + o.id + '\');">' +
+            icon("truck", 12) + ' <span>Track</span>' +
+          '</button>' +
+          '</div>';
       }
       historyListEl.innerHTML = html;
     })
@@ -4318,6 +4632,31 @@ function wireUpButtons() {
       }
     });
   }
+  var qrAudioToggleBtn = document.getElementById("qr-audio-toggle-btn");
+  if (qrAudioToggleBtn) {
+    qrAudioToggleBtn.addEventListener("click", function () {
+      initOrResumeQrAudioContext();
+      var newState = !isQrAudioPingEnabled();
+      setQrAudioPingEnabled(newState);
+      if (newState) {
+        playScanSuccessChime(true);
+        showActivityToast("Audio ping feedback: Enabled (🔊)");
+      } else {
+        showActivityToast("Audio ping feedback: Muted (🔇)");
+      }
+    });
+  }
+
+  var qrAudioTestBtn = document.getElementById("qr-audio-test-btn");
+  if (qrAudioTestBtn) {
+    qrAudioTestBtn.addEventListener("click", function () {
+      initOrResumeQrAudioContext();
+      triggerQrScanPingFeedback("✓ Acoustic Ping Test");
+      setTimeout(resetQrScanPingFeedback, 550);
+      showActivityToast("Played subtle QR audio ping feedback");
+    });
+  }
+
   var qrManualForm = document.getElementById("qr-manual-entry-form");
   if (qrManualForm) {
     qrManualForm.addEventListener("submit", handleManualQrSubmit);
@@ -4738,15 +5077,43 @@ function wireUpButtons() {
   }
 
   document.addEventListener("keydown", function (e) {
-    if (e.key !== "Escape") return;
-    if (overlayEl.classList.contains("open")) closeReceipt();
-    else if (checkoutOverlayEl.classList.contains("open")) closeModal(checkoutOverlayEl);
-    else if (priceAlertOverlayEl && priceAlertOverlayEl.classList.contains("open")) closePriceAlertModal();
-    else if (pwaInstallOverlayEl && pwaInstallOverlayEl.classList.contains("open")) closePwaInstallModal();
-    else if (messengerOverlayEl && messengerOverlayEl.classList.contains("open")) closeMessenger();
-    else if (specDrawerOverlayEl && specDrawerOverlayEl.classList.contains("open")) closeSpecDrawer();
-    else if (rigDrawerOverlayEl && rigDrawerOverlayEl.classList.contains("open")) closeRigDrawer();
-    else closeAllSheets();
+    if (e.key === "Escape") {
+      if (overlayEl && overlayEl.classList.contains("open")) closeReceipt();
+      else if (checkoutOverlayEl && checkoutOverlayEl.classList.contains("open")) closeModal(checkoutOverlayEl);
+      else if (priceAlertOverlayEl && priceAlertOverlayEl.classList.contains("open")) closePriceAlertModal();
+      else if (pwaInstallOverlayEl && pwaInstallOverlayEl.classList.contains("open")) closePwaInstallModal();
+      else if (messengerOverlayEl && messengerOverlayEl.classList.contains("open")) closeMessenger();
+      else if (specDrawerOverlayEl && specDrawerOverlayEl.classList.contains("open")) closeSpecDrawer();
+      else if (rigDrawerOverlayEl && rigDrawerOverlayEl.classList.contains("open")) closeRigDrawer();
+      else closeAllSheets();
+      return;
+    }
+
+    // Do not trigger global navigation shortcuts if user is typing in form controls
+    var activeTag = document.activeElement ? document.activeElement.tagName : "";
+    if (activeTag === "INPUT" || activeTag === "TEXTAREA" || activeTag === "SELECT") {
+      return;
+    }
+
+    // 'g' or 'G' jumps to the catalog grid
+    if (e.key === "g" || e.key === "G") {
+      var firstCard = gridEl.querySelector(".card:not([hidden])");
+      if (firstCard) {
+        e.preventDefault();
+        firstCard.focus();
+        firstCard.scrollIntoView({ block: "nearest", inline: "nearest", behavior: "smooth" });
+        showToast("Catalog grid focused — use Arrow keys to navigate, Enter for specs, +/- for cart", "info");
+      }
+      return;
+    }
+
+    // '/' jumps to search input
+    if (e.key === "/" && searchEl) {
+      e.preventDefault();
+      searchEl.focus();
+      searchEl.select();
+      return;
+    }
   });
 }
 
@@ -7847,5 +8214,324 @@ function initMomentumDrawers() {
     computeScrollThumbMetrics: computeScrollThumbMetricsClient
   };
 }
+
+// ═══════════════════════════════════════════════════════════════════════════
+// REAL-TIME ORDER TRACKING DASHBOARD & PROGRESS TIMELINE CONTROLLER
+// ═══════════════════════════════════════════════════════════════════════════
+
+var activeTrackingOrderId = null;
+var trackingPollTimer = null;
+var activeTrackingData = null;
+
+var orderTrackingOverlayEl = document.getElementById("order-tracking-overlay");
+var orderTrackingCardEl    = document.getElementById("order-tracking-card");
+var trackingCloseBtnEl     = document.getElementById("tracking-modal-close");
+var trackingDoneBtnEl      = document.getElementById("tracking-done-btn");
+var trackingAdvanceBtnEl   = document.getElementById("tracking-advance-btn");
+var trackingRefreshBtnEl   = document.getElementById("tracking-refresh-btn");
+var trackingReceiptBtnEl   = document.getElementById("tracking-view-receipt-btn");
+var trackingAwbCopyBtnEl   = document.getElementById("tracking-awb-copy-btn");
+
+function openOrderTrackingDashboard(targetOrderId) {
+  if (orderTrackingOverlayEl) {
+    orderTrackingOverlayEl.classList.add("open");
+    orderTrackingOverlayEl.setAttribute("aria-hidden", "false");
+    document.body.classList.add("no-scroll");
+  }
+
+  // If specific order given, fetch it; otherwise fetch user orders and take newest
+  if (targetOrderId) {
+    activeTrackingOrderId = targetOrderId;
+    fetchOrderTracking(targetOrderId);
+  } else {
+    api("/api/orders")
+      .then(function(res) { return res.json(); })
+      .then(function(orders) {
+        if (Array.isArray(orders) && orders.length > 0) {
+          activeTrackingOrderId = orders[0].id;
+          fetchOrderTracking(activeTrackingOrderId);
+        } else {
+          renderEmptyTrackingState();
+        }
+      })
+      .catch(function(err) {
+        console.error("Failed to load orders for tracking:", err);
+        renderEmptyTrackingState();
+      });
+  }
+
+  // Start real-time polling while dashboard is open (every 3500ms)
+  clearInterval(trackingPollTimer);
+  trackingPollTimer = setInterval(function() {
+    if (activeTrackingOrderId && orderTrackingOverlayEl && orderTrackingOverlayEl.classList.contains("open")) {
+      fetchOrderTracking(activeTrackingOrderId, true);
+    }
+  }, 3500);
+}
+
+function closeOrderTrackingDashboard() {
+  clearInterval(trackingPollTimer);
+  trackingPollTimer = null;
+  if (orderTrackingOverlayEl) {
+    orderTrackingOverlayEl.classList.remove("open");
+    orderTrackingOverlayEl.setAttribute("aria-hidden", "true");
+    document.body.classList.remove("no-scroll");
+  }
+}
+
+function fetchOrderTracking(orderId, isSilent) {
+  if (!orderId) return;
+  if (!isSilent) {
+    var statusBadge = document.getElementById("tracking-status-badge");
+    if (statusBadge && !activeTrackingData) statusBadge.textContent = "Loading telemetry…";
+  }
+
+  api("/api/orders/" + encodeURIComponent(orderId) + "/tracking")
+    .then(function(res) {
+      if (!res.ok) throw new Error("Order not found");
+      return res.json();
+    })
+    .then(function(data) {
+      if (data && data.timeline) {
+        activeTrackingData = data;
+        renderOrderTrackingDashboard(data);
+      }
+    })
+    .catch(function(err) {
+      console.warn("Could not fetch order tracking for", orderId, err);
+      if (!isSilent) {
+        var statusBadge = document.getElementById("tracking-status-badge");
+        if (statusBadge) statusBadge.textContent = "Unable to connect";
+      }
+    });
+}
+
+function renderOrderTrackingDashboard(data) {
+  var t = data.timeline;
+  var ord = data.order || {};
+  activeTrackingOrderId = t.orderId;
+
+  // Header Elements
+  var orderIdEl = document.getElementById("tracking-order-id");
+  if (orderIdEl) orderIdEl.textContent = t.orderId;
+
+  var placedDateEl = document.getElementById("tracking-placed-date");
+  if (placedDateEl) {
+    var pDate = new Date(t.placedAt);
+    placedDateEl.textContent = "Placed " + pDate.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
+  }
+
+  var itemsCountEl = document.getElementById("tracking-items-count");
+  if (itemsCountEl) {
+    itemsCountEl.textContent = t.itemCount + (t.itemCount === 1 ? " item" : " items");
+  }
+
+  var statusBadgeEl = document.getElementById("tracking-status-badge");
+  if (statusBadgeEl) {
+    statusBadgeEl.textContent = t.currentStatus;
+    statusBadgeEl.className = "tracking-status-badge";
+    if (t.currentStageKey === "delivered") {
+      statusBadgeEl.classList.add("status-delivered");
+    } else if (t.currentStageKey === "processing") {
+      statusBadgeEl.classList.add("status-processing");
+    }
+  }
+
+  // Courier & ETA
+  var etaValEl = document.getElementById("tracking-eta-val");
+  if (etaValEl) etaValEl.textContent = t.estimatedDelivery;
+
+  var transitNoteEl = document.getElementById("tracking-transit-note");
+  if (transitNoteEl) transitNoteEl.textContent = t.carrier.service;
+
+  var carrierNameEl = document.getElementById("tracking-carrier-name");
+  if (carrierNameEl) carrierNameEl.textContent = t.carrier.name;
+
+  var awbLabelEl = document.getElementById("tracking-awb-label");
+  if (awbLabelEl) awbLabelEl.textContent = t.carrier.trackingNumber;
+
+  var destAddrEl = document.getElementById("tracking-destination-addr");
+  if (destAddrEl) destAddrEl.textContent = "Destination: " + (t.destination.address || " Indiranagar, Bengaluru");
+
+  // Progress Bar & Stepper
+  var progressPctEl = document.getElementById("tracking-progress-pct");
+  if (progressPctEl) progressPctEl.textContent = t.progressPercent + "% Complete";
+
+  var trackFillEl = document.getElementById("tracking-track-fill");
+  if (trackFillEl) trackFillEl.style.width = t.progressPercent + "%";
+
+  // 4 Milestone Nodes
+  for (var i = 0; i < t.stages.length; i++) {
+    var stage = t.stages[i];
+    var nodeEl = document.getElementById("step-node-" + stage.key);
+    if (nodeEl) {
+      nodeEl.className = "timeline-step " + stage.state;
+    }
+    var timeEl = document.getElementById("step-time-" + stage.key);
+    if (timeEl) timeEl.textContent = stage.timestamp;
+    var detailEl = document.getElementById("step-detail-" + stage.key);
+    if (detailEl) detailEl.textContent = stage.subtitle;
+  }
+
+  // Contents
+  var totalAmountEl = document.getElementById("tracking-total-amount");
+  if (totalAmountEl) totalAmountEl.textContent = "$" + Number(t.total || 0).toFixed(2);
+
+  var itemsListEl = document.getElementById("tracking-items-list");
+  if (itemsListEl) {
+    var lines = Array.isArray(ord.lines) ? ord.lines : [];
+    if (lines.length === 0) {
+      itemsListEl.innerHTML = '<p style="color:#64748b;font-size:12px;margin:4px 0;">No items listed.</p>';
+    } else {
+      var linesHtml = "";
+      for (var j = 0; j < lines.length; j++) {
+        var ln = lines[j];
+        var imgUrl = getProductImageUrl(ln);
+        linesHtml +=
+          '<div class="tracking-item-row">' +
+            '<div class="tracking-item-left">' +
+              '<img class="tracking-item-thumb" src="' + esc(imgUrl) + '" alt="' + esc(ln.title || "") + '" onerror="this.onerror=null;this.src=NO_IMAGE" />' +
+              '<div>' +
+                '<div class="tracking-item-title">' + esc(ln.title || "Hardware Component") + '</div>' +
+                '<div class="tracking-item-qty">Qty: ' + (ln.qty || 1) + ' · $' + Number(ln.price || 0).toFixed(2) + ' each</div>' +
+              '</div>' +
+            '</div>' +
+            '<div class="tracking-item-price">$' + (Number(ln.price || 0) * (ln.qty || 1)).toFixed(2) + '</div>' +
+          '</div>';
+      }
+      itemsListEl.innerHTML = linesHtml;
+    }
+  }
+
+  // Advance Stage button
+  var advanceLabelEl = document.getElementById("tracking-advance-label");
+  if (trackingAdvanceBtnEl && advanceLabelEl) {
+    if (t.canAdvance && t.nextStage) {
+      trackingAdvanceBtnEl.disabled = false;
+      advanceLabelEl.textContent = "Advance to " + t.nextStage + " (Live Demo)";
+    } else {
+      trackingAdvanceBtnEl.disabled = false;
+      advanceLabelEl.textContent = "Delivered · Restart Demo";
+    }
+  }
+
+  if (typeof renderIcons === "function") {
+    renderIcons(orderTrackingCardEl);
+  }
+}
+
+function renderEmptyTrackingState() {
+  var orderIdEl = document.getElementById("tracking-order-id");
+  if (orderIdEl) orderIdEl.textContent = "NO ORDERS YET";
+  var statusBadgeEl = document.getElementById("tracking-status-badge");
+  if (statusBadgeEl) statusBadgeEl.textContent = "Awaiting Checkout";
+  var etaValEl = document.getElementById("tracking-eta-val");
+  if (etaValEl) etaValEl.textContent = "Place an order first";
+  var itemsListEl = document.getElementById("tracking-items-list");
+  if (itemsListEl) {
+    itemsListEl.innerHTML =
+      '<p style="color:#94a3b8;font-size:12.5px;padding:8px 0;">No active purchases to track. Add components from the catalog and tap "Checkout" to see real-time dispatch telemetry!</p>';
+  }
+}
+
+function advanceActiveOrderStage() {
+  if (!activeTrackingOrderId) return;
+  if (!trackingAdvanceBtnEl) return;
+
+  var advanceLabelEl = document.getElementById("tracking-advance-label");
+  if (advanceLabelEl) advanceLabelEl.textContent = "Advancing stage…";
+  trackingAdvanceBtnEl.disabled = true;
+
+  var isRestart = activeTrackingData && activeTrackingData.timeline && !activeTrackingData.timeline.canAdvance;
+  var endpoint = isRestart ? "/api/orders/" + encodeURIComponent(activeTrackingOrderId) + "/status" : "/api/orders/" + encodeURIComponent(activeTrackingOrderId) + "/advance";
+  var reqOptions = isRestart
+    ? { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ status: "Order Placed" }) }
+    : { method: "POST" };
+
+  api(endpoint, reqOptions)
+    .then(function(res) { return res.json(); })
+    .then(function(data) {
+      if (data && data.timeline) {
+        activeTrackingData = data;
+        renderOrderTrackingDashboard(data);
+        var msg = "Order #" + activeTrackingOrderId + " is now: " + data.timeline.currentStatus;
+        if (typeof showToast === "function") showToast(msg);
+      }
+    })
+    .catch(function(err) {
+      console.error("Failed to advance order tracking stage:", err);
+      if (advanceLabelEl) advanceLabelEl.textContent = "Advance Stage (Live Demo)";
+      trackingAdvanceBtnEl.disabled = false;
+    });
+}
+
+function refreshActiveOrderTracking() {
+  if (!activeTrackingOrderId) return;
+  var refreshBtn = document.getElementById("tracking-refresh-btn");
+  if (refreshBtn) refreshBtn.classList.add("spinning");
+  fetchOrderTracking(activeTrackingOrderId, false);
+  setTimeout(function() {
+    if (refreshBtn) refreshBtn.classList.remove("spinning");
+    if (typeof showToast === "function") showToast("Live dispatch telemetry refreshed.");
+  }, 400);
+}
+
+function viewReceiptFromTracking() {
+  if (activeTrackingData && activeTrackingData.order) {
+    closeOrderTrackingDashboard();
+    showReceipt(activeTrackingData.order);
+  }
+}
+
+function copyTrackingAwb() {
+  var awbEl = document.getElementById("tracking-awb-label");
+  var text = awbEl ? awbEl.textContent.trim() : "VB-TRK-882194";
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    navigator.clipboard.writeText(text).then(function() {
+      if (typeof showToast === "function") showToast("Tracking AWB copied: " + text);
+    });
+  } else {
+    if (typeof showToast === "function") showToast("AWB: " + text);
+  }
+}
+
+function initOrderTrackingWiring() {
+  if (trackingCloseBtnEl) trackingCloseBtnEl.addEventListener("click", closeOrderTrackingDashboard);
+  if (trackingDoneBtnEl) trackingDoneBtnEl.addEventListener("click", closeOrderTrackingDashboard);
+  if (trackingAdvanceBtnEl) trackingAdvanceBtnEl.addEventListener("click", advanceActiveOrderStage);
+  if (trackingRefreshBtnEl) trackingRefreshBtnEl.addEventListener("click", refreshActiveOrderTracking);
+  if (trackingReceiptBtnEl) trackingReceiptBtnEl.addEventListener("click", viewReceiptFromTracking);
+  if (trackingAwbCopyBtnEl) trackingAwbCopyBtnEl.addEventListener("click", copyTrackingAwb);
+
+  if (orderTrackingOverlayEl) {
+    orderTrackingOverlayEl.addEventListener("click", function(e) {
+      if (e.target === orderTrackingOverlayEl) closeOrderTrackingDashboard();
+    });
+  }
+
+  var receiptTrackBtn = document.getElementById("receipt-track-btn");
+  if (receiptTrackBtn) {
+    receiptTrackBtn.addEventListener("click", function() {
+      var ordId = shownOrder ? shownOrder.id : null;
+      closeReceipt();
+      openOrderTrackingDashboard(ordId);
+    });
+  }
+
+  var openTrackingBtn = document.getElementById("open-tracking-btn");
+  if (openTrackingBtn) {
+    openTrackingBtn.addEventListener("click", function() {
+      closeAllSheets();
+      openOrderTrackingDashboard(null);
+    });
+  }
+}
+
+document.addEventListener("DOMContentLoaded", function() {
+  initOrderTrackingWiring();
+});
+
+window.openOrderTrackingDashboard = openOrderTrackingDashboard;
+window.closeOrderTrackingDashboard = closeOrderTrackingDashboard;
 
 

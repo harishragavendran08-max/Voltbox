@@ -306,6 +306,13 @@
             <div class="sheet-divider"></div>
 
             <div class="profile-actions-stack">
+              <!-- Live Order Tracking Button -->
+              <button class="sheet-btn ghost wide" id="open-tracking-btn" type="button"
+                      aria-label="Track Active Order" style="display:flex;align-items:center;justify-content:center;gap:8px;margin-bottom:8px;color:#38bdf8;border-color:#0284c7;">
+                <span data-icon="truck" data-icon-size="14"></span>
+                <span>Track Active Order</span>
+              </button>
+
               <!-- Switch User / Admin Login Link -->
               <a href="login.html?switch=1" class="sheet-btn ghost wide" id="topbar-role-badge"
                  title="User Login / Admin Login" style="display:flex;align-items:center;justify-content:center;gap:8px;text-decoration:none;margin-bottom:8px;">
@@ -468,6 +475,17 @@
         <div class="catalog-results-meta" id="catalog-results-meta" data-testid="catalog-results-meta">
           <span class="results-dot"></span>
           <span>Showing <strong id="catalog-visible-count">0</strong> of <strong id="catalog-total-count">0</strong> components</span>
+          <div class="catalog-keyboard-hint" id="catalog-keyboard-hint" title="Use Arrow keys to navigate cards, Enter/Space to view specs, +/- for cart, C to compare">
+            <span class="kbd-label">Keys:</span>
+            <kbd class="kbd-key">&larr;&rarr;&uarr;&darr;</kbd>
+            <span class="kbd-action">Move</span>
+            <span class="kbd-sep">&middot;</span>
+            <kbd class="kbd-key">Enter</kbd>
+            <span class="kbd-action">Select</span>
+            <span class="kbd-sep">&middot;</span>
+            <kbd class="kbd-key">&plus;</kbd>
+            <span class="kbd-action">Cart</span>
+          </div>
         </div>
 
         <div class="catalog-quick-filters-wrap">
@@ -511,7 +529,7 @@
 
     <!-- product cards get dumped in here by app.js -->
     <main>
-      <div class="grid" id="product-grid">
+      <div class="grid" id="product-grid" role="region" aria-label="Component Catalog Grid" tabindex="-1">
         <div class="loading" id="loading">
           <div class="spinner"></div>
           <p>loading products…</p>
@@ -1248,6 +1266,7 @@
       <!-- buttons sit OUTSIDE the paper so they don't get printed -->
       <div class="receipt-actions">
         <button class="receipt-btn ghost" id="receipt-close">Keep shopping</button>
+        <button class="receipt-btn solid" id="receipt-track-btn" style="background:#0284c7;border-color:#38bdf8;color:#fff;"><span data-icon="truck" data-icon-size="16"></span> Track Order</button>
         <button class="receipt-btn ghost" id="receipt-email"><span data-icon="mail" data-icon-size="16"></span> Email me this bill</button>
         <button class="receipt-btn ghost" id="receipt-download"><span data-icon="download" data-icon-size="16"></span> Download PNG</button>
         <button class="receipt-btn solid" id="receipt-print"><span data-icon="printer" data-icon-size="16"></span> Print / Save</button>
@@ -1255,6 +1274,147 @@
 
       <!-- confirmation / error line under the buttons after emailing -->
       <p class="receipt-msg" id="receipt-msg" hidden></p>
+    </div>
+  </div>
+
+  <!-- Real-Time Order Tracking Dashboard Overlay -->
+  <div class="tracking-overlay" id="order-tracking-overlay" aria-hidden="true" role="dialog" aria-modal="true" aria-label="Real-time order tracking dashboard">
+    <div class="tracking-card" id="order-tracking-card">
+      <!-- Header -->
+      <div class="tracking-header">
+        <div class="tracking-header-main">
+          <div class="tracking-header-badge-row">
+            <span class="tracking-kicker">LIVE FULFILLMENT DISPATCH</span>
+            <span class="tracking-live-indicator"><span class="tracking-pulse-dot"></span> LIVE TELEMETRY</span>
+          </div>
+          <h2 class="tracking-title" id="tracking-title">Order #<span id="tracking-order-id">VB-000000</span></h2>
+          <div class="tracking-meta-row">
+            <span class="tracking-placed-date" id="tracking-placed-date">Placed --</span>
+            <span class="tracking-dot-sep">·</span>
+            <span class="tracking-items-count" id="tracking-items-count">0 items</span>
+            <span class="tracking-dot-sep">·</span>
+            <span class="tracking-status-badge" id="tracking-status-badge">Order Placed</span>
+          </div>
+        </div>
+        <button class="tracking-close-btn" id="tracking-modal-close" type="button" aria-label="Close tracking dashboard">
+          <span data-icon="x" data-icon-size="18"></span>
+        </button>
+      </div>
+
+      <!-- ETA & Courier Dispatch Banner -->
+      <div class="tracking-courier-card" id="tracking-courier-card">
+        <div class="tracking-courier-col">
+          <span class="courier-subhead">ESTIMATED DELIVERY</span>
+          <strong class="courier-eta-val" id="tracking-eta-val">--</strong>
+          <span class="courier-transit-note" id="tracking-transit-note">Apex Priority Air Express · ESD Insured</span>
+        </div>
+        <div class="tracking-courier-col">
+          <span class="courier-subhead">CARRIER &amp; AIRWAY BILL (AWB)</span>
+          <div class="courier-awb-row">
+            <span class="courier-name" id="tracking-carrier-name">BlueDart Express</span>
+            <button class="courier-copy-btn" id="tracking-awb-copy-btn" type="button" title="Copy tracking number">
+              <span id="tracking-awb-label">VB-TRK-882194</span>
+              <span data-icon="copy" data-icon-size="13"></span>
+            </button>
+          </div>
+          <span class="courier-dest-val" id="tracking-destination-addr">Indiranagar, Bengaluru</span>
+        </div>
+      </div>
+
+      <!-- Real-Time Progress Timeline (4 Stages: Order Placed -> Processing -> Shipped -> Delivered) -->
+      <div class="tracking-timeline-section">
+        <div class="tracking-section-head">
+          <span class="tracking-kicker">FULFILLMENT TIMELINE</span>
+          <span class="tracking-progress-pct" id="tracking-progress-pct">0% Complete</span>
+        </div>
+
+        <div class="tracking-stepper-container" id="tracking-stepper-container">
+          <!-- Connecting Progress Track Line -->
+          <div class="stepper-track-bg" aria-hidden="true">
+            <div class="stepper-track-fill" id="tracking-track-fill" style="width: 0%;"></div>
+          </div>
+
+          <!-- 4 Milestone Stage Nodes -->
+          <div class="stepper-nodes-row" id="tracking-nodes-row">
+            <!-- Stage 1: Order Placed -->
+            <div class="timeline-step" id="step-node-placed" data-step="0">
+              <div class="step-indicator">
+                <span class="step-icon" data-icon="clipboard-check" data-icon-size="16"></span>
+              </div>
+              <div class="step-info">
+                <strong class="step-title">Order Placed</strong>
+                <span class="step-time" id="step-time-placed">--</span>
+                <span class="step-detail" id="step-detail-placed">Payment verified · Invoice generated</span>
+              </div>
+            </div>
+
+            <!-- Stage 2: Processing -->
+            <div class="timeline-step" id="step-node-processing" data-step="1">
+              <div class="step-indicator">
+                <span class="step-icon" data-icon="package" data-icon-size="16"></span>
+              </div>
+              <div class="step-info">
+                <strong class="step-title">Processing</strong>
+                <span class="step-time" id="step-time-processing">--</span>
+                <span class="step-detail" id="step-detail-processing">ESD bench testing · Cushion packed</span>
+              </div>
+            </div>
+
+            <!-- Stage 3: Shipped -->
+            <div class="timeline-step" id="step-node-shipped" data-step="2">
+              <div class="step-indicator">
+                <span class="step-icon" data-icon="truck" data-icon-size="16"></span>
+              </div>
+              <div class="step-info">
+                <strong class="step-title">Shipped</strong>
+                <span class="step-time" id="step-time-shipped">--</span>
+                <span class="step-detail" id="step-detail-shipped">Dispatched via BlueDart Air Cargo</span>
+              </div>
+            </div>
+
+            <!-- Stage 4: Delivered -->
+            <div class="timeline-step" id="step-node-delivered" data-step="3">
+              <div class="step-indicator">
+                <span class="step-icon" data-icon="check-circle" data-icon-size="16"></span>
+              </div>
+              <div class="step-info">
+                <strong class="step-title">Delivered</strong>
+                <span class="step-time" id="step-time-delivered">--</span>
+                <span class="step-detail" id="step-detail-delivered">Arrived &amp; signed by recipient</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Order Items Preview in this shipment -->
+      <div class="tracking-items-section">
+        <div class="tracking-section-head">
+          <span class="tracking-kicker">SHIPMENT CONTENTS</span>
+          <span class="tracking-total-amount" id="tracking-total-amount">$0.00</span>
+        </div>
+        <div class="tracking-items-list" id="tracking-items-list">
+          <!-- Loaded dynamically -->
+        </div>
+      </div>
+
+      <!-- Real-Time Actions & Simulation Controls -->
+      <div class="tracking-footer">
+        <div class="tracking-live-controls">
+          <button type="button" class="tracking-btn advance-btn" id="tracking-advance-btn" title="Simulate advancing fulfillment lifecycle stage in real time">
+            <span data-icon="fast-forward" data-icon-size="15"></span>
+            <span id="tracking-advance-label">Advance Stage (Live Demo)</span>
+          </button>
+          <button type="button" class="tracking-btn refresh-btn" id="tracking-refresh-btn" title="Poll latest live telemetry">
+            <span data-icon="rotate-cw" data-icon-size="15"></span>
+            <span>Refresh Status</span>
+          </button>
+        </div>
+        <div class="tracking-footer-actions">
+          <button type="button" class="tracking-btn secondary" id="tracking-view-receipt-btn">View Thermal Bill</button>
+          <button type="button" class="tracking-btn primary" id="tracking-done-btn">Done</button>
+        </div>
+      </div>
     </div>
   </div>
 
@@ -1459,8 +1619,14 @@
 
       <div class="qr-scanner-head">
         <div class="qr-scanner-kicker">
-          <span class="led-dot amber"></span>
-          <span>OPTICAL HARDWARE SENSOR // SCANNER</span>
+          <div class="qr-kicker-left">
+            <span class="led-dot amber"></span>
+            <span>OPTICAL HARDWARE SENSOR // SCANNER</span>
+          </div>
+          <div class="qr-audio-kicker-pill" id="qr-audio-kicker-pill" title="Subtle acoustic ping confirmation enabled">
+            <span data-icon="volume-2" data-icon-size="12"></span>
+            <span id="qr-audio-kicker-label">AUDIO PING ON</span>
+          </div>
         </div>
         <h2 class="modal-title">Scan Product QR Code</h2>
         <p class="modal-text">Point camera at any Voltbox product QR code to instantly open its live hardware specifications, price chart, and warehouse stock.</p>
@@ -1478,6 +1644,14 @@
           <div class="qr-scanner-corner bl"></div>
           <div class="qr-scanner-corner br"></div>
           <div class="qr-scanner-laser" id="qr-scanner-laser"></div>
+        </div>
+
+        <!-- Visual Ping Confirmation Flash -->
+        <div class="qr-scanner-ping-flash" id="qr-scanner-ping-flash" aria-hidden="true">
+          <div class="qr-ping-badge">
+            <span data-icon="check-circle" data-icon-size="22"></span>
+            <span id="qr-ping-badge-text">QR Detected · Ping!</span>
+          </div>
         </div>
 
         <!-- Camera Status Badge -->
@@ -1498,6 +1672,16 @@
 
           <button type="button" class="qr-scanner-btn ghost" id="qr-scanner-flip-cam-btn" title="Switch between front and back camera">
             <span data-icon="refresh" data-icon-size="14"></span> <span>Switch Camera</span>
+          </button>
+
+          <button type="button" class="qr-scanner-btn audio-toggle" id="qr-audio-toggle-btn" title="Toggle audio ping on scan" aria-pressed="true">
+            <span data-icon="volume-2" data-icon-size="14"></span>
+            <span id="qr-audio-toggle-label">Audio Ping: ON</span>
+          </button>
+
+          <button type="button" class="qr-scanner-btn audio-test ghost" id="qr-audio-test-btn" title="Preview audio ping feedback">
+            <span data-icon="zap" data-icon-size="14"></span>
+            <span>Test Ping</span>
           </button>
         </div>
 

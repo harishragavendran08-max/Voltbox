@@ -75,6 +75,28 @@ const DEFAULT_QUANTITIES_BY_ID: Record<number, number> = {
   25: 1,
   26: 10,
   27: 2,
+  28: 3,
+  29: 2,
+  30: 7,
+  31: 4,
+  32: 6,
+  33: 3,
+  34: 8,
+  35: 9,
+  36: 4,
+  37: 2,
+  38: 5,
+  39: 7,
+  40: 3,
+  41: 2,
+  42: 4,
+  43: 6,
+  44: 5,
+  45: 4,
+  46: 8,
+  47: 5,
+  48: 7,
+  49: 3,
 };
 
 export function getProductQuantity(product: { id?: number; quantity?: number; stock?: number }): number {
@@ -148,19 +170,19 @@ export function classifyComponentGroup(product: { title?: string; category?: str
   if (hay.includes('rtx') || hay.includes('gtx') || hay.includes('radeon') || hay.includes('gpu') || hay.includes('graphics')) {
     return 'gpus';
   }
-  if (hay.includes('ryzen') || hay.includes('intel') || hay.includes('core ultra') || hay.includes('core i') || hay.includes('cpu') || hay.includes('processor') || hay.includes('noctua') || hay.includes('cooler')) {
+  if (hay.includes('ryzen') || hay.includes('intel') || hay.includes('core ultra') || hay.includes('core i') || hay.includes('cpu') || hay.includes('processor') || hay.includes('noctua') || hay.includes('cooler') || hay.includes('kraken') || hay.includes('aio')) {
     return 'cpus';
   }
-  if (hay.includes('motherboard') || hay.includes('b550') || hay.includes('b570') || hay.includes('x670') || hay.includes('x870') || hay.includes('crosshair') || hay.includes('z790') || hay.includes('tomahawk') || hay.includes('ddr5') || hay.includes('vengeance') || hay.includes('raspberry')) {
+  if (hay.includes('motherboard') || hay.includes('b550') || hay.includes('b570') || hay.includes('x670') || hay.includes('x870') || hay.includes('crosshair') || hay.includes('z790') || hay.includes('tomahawk') || hay.includes('ddr5') || hay.includes('vengeance') || hay.includes('raspberry') || hay.includes('power supply') || hay.includes('rm1000x') || hay.includes('chassis') || hay.includes('o11 dynamic') || hay.includes('case')) {
     return 'motherboards';
   }
   if (hay.includes('ssd') || hay.includes('nvme') || hay.includes('mp700') || hay.includes('sn850') || hay.includes('harddisk') || hay.includes('hard disk') || hay.includes('hdd') || hay.includes('storage')) {
     return 'storage';
   }
-  if (hay.includes('airpods') || hay.includes('headphone') || hay.includes('xm5') || hay.includes('earbud') || hay.includes('audio') || hay.includes('speaker') || hay.includes('mic') || hay.includes('shure') || hay.includes('sm7') || hay.includes('broadcast') || hay.includes('webcam') || hay.includes('facecam')) {
+  if (hay.includes('airpods') || hay.includes('headphone') || hay.includes('headset') || hay.includes('arctis') || hay.includes('xm5') || hay.includes('earbud') || hay.includes('audio') || hay.includes('speaker') || hay.includes('mic') || hay.includes('shure') || hay.includes('sm7') || hay.includes('broadcast') || hay.includes('webcam') || hay.includes('facecam')) {
     return 'audio';
   }
-  if (hay.includes('playstation') || hay.includes('ps5') || hay.includes('xbox') || hay.includes('controller') || hay.includes('console') || hay.includes('handheld') || hay.includes('aethel') || hay.includes('steam deck') || hay.includes('mouse') || hay.includes('viper') || hay.includes('apex pro') || hay.includes('gaming') || hay.includes('alienware') || hay.includes('oled') || hay.includes('monitor') || hay.includes('keychron') || hay.includes('keyboard')) {
+  if (hay.includes('playstation') || hay.includes('ps5') || hay.includes('xbox') || hay.includes('controller') || hay.includes('console') || hay.includes('handheld') || hay.includes('aethel') || hay.includes('steam deck') || hay.includes('mouse') || hay.includes('viper') || hay.includes('apex pro') || hay.includes('gaming') || hay.includes('alienware') || hay.includes('oled') || hay.includes('monitor') || hay.includes('keychron') || hay.includes('huntsman') || hay.includes('keyboard')) {
     return 'gaming';
   }
   return 'other';
@@ -3969,4 +3991,636 @@ export function recommendStarterRigBundle<
     }
   }
   return selected;
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   CATALOG GRID KEYBOARD NAVIGATION SUPPORT
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+export type GridNavKey =
+  | 'ArrowRight'
+  | 'ArrowLeft'
+  | 'ArrowDown'
+  | 'ArrowUp'
+  | 'Home'
+  | 'End'
+  | 'PageDown'
+  | 'PageUp';
+
+export type CardActionType =
+  | 'open-specs'
+  | 'inc-cart'
+  | 'dec-cart'
+  | 'toggle-compare'
+  | 'toggle-wishlist'
+  | 'toggle-history'
+  | 'navigate'
+  | 'none';
+
+/**
+ * Computes next active card index based on arrow keys, grid column count, and boundary limits.
+ */
+export function computeGridNavigationIndex(
+  currentIndex: number,
+  totalItems: number,
+  columnsCount: number,
+  key: string
+): number {
+  if (totalItems <= 0) return 0;
+  const cols = Math.max(1, Math.floor(columnsCount));
+  const curr = Math.min(Math.max(0, currentIndex), totalItems - 1);
+
+  switch (key) {
+    case 'ArrowRight':
+      return Math.min(totalItems - 1, curr + 1);
+
+    case 'ArrowLeft':
+      return Math.max(0, curr - 1);
+
+    case 'ArrowDown': {
+      const nextDown = curr + cols;
+      if (nextDown < totalItems) return nextDown;
+      // If jumping beyond totalItems, jump to last item if not already in last row
+      const currentRow = Math.floor(curr / cols);
+      const totalRows = Math.ceil(totalItems / cols);
+      if (currentRow < totalRows - 1) {
+        return totalItems - 1;
+      }
+      return curr;
+    }
+
+    case 'ArrowUp':
+      return Math.max(0, curr - cols);
+
+    case 'Home':
+      return 0;
+
+    case 'End':
+      return Math.max(0, totalItems - 1);
+
+    case 'PageDown':
+      return Math.min(totalItems - 1, curr + cols * 2);
+
+    case 'PageUp':
+      return Math.max(0, curr - cols * 2);
+
+    default:
+      return curr;
+  }
+}
+
+/**
+ * Resolves standard responsive column counts for the hardware grid across viewport tiers.
+ */
+export function calculateGridColumnCount(containerWidth: number, viewMode: 'grid' | 'list' = 'grid'): number {
+  if (viewMode === 'list') return 1;
+  const width = typeof containerWidth === 'number' && containerWidth > 0 ? containerWidth : 1280;
+  if (width <= 640) return 2;
+  if (width <= 834) return 2;
+  if (width <= 1024) return 3;
+  if (width <= 1280) return 3;
+  return 4;
+}
+
+/**
+ * Evaluates shortcut key presses on a focused card.
+ */
+export function handleProductCardKeyAction(key: string): CardActionType {
+  const rawKey = String(key || '');
+  if (rawKey === ' ' || rawKey === 'Spacebar' || rawKey === 'Space') {
+    return 'open-specs';
+  }
+  const cleanKey = rawKey.trim();
+  if (cleanKey === 'Enter') {
+    return 'open-specs';
+  }
+  if (cleanKey === '+' || cleanKey === '=') {
+    return 'inc-cart';
+  }
+  if (cleanKey === '-' || cleanKey === '_') {
+    return 'dec-cart';
+  }
+  const lower = cleanKey.toLowerCase();
+  if (lower === 'c') {
+    return 'toggle-compare';
+  }
+  if (lower === 'w') {
+    return 'toggle-wishlist';
+  }
+  if (lower === 'p') {
+    return 'toggle-history';
+  }
+  if (lower === 's') {
+    return 'open-specs';
+  }
+  if (
+    cleanKey === 'ArrowRight' ||
+    cleanKey === 'ArrowLeft' ||
+    cleanKey === 'ArrowDown' ||
+    cleanKey === 'ArrowUp' ||
+    cleanKey === 'Home' ||
+    cleanKey === 'End' ||
+    cleanKey === 'PageDown' ||
+    cleanKey === 'PageUp'
+  ) {
+    return 'navigate';
+  }
+  return 'none';
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Real-Time Order Tracking Dashboard & Progress Timeline Logic
+// ─────────────────────────────────────────────────────────────────────────────
+
+export type OrderTrackingStageKey = 'placed' | 'processing' | 'shipped' | 'delivered';
+
+export interface OrderTrackingStage {
+  key: OrderTrackingStageKey;
+  stepNumber: number;
+  label: string;
+  status: string;
+  subtitle: string;
+  location: string;
+  timestamp: string;
+  timestampMs: number;
+  state: 'completed' | 'current' | 'upcoming';
+  icon: string;
+}
+
+export interface OrderTrackingCarrier {
+  name: string;
+  service: string;
+  trackingNumber: string;
+  trackingUrl: string;
+  contactPhone: string;
+}
+
+export interface OrderTrackingTimeline {
+  orderId: string;
+  currentStatus: string;
+  currentStageIndex: number;
+  currentStageKey: OrderTrackingStageKey;
+  progressPercent: number;
+  stages: OrderTrackingStage[];
+  carrier: OrderTrackingCarrier;
+  estimatedDelivery: string;
+  estimatedDeliveryTimestampMs: number;
+  destination: {
+    name: string;
+    address: string;
+  };
+  itemCount: number;
+  total: number;
+  placedAt: number;
+  canAdvance: boolean;
+  nextStage: string | null;
+}
+
+export interface TrackableOrderLike {
+  id: string;
+  placedAt?: number;
+  status?: string;
+  count?: number;
+  total?: number;
+  shippingName?: string;
+  shippingAddress?: string;
+  lines?: Array<{
+    productId?: number;
+    title?: string;
+    price?: number;
+    qty?: number;
+    image?: string;
+  }>;
+}
+
+/**
+ * Normalizes an arbitrary order status string into one of the 4 canonical timeline stages.
+ */
+export function normalizeTrackingStatus(status?: string | null): {
+  stageIndex: number;
+  stageKey: OrderTrackingStageKey;
+  canonicalLabel: string;
+} {
+  const raw = String(status || '').trim().toLowerCase();
+  if (!raw) {
+    return { stageIndex: 0, stageKey: 'placed', canonicalLabel: 'Order Placed' };
+  }
+  if (raw.includes('deliver') || raw.includes('complete') || raw.includes('arrived')) {
+    return { stageIndex: 3, stageKey: 'delivered', canonicalLabel: 'Delivered' };
+  }
+  if (raw.includes('ship') || raw.includes('transit') || raw.includes('dispatch') || raw.includes('out for delivery')) {
+    return { stageIndex: 2, stageKey: 'shipped', canonicalLabel: 'Shipped' };
+  }
+  if (raw.includes('process') || raw.includes('pack') || raw.includes('bench') || raw.includes('quality') || raw.includes('inspect')) {
+    return { stageIndex: 1, stageKey: 'processing', canonicalLabel: 'Processing' };
+  }
+  return { stageIndex: 0, stageKey: 'placed', canonicalLabel: 'Order Placed' };
+}
+
+/**
+ * Returns the next logical status in the 4-stage fulfillment lifecycle.
+ */
+export function advanceOrderTrackingStage(currentStatus?: string | null): string {
+  const { stageIndex } = normalizeTrackingStatus(currentStatus);
+  switch (stageIndex) {
+    case 0:
+      return 'Processing';
+    case 1:
+      return 'Shipped';
+    case 2:
+      return 'Delivered';
+    case 3:
+    default:
+      return 'Delivered';
+  }
+}
+
+/**
+ * Computes deterministic, real-time tracking timeline metrics, milestones, checkpoints and ETA.
+ */
+export function resolveOrderTrackingTimeline(
+  order: TrackableOrderLike,
+  nowMs: number = Date.now()
+): OrderTrackingTimeline {
+  const orderId = String(order?.id || 'VB-ORDER');
+  const placedAt = typeof order?.placedAt === 'number' && order.placedAt > 0 ? order.placedAt : nowMs - 3600000;
+  const currentStatus = order?.status || 'Order Placed';
+  const { stageIndex, stageKey } = normalizeTrackingStatus(currentStatus);
+
+  // Deterministic tracking number (AWB) from numeric parts of order ID
+  const digitsOnly = orderId.replace(/\D/g, '');
+  const awbSuffix = digitsOnly.length >= 6 ? digitsOnly.slice(-6) : '882194';
+  const trackingNumber = `VB-TRK-${awbSuffix}`;
+
+  // Time calculations (placed -> +4h processing -> +24h shipped -> +72h delivered)
+  const processingTimeMs = placedAt + 4 * 3600 * 1000;
+  const shippedTimeMs = placedAt + 24 * 3600 * 1000;
+  const deliveredTimeMs = placedAt + 72 * 3600 * 1000;
+
+  function formatTrackingDate(ms: number): string {
+    const d = new Date(ms);
+    return d.toLocaleDateString('en-US', {
+      month: 'short',
+      day: 'numeric',
+      year: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit',
+    });
+  }
+
+  const shippingDest = order.shippingAddress && order.shippingAddress.trim()
+    ? order.shippingAddress.trim()
+    : 'Recipient Destination Address';
+
+  const stages: OrderTrackingStage[] = [
+    {
+      key: 'placed',
+      stepNumber: 1,
+      label: 'Order Placed',
+      status: 'Order Placed',
+      subtitle: 'Payment verified · ESD invoice generated',
+      location: 'Voltbox Digital Gateway, BLR',
+      timestamp: formatTrackingDate(placedAt),
+      timestampMs: placedAt,
+      state: stageIndex > 0 ? 'completed' : stageIndex === 0 ? 'current' : 'upcoming',
+      icon: 'clipboard-check',
+    },
+    {
+      key: 'processing',
+      stepNumber: 2,
+      label: 'Processing',
+      status: 'Processing',
+      subtitle: 'ESD bench inspection · Components boxed & cushioned',
+      location: 'Voltbox ESD Hub, Bengaluru',
+      timestamp: stageIndex >= 1 ? formatTrackingDate(Math.min(nowMs, processingTimeMs)) : 'Expected within 4 hours',
+      timestampMs: processingTimeMs,
+      state: stageIndex > 1 ? 'completed' : stageIndex === 1 ? 'current' : 'upcoming',
+      icon: 'package',
+    },
+    {
+      key: 'shipped',
+      stepNumber: 3,
+      label: 'Shipped',
+      status: 'Shipped',
+      subtitle: 'Dispatched via BlueDart Express Air Cargo',
+      location: 'Transit Air Hub · Flight AI-512',
+      timestamp: stageIndex >= 2 ? formatTrackingDate(Math.min(nowMs, shippedTimeMs)) : 'Scheduled next business day',
+      timestampMs: shippedTimeMs,
+      state: stageIndex > 2 ? 'completed' : stageIndex === 2 ? 'current' : 'upcoming',
+      icon: 'truck',
+    },
+    {
+      key: 'delivered',
+      stepNumber: 4,
+      label: 'Delivered',
+      status: 'Delivered',
+      subtitle: 'Delivered and signed by recipient',
+      location: shippingDest,
+      timestamp: stageIndex >= 3 ? formatTrackingDate(Math.min(nowMs, deliveredTimeMs)) : 'Estimated in 2-3 business days',
+      timestampMs: deliveredTimeMs,
+      state: stageIndex >= 3 ? 'completed' : 'upcoming',
+      icon: 'check-circle',
+    },
+  ];
+
+  // Calculate percentage along the 3 connecting segments (0%, 33.3%, 66.7%, 100%)
+  const progressPercent = Math.round((stageIndex / 3) * 100);
+
+  const estDateObj = new Date(deliveredTimeMs);
+  const estimatedDelivery = estDateObj.toLocaleDateString('en-US', {
+    weekday: 'short',
+    month: 'short',
+    day: 'numeric',
+    year: 'numeric',
+  });
+
+  const canAdvance = stageIndex < 3;
+  const nextStage = canAdvance ? advanceOrderTrackingStage(currentStatus) : null;
+
+  return {
+    orderId,
+    currentStatus: stages[stageIndex].label,
+    currentStageIndex: stageIndex,
+    currentStageKey: stageKey,
+    progressPercent,
+    stages,
+    carrier: {
+      name: 'BlueDart Express',
+      service: 'Apex Priority Air Cargo (Insured)',
+      trackingNumber,
+      trackingUrl: `https://www.bluedart.com/tracking?handler=t&trackFor=0&action=funcCall&trackingBox=${trackingNumber}`,
+      contactPhone: '1800 233 1234',
+    },
+    estimatedDelivery,
+    estimatedDeliveryTimestampMs: deliveredTimeMs,
+    destination: {
+      name: order.shippingName || 'Alex Chen',
+      address: shippingDest,
+    },
+    itemCount: typeof order.count === 'number' ? order.count : (order.lines?.length || 0),
+    total: typeof order.total === 'number' ? order.total : 0,
+    placedAt,
+    canAdvance,
+    nextStage,
+  };
+}
+
+// ─────────────────────────────────────────────────────────────
+// QR Scanner Audio Ping Feedback (Subtle & Satisfying Sound Feedback)
+// ─────────────────────────────────────────────────────────────
+
+export interface ScanPingToneSpec {
+  freq: number;
+  harmonicName: string;
+  type: 'sine' | 'triangle';
+  gain: number;
+  durationSec: number;
+  delaySec: number;
+}
+
+export interface ScanPingAudioConfig {
+  profile: 'crystal' | 'subtle' | 'classic';
+  masterGain: number;
+  tones: ScanPingToneSpec[];
+  vibrationPattern: number[];
+  visualFeedbackMs: number;
+  toneDurationMs: number;
+}
+
+export interface ScheduledToneEvent {
+  toneIndex: number;
+  harmonicName: string;
+  frequency: number;
+  type: 'sine' | 'triangle';
+  startTime: number;
+  peakTime: number;
+  stopTime: number;
+  peakGain: number;
+  endGain: number;
+}
+
+/**
+ * Returns the audio configuration for subtle, satisfying acoustic feedback upon QR recognition.
+ * Engineered with a crisp fundamental (C6 / 1046.5Hz) and a gentle harmonic shimmer (G6 / 1567.98Hz),
+ * tapering off smoothly without harsh pops or digital clipping.
+ */
+export function getScanPingAudioConfig(profile: 'crystal' | 'subtle' | 'classic' = 'subtle'): ScanPingAudioConfig {
+  if (profile === 'crystal') {
+    return {
+      profile: 'crystal',
+      masterGain: 0.20,
+      tones: [
+        { freq: 1318.51, harmonicName: 'fundamental_e6', type: 'sine', gain: 0.16, durationSec: 0.17, delaySec: 0.0 },
+        { freq: 2093.00, harmonicName: 'octave_c7', type: 'sine', gain: 0.08, durationSec: 0.11, delaySec: 0.012 },
+      ],
+      vibrationPattern: [35, 20, 45],
+      visualFeedbackMs: 650,
+      toneDurationMs: 200,
+    };
+  }
+
+  if (profile === 'classic') {
+    return {
+      profile: 'classic',
+      masterGain: 0.22,
+      tones: [
+        { freq: 880.00, harmonicName: 'fundamental_a5', type: 'sine', gain: 0.18, durationSec: 0.18, delaySec: 0.0 },
+        { freq: 1320.00, harmonicName: 'fifth_e6', type: 'sine', gain: 0.09, durationSec: 0.12, delaySec: 0.010 },
+      ],
+      vibrationPattern: [40, 25, 50],
+      visualFeedbackMs: 650,
+      toneDurationMs: 210,
+    };
+  }
+
+  // Default: subtle — warm, refined, high-end electronics ping
+  return {
+    profile: 'subtle',
+    masterGain: 0.22,
+    tones: [
+      { freq: 1046.50, harmonicName: 'fundamental_c6', type: 'sine', gain: 0.18, durationSec: 0.18, delaySec: 0.0 },
+      { freq: 1567.98, harmonicName: 'shimmer_g6', type: 'sine', gain: 0.075, durationSec: 0.12, delaySec: 0.012 },
+    ],
+    vibrationPattern: [30, 20, 40],
+    visualFeedbackMs: 650,
+    toneDurationMs: 220,
+  };
+}
+
+/**
+ * Calculates exact oscillator and gain node scheduling timestamps for the Web Audio API graph.
+ */
+export function calculateScanPingSchedule(startTimeSec: number, config?: ScanPingAudioConfig): ScheduledToneEvent[] {
+  const cfg = config || getScanPingAudioConfig('subtle');
+  const baseTime = Math.max(0, Number(startTimeSec) || 0);
+
+  return cfg.tones.map((tone, idx) => {
+    const toneStart = baseTime + Math.max(0, tone.delaySec);
+    const attackDuration = 0.003; // 3ms clickless attack ramp
+    const peakTime = toneStart + attackDuration;
+    const toneDuration = Math.max(0.02, tone.durationSec);
+    const stopTime = toneStart + toneDuration;
+    const peakGain = Math.round(tone.gain * cfg.masterGain * 10000) / 10000;
+    const endGain = 0.0001; // Exponential ramp target
+
+    return {
+      toneIndex: idx,
+      harmonicName: tone.harmonicName,
+      frequency: tone.freq,
+      type: tone.type,
+      startTime: Math.round(toneStart * 10000) / 10000,
+      peakTime: Math.round(peakTime * 10000) / 10000,
+      stopTime: Math.round(stopTime * 10000) / 10000,
+      peakGain,
+      endGain,
+    };
+  });
+}
+
+/**
+ * Validates whether a detected camera/scanner optical payload qualifies to trigger the scan success ping.
+ */
+export function validateQrScanAudioTrigger(rawPayload: unknown): {
+  shouldTrigger: boolean;
+  productId: number | null;
+  reason: string;
+  label: string;
+} {
+  if (rawPayload == null) {
+    return { shouldTrigger: false, productId: null, reason: 'Payload is null or undefined', label: 'No Data' };
+  }
+
+  let text = '';
+  if (typeof rawPayload === 'string') {
+    text = rawPayload.trim();
+  } else if (typeof rawPayload === 'number') {
+    text = String(rawPayload);
+  } else if (typeof rawPayload === 'object') {
+    try {
+      const obj = rawPayload as Record<string, unknown>;
+      if (typeof obj.productId === 'number') return { shouldTrigger: true, productId: obj.productId, reason: 'Parsed productId from object', label: `Part #${obj.productId}` };
+      if (typeof obj.id === 'number') return { shouldTrigger: true, productId: obj.id, reason: 'Parsed id from object', label: `Part #${obj.id}` };
+      text = JSON.stringify(rawPayload);
+    } catch {
+      text = String(rawPayload);
+    }
+  } else {
+    text = String(rawPayload);
+  }
+
+  if (!text) {
+    return { shouldTrigger: false, productId: null, reason: 'Payload string is empty', label: 'Empty' };
+  }
+
+  // 1. Check URL query params: ?product=19 or &product=19
+  const qMatch = text.match(/[?&]product=(\d+)/i);
+  if (qMatch) {
+    const id = Number(qMatch[1]);
+    return { shouldTrigger: true, productId: id, reason: 'Matched product query parameter', label: `Component #${id}` };
+  }
+
+  // 2. Check URL path: /product/19
+  const pathMatch = text.match(/\/product\/(\d+)/i);
+  if (pathMatch) {
+    const id = Number(pathMatch[1]);
+    return { shouldTrigger: true, productId: id, reason: 'Matched product path segment', label: `Component #${id}` };
+  }
+
+  // 3. Check SKU pattern: VB-GPU-019
+  const skuMatch = text.match(/VB-[A-Z]{3}-(\d+)/i);
+  if (skuMatch) {
+    const id = Number(skuMatch[1]);
+    return { shouldTrigger: true, productId: id, reason: 'Matched Voltbox SKU format', label: `SKU VB-${id}` };
+  }
+
+  // 4. Check Voltbox prefix: VB:19 or VOLTBOX:19
+  const prefixMatch = text.match(/^(?:VOLTBOX|VB):(\d+)$/i);
+  if (prefixMatch) {
+    const id = Number(prefixMatch[1]);
+    return { shouldTrigger: true, productId: id, reason: 'Matched Voltbox ID prefix', label: `Voltbox #${id}` };
+  }
+
+  // 5. Clean numeric string: "19"
+  if (/^\d+$/.test(text)) {
+    const id = Number(text);
+    return { shouldTrigger: true, productId: id, reason: 'Matched direct numeric product identifier', label: `Part #${id}` };
+  }
+
+  // 6. Generic recognized URL
+  if (/^https?:\/\//i.test(text)) {
+    return { shouldTrigger: true, productId: null, reason: 'Recognized valid web URL payload', label: 'Web Link' };
+  }
+
+  // If text is too short or unstructured noise
+  if (text.length < 3) {
+    return { shouldTrigger: false, productId: null, reason: 'Payload too brief to represent a hardware code', label: 'Noise' };
+  }
+
+  // Fallback: treated as unrecognized code
+  return { shouldTrigger: false, productId: null, reason: 'Unrecognized product code pattern', label: text.slice(0, 16) };
+}
+
+/**
+ * Returns the UI button state and accessibility attributes for the audio ping toggle.
+ */
+export function formatAudioPingToggleState(enabled: boolean): {
+  enabled: boolean;
+  label: string;
+  shortLabel: string;
+  icon: 'volume-2' | 'volume-x';
+  tooltip: string;
+  ariaLabel: string;
+  ariaChecked: boolean;
+} {
+  const isEnabled = !!enabled;
+  return {
+    enabled: isEnabled,
+    label: isEnabled ? 'Audio Ping: ON' : 'Audio Ping: MUTED',
+    shortLabel: isEnabled ? 'Ping ON' : 'Muted',
+    icon: isEnabled ? 'volume-2' : 'volume-x',
+    tooltip: isEnabled ? 'Subtle audio ping enabled on QR detection. Click to mute.' : 'Audio ping muted. Click to enable sound feedback.',
+    ariaLabel: isEnabled ? 'Audio ping feedback enabled. Click to mute sound.' : 'Audio ping feedback muted. Click to enable sound.',
+    ariaChecked: isEnabled,
+  };
+}
+
+/**
+ * Pure mathematical synthesis of the scan ping audio waveform into a Float32Array PCM buffer.
+ * Used for audio validation, testing harmonic frequencies, and ensuring zero clicks or harsh distortion.
+ */
+export function synthesizeScanPingPcmBuffer(sampleRate = 44100, config?: ScanPingAudioConfig): Float32Array {
+  const cfg = config || getScanPingAudioConfig('subtle');
+  const sr = Math.max(8000, Math.floor(sampleRate));
+  const totalDurationSec = (cfg.toneDurationMs + 50) / 1000;
+  const numSamples = Math.floor(totalDurationSec * sr);
+  const buffer = new Float32Array(numSamples);
+
+  for (const tone of cfg.tones) {
+    const delaySamples = Math.floor(tone.delaySec * sr);
+    const durationSamples = Math.floor(tone.durationSec * sr);
+    const attackSamples = Math.floor(0.003 * sr); // 3ms attack
+    const peakGain = tone.gain * cfg.masterGain;
+
+    for (let i = 0; i < durationSamples; i++) {
+      const sampleIdx = delaySamples + i;
+      if (sampleIdx >= numSamples) break;
+
+      const tSec = i / sr;
+      // Exponential decay envelope
+      let envelope = 0;
+      if (i < attackSamples) {
+        envelope = peakGain * (i / attackSamples);
+      } else {
+        const decayProgress = (i - attackSamples) / Math.max(1, durationSamples - attackSamples);
+        envelope = peakGain * Math.exp(-decayProgress * 5.0);
+      }
+
+      // Sine wave calculation
+      const phase = 2 * Math.PI * tone.freq * tSec;
+      const sampleVal = Math.sin(phase) * envelope;
+      buffer[sampleIdx] = Math.max(-1.0, Math.min(1.0, buffer[sampleIdx] + sampleVal));
+    }
+  }
+
+  return buffer;
 }

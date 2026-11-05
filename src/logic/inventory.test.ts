@@ -81,6 +81,17 @@ import {
   computePriceDropFromSixMonthAvg,
   parsePriceAlertExpiryDate,
   isPriceAlertExpired,
+  computeGridNavigationIndex,
+  calculateGridColumnCount,
+  handleProductCardKeyAction,
+  normalizeTrackingStatus,
+  advanceOrderTrackingStage,
+  resolveOrderTrackingTimeline,
+  getScanPingAudioConfig,
+  calculateScanPingSchedule,
+  validateQrScanAudioTrigger,
+  formatAudioPingToggleState,
+  synthesizeScanPingPcmBuffer,
 } from './inventory';
 
 test('LOW_STOCK_THRESHOLD is 5', () => {
@@ -1424,5 +1435,243 @@ test('Price Drop Alert Expiry Date: parsePriceAlertExpiryDate, isPriceAlertExpir
   assert.equal(activeRes.triggeredNotifications.length, 1);
   assert.equal(activeRes.updatedAlerts[0].triggered, true);
   assert.equal(activeRes.triggeredNotifications[0].newPrice, 850);
+});
+
+test('Catalog Grid Keyboard Navigation: computeGridNavigationIndex, calculateGridColumnCount and handleProductCardKeyAction', () => {
+  const total = 30;
+  const cols = 4;
+
+  // 1. Arrow Right and Left
+  assert.equal(computeGridNavigationIndex(0, total, cols, 'ArrowRight'), 1);
+  assert.equal(computeGridNavigationIndex(29, total, cols, 'ArrowRight'), 29); // clamp at end
+  assert.equal(computeGridNavigationIndex(5, total, cols, 'ArrowLeft'), 4);
+  assert.equal(computeGridNavigationIndex(0, total, cols, 'ArrowLeft'), 0); // clamp at start
+
+  // 2. Arrow Down and Up (vertical jumps by column count)
+  assert.equal(computeGridNavigationIndex(2, total, cols, 'ArrowDown'), 6);
+  assert.equal(computeGridNavigationIndex(6, total, cols, 'ArrowUp'), 2);
+  assert.equal(computeGridNavigationIndex(1, total, cols, 'ArrowUp'), 0);
+  // Near end of grid: jumping down to bottom row clamps to total - 1
+  assert.equal(computeGridNavigationIndex(27, total, cols, 'ArrowDown'), 29);
+  assert.equal(computeGridNavigationIndex(29, total, cols, 'ArrowDown'), 29);
+
+  // 3. Home, End, PageUp, PageDown
+  assert.equal(computeGridNavigationIndex(15, total, cols, 'Home'), 0);
+  assert.equal(computeGridNavigationIndex(15, total, cols, 'End'), 29);
+  assert.equal(computeGridNavigationIndex(2, total, cols, 'PageDown'), 10); // +2 rows (8 items)
+  assert.equal(computeGridNavigationIndex(12, total, cols, 'PageUp'), 4);   // -2 rows
+
+  // 4. calculateGridColumnCount across viewport widths and list mode
+  assert.equal(calculateGridColumnCount(1440, 'grid'), 4);
+  assert.equal(calculateGridColumnCount(1024, 'grid'), 3);
+  assert.equal(calculateGridColumnCount(768, 'grid'), 2);
+  assert.equal(calculateGridColumnCount(390, 'grid'), 2);
+  assert.equal(calculateGridColumnCount(1440, 'list'), 1);
+
+  // 5. handleProductCardKeyAction
+  assert.equal(handleProductCardKeyAction('Enter'), 'open-specs');
+  assert.equal(handleProductCardKeyAction(' '), 'open-specs');
+  assert.equal(handleProductCardKeyAction('+'), 'inc-cart');
+  assert.equal(handleProductCardKeyAction('='), 'inc-cart');
+  assert.equal(handleProductCardKeyAction('-'), 'dec-cart');
+  assert.equal(handleProductCardKeyAction('c'), 'toggle-compare');
+  assert.equal(handleProductCardKeyAction('C'), 'toggle-compare');
+  assert.equal(handleProductCardKeyAction('w'), 'toggle-wishlist');
+  assert.equal(handleProductCardKeyAction('p'), 'toggle-history');
+  assert.equal(handleProductCardKeyAction('s'), 'open-specs');
+  assert.equal(handleProductCardKeyAction('ArrowDown'), 'navigate');
+  assert.equal(handleProductCardKeyAction('x'), 'none');
+});
+
+test('Real-Time Order Tracking Dashboard: resolveOrderTrackingTimeline, normalizeTrackingStatus and advanceOrderTrackingStage', () => {
+  const baseOrder = {
+    id: 'VB-261105-882194',
+    placedAt: 1730800000000,
+    status: 'Order Placed',
+    count: 3,
+    total: 2450.0,
+    shippingName: 'Alex Chen',
+    shippingAddress: 'Flat 402, Cyber Heights, Indiranagar, Bengaluru, KA 560038',
+    lines: [
+      { productId: 1, title: 'RTX 4090 OC 24GB', price: 1899.99, qty: 1 },
+      { productId: 2, title: 'Ryzen 9 7950X 16-Core', price: 549.99, qty: 1 },
+    ],
+  };
+
+  // 1. Stage 0: Order Placed
+  const t0 = resolveOrderTrackingTimeline(baseOrder, 1730800000000 + 1000);
+  assert.equal(t0.orderId, 'VB-261105-882194');
+  assert.equal(t0.currentStageIndex, 0);
+  assert.equal(t0.currentStageKey, 'placed');
+  assert.equal(t0.currentStatus, 'Order Placed');
+  assert.equal(t0.progressPercent, 0);
+  assert.equal(t0.canAdvance, true);
+  assert.equal(t0.nextStage, 'Processing');
+  assert.equal(t0.carrier.name, 'BlueDart Express');
+  assert.equal(t0.carrier.trackingNumber, 'VB-TRK-882194');
+  assert.equal(t0.stages.length, 4);
+  assert.equal(t0.stages[0].state, 'current');
+  assert.equal(t0.stages[1].state, 'upcoming');
+  assert.equal(t0.stages[2].state, 'upcoming');
+  assert.equal(t0.stages[3].state, 'upcoming');
+  assert.equal(t0.destination.name, 'Alex Chen');
+  assert.match(t0.destination.address, /Indiranagar/);
+
+  // 2. Advance to Stage 1: Processing
+  const nextStage1 = advanceOrderTrackingStage(t0.currentStatus);
+  assert.equal(nextStage1, 'Processing');
+  const t1 = resolveOrderTrackingTimeline({ ...baseOrder, status: nextStage1 });
+  assert.equal(t1.currentStageIndex, 1);
+  assert.equal(t1.currentStageKey, 'processing');
+  assert.equal(t1.currentStatus, 'Processing');
+  assert.equal(t1.progressPercent, 33);
+  assert.equal(t1.canAdvance, true);
+  assert.equal(t1.nextStage, 'Shipped');
+  assert.equal(t1.stages[0].state, 'completed');
+  assert.equal(t1.stages[1].state, 'current');
+  assert.equal(t1.stages[2].state, 'upcoming');
+  assert.equal(t1.stages[3].state, 'upcoming');
+
+  // 3. Advance to Stage 2: Shipped
+  const nextStage2 = advanceOrderTrackingStage(t1.currentStatus);
+  assert.equal(nextStage2, 'Shipped');
+  const t2 = resolveOrderTrackingTimeline({ ...baseOrder, status: nextStage2 });
+  assert.equal(t2.currentStageIndex, 2);
+  assert.equal(t2.currentStageKey, 'shipped');
+  assert.equal(t2.currentStatus, 'Shipped');
+  assert.equal(t2.progressPercent, 67);
+  assert.equal(t2.canAdvance, true);
+  assert.equal(t2.nextStage, 'Delivered');
+  assert.equal(t2.stages[0].state, 'completed');
+  assert.equal(t2.stages[1].state, 'completed');
+  assert.equal(t2.stages[2].state, 'current');
+  assert.equal(t2.stages[3].state, 'upcoming');
+
+  // 4. Advance to Stage 3: Delivered
+  const nextStage3 = advanceOrderTrackingStage(t2.currentStatus);
+  assert.equal(nextStage3, 'Delivered');
+  const t3 = resolveOrderTrackingTimeline({ ...baseOrder, status: nextStage3 });
+  assert.equal(t3.currentStageIndex, 3);
+  assert.equal(t3.currentStageKey, 'delivered');
+  assert.equal(t3.currentStatus, 'Delivered');
+  assert.equal(t3.progressPercent, 100);
+  assert.equal(t3.canAdvance, false);
+  assert.equal(t3.nextStage, null);
+  assert.equal(t3.stages[0].state, 'completed');
+  assert.equal(t3.stages[1].state, 'completed');
+  assert.equal(t3.stages[2].state, 'completed');
+  assert.equal(t3.stages[3].state, 'completed');
+
+  // 5. Normalization tolerance for legacy or custom status strings
+  assert.equal(normalizeTrackingStatus('Paid · Verified').canonicalLabel, 'Order Placed');
+  assert.equal(normalizeTrackingStatus('In Transit').canonicalLabel, 'Shipped');
+  assert.equal(normalizeTrackingStatus('Quality Check Bench').canonicalLabel, 'Processing');
+  assert.equal(normalizeTrackingStatus('Completed').canonicalLabel, 'Delivered');
+  assert.equal(normalizeTrackingStatus('').canonicalLabel, 'Order Placed');
+});
+
+test('QR Scanner Audio Ping: getScanPingAudioConfig, calculateScanPingSchedule, validateQrScanAudioTrigger, formatAudioPingToggleState and synthesizeScanPingPcmBuffer', () => {
+  // 1. Audio Configurations (subtle, crystal, classic)
+  const subtleCfg = getScanPingAudioConfig('subtle');
+  assert.equal(subtleCfg.profile, 'subtle');
+  assert.equal(subtleCfg.masterGain, 0.22);
+  assert.equal(subtleCfg.tones.length, 2);
+  assert.equal(subtleCfg.tones[0].freq, 1046.50); // C6 fundamental
+  assert.equal(subtleCfg.tones[1].freq, 1567.98); // G6 harmonic shimmer
+  assert.equal(subtleCfg.tones[1].delaySec, 0.012);
+  assert.deepEqual(subtleCfg.vibrationPattern, [30, 20, 40]);
+  assert.equal(subtleCfg.visualFeedbackMs, 650);
+
+  const crystalCfg = getScanPingAudioConfig('crystal');
+  assert.equal(crystalCfg.profile, 'crystal');
+  assert.equal(crystalCfg.tones[0].freq, 1318.51); // E6
+  assert.equal(crystalCfg.tones[1].freq, 2093.00); // C7
+
+  const classicCfg = getScanPingAudioConfig('classic');
+  assert.equal(classicCfg.profile, 'classic');
+  assert.equal(classicCfg.tones[0].freq, 880.00); // A5
+
+  // 2. Web Audio Event Scheduling
+  const schedule = calculateScanPingSchedule(1.5, subtleCfg);
+  assert.equal(schedule.length, 2);
+  // Tone 0
+  assert.equal(schedule[0].startTime, 1.5);
+  assert.equal(schedule[0].peakTime, 1.503); // 3ms clickless attack
+  assert.equal(schedule[0].stopTime, 1.68); // 1.5 + 0.18s
+  assert.equal(schedule[0].peakGain, Math.round(0.18 * 0.22 * 10000) / 10000);
+  // Tone 1 (Delayed shimmer)
+  assert.equal(schedule[1].startTime, 1.512); // 1.5 + 0.012s
+  assert.equal(schedule[1].peakTime, 1.515);
+  assert.equal(schedule[1].stopTime, 1.632); // 1.512 + 0.12s
+  assert.equal(schedule[1].type, 'sine');
+
+  // 3. Payload Optical Validation
+  const validUrlRes = validateQrScanAudioTrigger('https://voltbox.dev/catalog?product=19');
+  assert.equal(validUrlRes.shouldTrigger, true);
+  assert.equal(validUrlRes.productId, 19);
+
+  const validPathRes = validateQrScanAudioTrigger('https://voltbox.dev/product/20');
+  assert.equal(validPathRes.shouldTrigger, true);
+  assert.equal(validPathRes.productId, 20);
+
+  const validSkuRes = validateQrScanAudioTrigger('VB-GPU-019');
+  assert.equal(validSkuRes.shouldTrigger, true);
+  assert.equal(validSkuRes.productId, 19);
+
+  const validPrefixRes = validateQrScanAudioTrigger('VOLTBOX:21');
+  assert.equal(validPrefixRes.shouldTrigger, true);
+  assert.equal(validPrefixRes.productId, 21);
+
+  const validNumRes = validateQrScanAudioTrigger('22');
+  assert.equal(validNumRes.shouldTrigger, true);
+  assert.equal(validNumRes.productId, 22);
+
+  const validObjRes = validateQrScanAudioTrigger({ productId: 19, title: 'RTX 5090' });
+  assert.equal(validObjRes.shouldTrigger, true);
+  assert.equal(validObjRes.productId, 19);
+
+  // Invalid / noise payloads should not trigger ping
+  assert.equal(validateQrScanAudioTrigger(null).shouldTrigger, false);
+  assert.equal(validateQrScanAudioTrigger('').shouldTrigger, false);
+  assert.equal(validateQrScanAudioTrigger('   ').shouldTrigger, false);
+  assert.equal(validateQrScanAudioTrigger('x').shouldTrigger, false);
+  assert.equal(validateQrScanAudioTrigger('random-gibberish-string').shouldTrigger, false);
+
+  // 4. UI Toggle State & Accessibility
+  const onState = formatAudioPingToggleState(true);
+  assert.equal(onState.enabled, true);
+  assert.equal(onState.label, 'Audio Ping: ON');
+  assert.equal(onState.icon, 'volume-2');
+  assert.equal(onState.ariaChecked, true);
+
+  const mutedState = formatAudioPingToggleState(false);
+  assert.equal(mutedState.enabled, false);
+  assert.equal(mutedState.label, 'Audio Ping: MUTED');
+  assert.equal(mutedState.icon, 'volume-x');
+  assert.equal(mutedState.ariaChecked, false);
+
+  // 5. PCM Waveform Synthesis & Audio Safety
+  const pcm = synthesizeScanPingPcmBuffer(44100, subtleCfg);
+  assert.ok(pcm.length > 0);
+  assert.equal(pcm.length, Math.floor(((220 + 50) / 1000) * 44100)); // ~11907 samples
+
+  let peakAbs = 0;
+  let nonZeroCount = 0;
+  for (let i = 0; i < pcm.length; i++) {
+    const abs = Math.abs(pcm[i]);
+    if (abs > peakAbs) peakAbs = abs;
+    if (abs > 0.0001) nonZeroCount++;
+  }
+
+  // Audio energy verification:
+  // Must have clear non-zero acoustic samples
+  assert.ok(nonZeroCount > 1000, 'Audio ping should contain acoustic energy');
+  // Must be pleasant & safe (neither dead silence nor clipping > 0.5)
+  assert.ok(peakAbs > 0.02, 'Audio ping must have noticeable peak volume');
+  assert.ok(peakAbs < 0.25, 'Audio ping must remain subtle, non-piercing, and well below clipping');
+
+  // Must decay gracefully to near-silence at tail
+  const tailSample = Math.abs(pcm[pcm.length - 1]);
+  assert.ok(tailSample < 0.0001, 'Audio ping must taper smoothly to zero at tail');
 });
 

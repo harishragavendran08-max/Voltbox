@@ -546,6 +546,22 @@ export function formatInstagramHandle(name?: string | null, role?: string | null
   return '@' + slug;
 }
 
+export {
+  getScanPingAudioConfig,
+  calculateScanPingSchedule,
+  validateQrScanAudioTrigger,
+  formatAudioPingToggleState,
+  synthesizeScanPingPcmBuffer,
+} from '../logic/inventory';
+
+import {
+  getScanPingAudioConfig,
+  calculateScanPingSchedule,
+  validateQrScanAudioTrigger,
+  formatAudioPingToggleState,
+  synthesizeScanPingPcmBuffer,
+} from '../logic/inventory';
+
 // Expose globally on window for app.js
 if (typeof window !== 'undefined') {
   (window as any).VoltboxQR = {
@@ -568,6 +584,11 @@ if (typeof window !== 'undefined') {
     resolveUiTemplateTheme,
     computeSystemPowerEstimate,
     formatInstagramHandle,
+    getScanPingAudioConfig,
+    calculateScanPingSchedule,
+    validateQrScanAudioTrigger,
+    formatAudioPingToggleState,
+    synthesizeScanPingPcmBuffer,
   };
 }
 

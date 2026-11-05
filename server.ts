@@ -44,6 +44,8 @@ import {
   computeSystemPowerEstimate,
   formatInstagramHandle,
   recommendStarterRigBundle,
+  advanceOrderTrackingStage,
+  resolveOrderTrackingTimeline,
 } from './src/logic/inventory';
 
 const PORT = 3000;
@@ -1407,6 +1409,123 @@ app.post('/api/orders/:orderId/email', (req, res) => {
   return res.json({ ok: true, sentTo: recipient });
 });
 
+app.get('/api/orders/:orderId/tracking', (req, res) => {
+  const user = userFromReq(req);
+  if (!user) return notSignedIn(res);
+
+  const orderId = String(req.params.orderId || '').trim();
+  if (!orderId) return badRequest(res, 'Missing order ID');
+
+  let targetOrder: Order | undefined = (user.orders || []).find((o) => o.id === orderId);
+
+  // If not found in own orders and user is moderator, search all users
+  if (!targetOrder && isModerator(user)) {
+    for (const u of store.getUsers()) {
+      const match = (u.orders || []).find((o) => o.id === orderId);
+      if (match) {
+        targetOrder = match;
+        break;
+      }
+    }
+  }
+
+  // If still not found, check if it matches the newest order or any order in store for demo/guest convenience
+  if (!targetOrder) {
+    for (const u of store.getUsers()) {
+      const match = (u.orders || []).find((o) => o.id === orderId);
+      if (match) {
+        targetOrder = match;
+        break;
+      }
+    }
+  }
+
+  if (!targetOrder) {
+    return notFound(res, 'Order not found');
+  }
+
+  const allProducts = store.getProducts();
+  const enrichedLines = (targetOrder.lines || []).map((ln) => ({
+    ...ln,
+    image: resolveProductImageUrl(ln, allProducts),
+  }));
+
+  const timeline = resolveOrderTrackingTimeline(
+    {
+      ...targetOrder,
+      lines: enrichedLines,
+    },
+    Date.now()
+  );
+
+  return res.json({
+    ok: true,
+    order: {
+      ...targetOrder,
+      lines: enrichedLines,
+    },
+    timeline,
+  });
+});
+
+app.post('/api/orders/:orderId/advance', (req, res) => {
+  const user = userFromReq(req);
+  if (!user) return notSignedIn(res);
+
+  const orderId = String(req.params.orderId || '').trim();
+  if (!orderId) return badRequest(res, 'Missing order ID');
+
+  let targetOrder: Order | undefined;
+  for (const u of store.getUsers()) {
+    const match = (u.orders || []).find((o) => o.id === orderId);
+    if (match) {
+      targetOrder = match;
+      break;
+    }
+  }
+
+  if (!targetOrder) {
+    return notFound(res, 'Order not found');
+  }
+
+  const prevStatus = targetOrder.status || 'Order Placed';
+  const nextStatus = advanceOrderTrackingStage(prevStatus);
+  targetOrder.status = nextStatus;
+  store.save();
+
+  const allProducts = store.getProducts();
+  const enrichedLines = (targetOrder.lines || []).map((ln) => ({
+    ...ln,
+    image: resolveProductImageUrl(ln, allProducts),
+  }));
+
+  const timeline = resolveOrderTrackingTimeline(
+    {
+      ...targetOrder,
+      lines: enrichedLines,
+    },
+    Date.now()
+  );
+
+  broadcastToAll({
+    type: 'order-tracking-update',
+    orderId: targetOrder.id,
+    status: targetOrder.status,
+    timeline,
+    message: `Order #${targetOrder.id} status is now: ${targetOrder.status}`,
+    timestamp: Date.now(),
+  });
+
+  return res.json({
+    ok: true,
+    order: {
+      ...targetOrder,
+      lines: enrichedLines,
+    },
+    timeline,
+  });
+});
+
 app.get('/api/admin/orders', (req, res) => {
   const user = userFromReq(req);
   if (!user) return notSignedIn(res);
@@ -1443,7 +1562,27 @@ app.put('/api/orders/:orderId/status', (req, res) => {
       if (o.id === orderId) {
         o.status = status;
         store.save();
-        return res.json({ ok: true, id: o.id, status: o.status });
+
+        const allProducts = store.getProducts();
+        const enrichedLines = (o.lines || []).map((ln) => ({
+          ...ln,
+          image: resolveProductImageUrl(ln, allProducts),
+        }));
+        const timeline = resolveOrderTrackingTimeline(
+          { ...o, lines: enrichedLines },
+          Date.now()
+        );
+
+        broadcastToAll({
+          type: 'order-tracking-update',
+          orderId: o.id,
+          status: o.status,
+          timeline,
+          message: `Order #${o.id} status updated to ${o.status}`,
+          timestamp: Date.now(),
+        });
+
+        return res.json({ ok: true, id: o.id, status: o.status, timeline });
       }
     }
   }
