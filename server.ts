@@ -39,6 +39,10 @@ import {
   buildPriceAlertEmailPayload,
   evaluatePriceDropAlerts,
   computeSuggestedPriceThresholds,
+  resolveUiTemplateTheme,
+  computeSystemPowerEstimate,
+  formatInstagramHandle,
+  recommendStarterRigBundle,
 } from './src/logic/inventory';
 
 const PORT = 3000;
@@ -270,6 +274,7 @@ app.get('/api/products', (req, res) => {
   const categoryFilter = typeof req.query.category === 'string' ? req.query.category.trim().toLowerCase() : '';
   const groupFilter = typeof req.query.group === 'string' ? req.query.group.trim().toLowerCase() : '';
   const searchFilter = typeof req.query.search === 'string' ? req.query.search.trim().toLowerCase() : '';
+  const stockStatusFilter = typeof req.query.stockStatus === 'string' ? req.query.stockStatus.trim().toLowerCase() : '';
   const lowStockOnly = req.query.lowStock === 'true';
 
   const shelf = store
@@ -279,6 +284,12 @@ app.get('/api/products', (req, res) => {
     .filter((pe) => !categoryFilter || categoryFilter === 'all' || pe.category.toLowerCase() === categoryFilter)
     .filter((pe) => !groupFilter || groupFilter === 'all' || pe.componentGroup.toLowerCase() === groupFilter)
     .filter((pe) => !lowStockOnly || pe.lowStock)
+    .filter((pe) => {
+      if (!stockStatusFilter || stockStatusFilter === 'all') return true;
+      if (stockStatusFilter === 'available-now') return pe.stockStatus === 'available-now';
+      if (stockStatusFilter === 'backorder') return pe.stockStatus === 'backorder';
+      return true;
+    })
     .filter((pe) => {
       if (!searchFilter) return true;
       const hay = `${pe.name} ${pe.title} ${pe.description || ''} ${pe.category} ${pe.componentGroup} ${pe.sku}`.toLowerCase();
@@ -1036,6 +1047,51 @@ app.post('/api/cart/promo', (req, res) => {
     ok: valid,
     appliedPromo: cartEntity.appliedPromo || '',
     cart: cartEntity,
+  });
+});
+
+app.post('/api/cart/starter-rig', (req, res) => {
+  const user = userFromReq(req);
+  if (!user) return notSignedIn(res);
+
+  const promoCode = typeof req.body?.promoCode === 'string' ? req.body.promoCode.trim().toUpperCase() : null;
+  const starterParts = recommendStarterRigBundle(store.getProducts());
+  user.cart = user.cart || {};
+  for (const part of starterParts) {
+    const key = String(part.id);
+    user.cart[key] = Math.max(1, Number(user.cart[key] || 0));
+  }
+  store.save();
+  const cartEntity = buildCartEntity(store.getProducts(), user.cart, user.email, promoCode);
+  const powerEstimate = computeSystemPowerEstimate(cartEntity.items);
+  return res.json({
+    ok: true,
+    cart: cartEntity,
+    powerEstimate,
+  });
+});
+
+app.get('/api/cart/power-estimate', (req, res) => {
+  const user = userFromReq(req);
+  if (!user) return notSignedIn(res);
+
+  const cartEntity = buildCartEntity(store.getProducts(), user.cart || {}, user.email, null);
+  const powerEstimate = computeSystemPowerEstimate(cartEntity.items);
+  return res.json({
+    ok: true,
+    powerEstimate,
+    rigBundle: cartEntity.rigBundle,
+  });
+});
+
+app.get('/api/studio/telemetry', (req, res) => {
+  const theme = resolveUiTemplateTheme(typeof req.query.theme === 'string' ? req.query.theme : null);
+  const starterRig = recommendStarterRigBundle(store.getProducts());
+  return res.json({
+    ok: true,
+    theme,
+    starterRigProductIds: starterRig.map((p) => p.id),
+    engine: 'Voltbox Java 21 Spring Boot Hardware Engine',
   });
 });
 

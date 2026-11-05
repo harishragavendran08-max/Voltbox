@@ -31,6 +31,7 @@ var saveTimer = null;
 var activeCategoryFilter = "all";
 var activeSortMode = "featured";
 var activeBudgetMax = null;
+var activeStockFilter = "all";
 var activeCatalogView = "grid";
 var activePromoCode = null;
 var expandedCharts = {};
@@ -628,6 +629,108 @@ function togglePriceAlertsPanel() {
   if (chev) chev.classList.toggle("up", opening);
 }
 
+function evaluateThresholdVsHistory(history, currentPrice, targetPrice) {
+  var cur = Math.max(0.01, round(Number(currentPrice) || 100));
+  var tgt = Math.max(0.01, round(Number(targetPrice) || cur));
+  var validPrices = Array.isArray(history) && history.length > 0
+    ? history.map(function (h) { return round(Number(h.price) || cur); }).filter(function (v) { return v > 0; })
+    : [cur];
+  var prices = validPrices.length > 0 ? validPrices : [cur];
+  var sixMonthLow = round(Math.min.apply(null, prices));
+  var sixMonthHigh = round(Math.max.apply(null, prices));
+  var sum = 0;
+  var monthsAtOrBelowTarget = 0;
+  for (var i = 0; i < prices.length; i++) {
+    sum += prices[i];
+    if (prices[i] <= tgt + 0.01) monthsAtOrBelowTarget++;
+  }
+  var sixMonthAvg = round(sum / prices.length);
+  var totalMonths = prices.length;
+  var diffFromLow = round(tgt - sixMonthLow);
+
+  if (tgt >= cur) {
+    return {
+      sixMonthLow: sixMonthLow,
+      sixMonthHigh: sixMonthHigh,
+      sixMonthAvg: sixMonthAvg,
+      monthsAtOrBelowTarget: monthsAtOrBelowTarget,
+      totalMonths: totalMonths,
+      likelihoodTier: "instant-trigger",
+      badgeLabel: "Instant Trigger",
+      guidanceText: "Target ($" + tgt.toFixed(2) + ") is at or above current price ($" + cur.toFixed(2) + ") — alert triggers immediately."
+    };
+  }
+  if (tgt < sixMonthLow - 0.05) {
+    var belowBy = Math.abs(diffFromLow);
+    return {
+      sixMonthLow: sixMonthLow,
+      sixMonthHigh: sixMonthHigh,
+      sixMonthAvg: sixMonthAvg,
+      monthsAtOrBelowTarget: monthsAtOrBelowTarget,
+      totalMonths: totalMonths,
+      likelihoodTier: "aggressive-below-low",
+      badgeLabel: "Below 6M Low",
+      guidanceText: "$" + belowBy.toFixed(2) + " below the 6-month floor ($" + sixMonthLow.toFixed(2) + "). Consider $" + sixMonthLow.toFixed(2) + " for a higher hit rate."
+    };
+  }
+  if (Math.abs(tgt - sixMonthLow) <= Math.max(1.5, cur * 0.015) || monthsAtOrBelowTarget === 1) {
+    return {
+      sixMonthLow: sixMonthLow,
+      sixMonthHigh: sixMonthHigh,
+      sixMonthAvg: sixMonthAvg,
+      monthsAtOrBelowTarget: Math.max(1, monthsAtOrBelowTarget),
+      totalMonths: totalMonths,
+      likelihoodTier: "near-6m-low",
+      badgeLabel: "6M Floor Sweet Spot",
+      guidanceText: "Matches the 6-month historical floor ($" + sixMonthLow.toFixed(2) + ") — optimal balance of maximum savings and realistic fill."
+    };
+  }
+  return {
+    sixMonthLow: sixMonthLow,
+    sixMonthHigh: sixMonthHigh,
+    sixMonthAvg: sixMonthAvg,
+    monthsAtOrBelowTarget: monthsAtOrBelowTarget,
+    totalMonths: totalMonths,
+    likelihoodTier: "high-probability",
+    badgeLabel: "High Likelihood",
+    guidanceText: "Reached in " + monthsAtOrBelowTarget + " of " + totalMonths + " months ($" + diffFromLow.toFixed(2) + " above 6M low of $" + sixMonthLow.toFixed(2) + ")."
+  };
+}
+
+function renderPriceAlertSparkline(p, targetVal) {
+  if (!p) return;
+  var history = getPriceHistoryFor(p);
+  var targetNum = parseFloat(targetVal);
+  var cleanTarget = (!isNaN(targetNum) && targetNum > 0) ? round(targetNum) : round(p.price * 0.95);
+  var insight = evaluateThresholdVsHistory(history, p.price, cleanTarget);
+
+  var lowEl = document.getElementById("price-alert-spark-low");
+  var avgEl = document.getElementById("price-alert-spark-avg");
+  var highEl = document.getElementById("price-alert-spark-high");
+  var badgeEl = document.getElementById("price-alert-likelihood-badge");
+  var insightEl = document.getElementById("price-alert-sparkline-insight");
+  var mountEl = document.getElementById("price-alert-sparkline-mount");
+
+  if (lowEl) lowEl.textContent = "$" + insight.sixMonthLow.toFixed(2);
+  if (avgEl) avgEl.textContent = "$" + insight.sixMonthAvg.toFixed(2);
+  if (highEl) highEl.textContent = "$" + insight.sixMonthHigh.toFixed(2);
+  if (badgeEl) {
+    badgeEl.textContent = insight.badgeLabel;
+    badgeEl.className = "price-alert-likelihood-badge tier-" + insight.likelihoodTier;
+  }
+  if (insightEl) {
+    insightEl.textContent = insight.guidanceText;
+  }
+  if (mountEl && typeof window.renderVoltboxPriceChart === "function") {
+    window.renderVoltboxPriceChart(mountEl, history, {
+      variant: "alert-sparkline",
+      accentColor: "#38bdf8",
+      targetPrice: cleanTarget,
+      height: 124
+    });
+  }
+}
+
 function updatePriceAlertSavingsCallout(currentPrice, targetVal, emailVal) {
   var calloutTextEl = document.getElementById("price-alert-savings-text");
   if (!calloutTextEl) return;
@@ -747,6 +850,12 @@ function openPriceAlertModal(e, productId) {
 
   updatePriceAlertSavingsCallout(p.price, defaultThreshold, defaultEmail);
   openModal(overlay);
+  renderPriceAlertSparkline(p, defaultThreshold);
+  if (typeof window.requestAnimationFrame === "function") {
+    window.requestAnimationFrame(function () {
+      renderPriceAlertSparkline(p, defaultThreshold);
+    });
+  }
 }
 
 function closePriceAlertModal() {
@@ -1085,11 +1194,11 @@ function getPriceHistoryFor(p) {
   var base = Math.max(1, Number(p.price) || 100);
   var seed = (Number(p.id) || 1) * 17;
   var mults = [
-    1.14 - ((seed % 7) * 0.01),
-    1.10 + ((seed % 5) * 0.008),
-    1.06 - ((seed % 4) * 0.01),
-    1.08 + ((seed % 6) * 0.005),
-    1.03 - ((seed % 3) * 0.007),
+    1.12 - ((seed % 5) * 0.01),
+    1.07 + ((seed % 4) * 0.008),
+    0.94 - ((seed % 3) * 0.005),
+    1.04 + ((seed % 5) * 0.006),
+    0.90 - ((seed % 4) * 0.005),
     1.0
   ];
   var out = [];
@@ -1251,6 +1360,16 @@ function isLowStockItem(p) {
   return getEffectiveStock(p) < LOW_STOCK_LIMIT;
 }
 
+function isBackorderItem(p) {
+  if (!p) return false;
+  if (p.backorder === true || p.stockStatus === "backorder") return true;
+  return getEffectiveStock(p) <= 0;
+}
+
+function getStockStatusForProduct(p) {
+  return isBackorderItem(p) ? "backorder" : "available-now";
+}
+
 function getSortedProductsList() {
   var copy = products.slice();
   if (activeSortMode === "price-asc") {
@@ -1321,6 +1440,7 @@ function renderAllCards() {
     var p = sorted[i];
     var q = cart[p.id] || 0;
     var stockQty = getEffectiveStock(p);
+    var isBackorder = isBackorderItem(p);
     var lowStock = isLowStockItem(p);
     var isCriticalStock = stockQty <= 2;
     var sku = getSkuFor(p);
@@ -1331,9 +1451,10 @@ function renderAllCards() {
     var maxPrice = Math.max.apply(null, prices);
 
     var card = document.createElement("article");
-    card.className = "card" + (lowStock ? " is-low-stock" : "");
+    card.className = "card" + (lowStock ? " is-low-stock" : "") + (isBackorder ? " is-backorder" : "");
     card.id = "card-" + p.id;
     card.setAttribute("data-stock", String(stockQty));
+    card.setAttribute("data-stock-status", isBackorder ? "backorder" : "available-now");
     card.setAttribute("data-group", getComponentGroup(p));
     card.style.setProperty("--stagger-idx", String(i));
 
@@ -1346,13 +1467,17 @@ function renderAllCards() {
 
     var tag = cardTag(p);
 
-    var lowStockBadge = lowStock
-      ? '<span class="low-stock-badge' + (isCriticalStock ? ' critical' : '') + '" id="low-stock-' + p.id + '" data-testid="low-stock-badge">Low Stock</span>'
-      : '';
+    var lowStockBadge = isBackorder
+      ? '<span class="low-stock-badge backorder" id="low-stock-' + p.id + '" data-testid="backorder-badge">Backorder</span>'
+      : (lowStock
+          ? '<span class="low-stock-badge' + (isCriticalStock ? ' critical' : '') + '" id="low-stock-' + p.id + '" data-testid="low-stock-badge">Low Stock</span>'
+          : '');
 
-    var stockNote = lowStock
-      ? '<span class="card-stock low" id="stock-note-' + p.id + '">' + stockQty + ' left in stock</span>'
-      : '<span class="card-stock" id="stock-note-' + p.id + '">' + stockQty + ' in stock</span>';
+    var stockNote = isBackorder
+      ? '<span class="card-stock backorder" id="stock-note-' + p.id + '">Backorder &middot; Ships in 3&ndash;5d</span>'
+      : (lowStock
+          ? '<span class="card-stock low" id="stock-note-' + p.id + '">' + stockQty + ' left in stock</span>'
+          : '<span class="card-stock" id="stock-note-' + p.id + '">' + stockQty + ' in stock</span>');
 
     var isWish = isProductInWishlist(p.id);
     var wishBtn =
@@ -2623,7 +2748,14 @@ function applyFiltersAndSearch(explicitQuery) {
       budgetMatch = Number(p.price) <= activeBudgetMax;
     }
 
-    var visible = textMatch && catMatch && budgetMatch;
+    var stockMatch = true;
+    if (activeStockFilter === "available-now") {
+      stockMatch = !isBackorderItem(p);
+    } else if (activeStockFilter === "backorder") {
+      stockMatch = isBackorderItem(p);
+    }
+
+    var visible = textMatch && catMatch && budgetMatch && stockMatch;
     card.style.display = visible ? "" : "none";
     if (visible) {
       card.style.setProperty("--stagger-idx", String(shown));
@@ -2640,7 +2772,7 @@ function applyFiltersAndSearch(explicitQuery) {
   if (visibleCountEl) visibleCountEl.textContent = String(shown);
   if (totalCountEl) totalCountEl.textContent = String(products.length);
   if (resetBtnEl) {
-    var hasActive = activeCategoryFilter !== "all" || query !== "" || activeBudgetMax !== null || activeSortMode !== "featured";
+    var hasActive = activeCategoryFilter !== "all" || query !== "" || activeBudgetMax !== null || activeStockFilter !== "all" || activeSortMode !== "featured";
     resetBtnEl.hidden = !hasActive;
   }
 
@@ -2652,6 +2784,10 @@ function applyFiltersAndSearch(explicitQuery) {
   if (shown === 0) {
     if (activeCategoryFilter === "wishlist") {
       noResultsEl.textContent = "Your wishlist is empty. Click the heart icon on any hardware part to save items here.";
+    } else if (activeStockFilter === "backorder") {
+      noResultsEl.textContent = "No backordered components found matching the current filters.";
+    } else if (activeStockFilter === "available-now") {
+      noResultsEl.textContent = "No in-stock components found matching the current filters.";
     } else if (activeBudgetMax !== null) {
       noResultsEl.textContent = 'No components found under $' + activeBudgetMax + (query ? (' matching "' + query + '"') : '') + ' in this category.';
     } else {
@@ -2668,6 +2804,7 @@ function applyFiltersAndSearch(explicitQuery) {
 function resetAllCatalogFilters() {
   activeCategoryFilter = "all";
   activeBudgetMax = null;
+  activeStockFilter = "all";
   var prevSort = activeSortMode;
   activeSortMode = "featured";
 
@@ -2680,6 +2817,16 @@ function resetAllCatalogFilters() {
       var isAll = (tabs[i].getAttribute("data-filter") || "all") === "all";
       tabs[i].classList.toggle("active", isAll);
       tabs[i].setAttribute("aria-selected", isAll ? "true" : "false");
+    }
+  }
+
+  var stockStripEl = document.getElementById("stock-quick-filter-strip");
+  if (stockStripEl) {
+    var stockChips = stockStripEl.querySelectorAll(".stock-filter-chip");
+    for (var k = 0; k < stockChips.length; k++) {
+      var isAllStock = (stockChips[k].getAttribute("data-stock-filter") || "all") === "all";
+      stockChips[k].classList.toggle("active", isAllStock);
+      stockChips[k].setAttribute("aria-pressed", isAllStock ? "true" : "false");
     }
   }
 
@@ -3285,28 +3432,38 @@ function refreshCard(id) {
   if (p) {
     var card = document.getElementById("card-" + id);
     var stockQty = getEffectiveStock(p);
+    var isBackorder = isBackorderItem(p);
     var lowStock = isLowStockItem(p);
     var isCriticalStock = stockQty <= 2;
     var stockNoteEl = document.getElementById("stock-note-" + id);
     if (stockNoteEl) {
-      stockNoteEl.className = lowStock ? "card-stock low" : "card-stock";
-      stockNoteEl.textContent = lowStock ? (stockQty + " left in stock") : (stockQty + " in stock");
+      if (isBackorder) {
+        stockNoteEl.className = "card-stock backorder";
+        stockNoteEl.innerHTML = "Backorder &middot; Ships in 3&ndash;5d";
+      } else {
+        stockNoteEl.className = lowStock ? "card-stock low" : "card-stock";
+        stockNoteEl.textContent = lowStock ? (stockQty + " left in stock") : (stockQty + " in stock");
+      }
     }
     if (card) {
       card.classList.toggle("is-low-stock", lowStock);
+      card.classList.toggle("is-backorder", isBackorder);
       card.setAttribute("data-stock", String(stockQty));
+      card.setAttribute("data-stock-status", isBackorder ? "backorder" : "available-now");
       var wrap = card.querySelector(".card-img-wrap");
       var badge = document.getElementById("low-stock-" + id);
-      if (lowStock && !badge && wrap) {
+      if ((lowStock || isBackorder) && !badge && wrap) {
         var span = document.createElement("span");
-        span.className = "low-stock-badge" + (isCriticalStock ? " critical" : "");
+        span.className = "low-stock-badge" + (isBackorder ? " backorder" : (isCriticalStock ? " critical" : ""));
         span.id = "low-stock-" + id;
-        span.setAttribute("data-testid", "low-stock-badge");
-        span.textContent = "Low Stock";
+        span.setAttribute("data-testid", isBackorder ? "backorder-badge" : "low-stock-badge");
+        span.textContent = isBackorder ? "Backorder" : "Low Stock";
         wrap.insertBefore(span, wrap.querySelector(".card-flag"));
-      } else if (lowStock && badge) {
-        badge.classList.toggle("critical", isCriticalStock);
-      } else if (!lowStock && badge) {
+      } else if ((lowStock || isBackorder) && badge) {
+        badge.className = "low-stock-badge" + (isBackorder ? " backorder" : (isCriticalStock ? " critical" : ""));
+        badge.setAttribute("data-testid", isBackorder ? "backorder-badge" : "low-stock-badge");
+        badge.textContent = isBackorder ? "Backorder" : "Low Stock";
+      } else if (!lowStock && !isBackorder && badge) {
         badge.remove();
       }
     }
@@ -3315,6 +3472,22 @@ function refreshCard(id) {
 
 
 function updateFilterTabCounts() {
+  var availableNowTotal = 0;
+  var backorderTotal = 0;
+  for (var s = 0; s < products.length; s++) {
+    if (isBackorderItem(products[s])) {
+      backorderTotal++;
+    } else {
+      availableNowTotal++;
+    }
+  }
+  var stockAllCountEl = document.getElementById("stock-count-all");
+  var stockAvailCountEl = document.getElementById("stock-count-available");
+  var stockBackorderCountEl = document.getElementById("stock-count-backorder");
+  if (stockAllCountEl) stockAllCountEl.textContent = String(products.length);
+  if (stockAvailCountEl) stockAvailCountEl.textContent = String(availableNowTotal);
+  if (stockBackorderCountEl) stockBackorderCountEl.textContent = String(backorderTotal);
+
   if (!filterBarEl) return;
   var counts = {
     all: products.length,
@@ -3615,6 +3788,9 @@ function recalc(isNewItemAdded) {
 
   renderCartSheet(totals);
   renderRigDrawer();
+  if (typeof updateStudioCommandStrip === "function") {
+    updateStudioCommandStrip();
+  }
 
   cartBtnEl.classList.remove("pop");
   void cartBtnEl.offsetWidth;
@@ -3856,6 +4032,24 @@ function wireUpButtons() {
     sortSelectEl.addEventListener("change", function () {
       activeSortMode = sortSelectEl.value || "featured";
       renderAllCards();
+    });
+  }
+
+  // Quick Stock Filter strip (All Stock / Available Now / Backorder)
+  var stockQuickStripEl = document.getElementById("stock-quick-filter-strip");
+  if (stockQuickStripEl) {
+    stockQuickStripEl.addEventListener("click", function (e) {
+      var chip = e.target.closest(".stock-filter-chip");
+      if (!chip) return;
+      var val = chip.getAttribute("data-stock-filter") || "all";
+      activeStockFilter = (val === "available-now" || val === "backorder") ? val : "all";
+      var chips = stockQuickStripEl.querySelectorAll(".stock-filter-chip");
+      for (var i = 0; i < chips.length; i++) {
+        var isCur = chips[i] === chip;
+        chips[i].classList.toggle("active", isCur);
+        chips[i].setAttribute("aria-pressed", isCur ? "true" : "false");
+      }
+      applyFiltersAndSearch();
     });
   }
 
@@ -4133,6 +4327,7 @@ function wireUpButtons() {
         var p = findProductById(activePriceAlertProductId);
         if (p) {
           updatePriceAlertSavingsCallout(p.price, val, priceAlertEmailInputEl ? priceAlertEmailInputEl.value : "");
+          renderPriceAlertSparkline(p, val);
         }
       }
     });
@@ -4143,6 +4338,7 @@ function wireUpButtons() {
     var tVal = priceAlertThresholdInputEl ? priceAlertThresholdInputEl.value : "";
     var eVal = priceAlertEmailInputEl ? priceAlertEmailInputEl.value : "";
     updatePriceAlertSavingsCallout(p.price, tVal, eVal);
+    renderPriceAlertSparkline(p, tVal);
   }
   if (priceAlertThresholdInputEl) {
     priceAlertThresholdInputEl.addEventListener("input", onPriceAlertFieldInput);
@@ -5442,6 +5638,101 @@ function updateCompareUI() {
   }
 }
 
+function parseComparePowerWatts(powerDraw) {
+  var text = String(powerDraw || "").trim();
+  var wattMatch = text.match(/(\d+(?:\.\d+)?)\s*W\b/i);
+  if (wattMatch) return parseFloat(wattMatch[1]);
+  if (/mAh/i.test(text)) return 8;
+  if (/Hour/i.test(text)) return 10;
+  if (/24-Pin\s*ATX/i.test(text)) return 45;
+  return 65;
+}
+
+function scoreCompareInterface(interfaceSpec) {
+  var text = String(interfaceSpec || "").toLowerCase();
+  if (text.indexOf("pcie 5.0") !== -1 || text.indexOf("gen5") !== -1) return 100;
+  if (text.indexOf("7,450 mb/s") !== -1 || text.indexOf("nvme 2.0") !== -1 || text.indexOf("pcie gen4") !== -1) return 92;
+  if (text.indexOf("ddr5-6400") !== -1 || text.indexOf("socket am5") !== -1) return 88;
+  if (text.indexOf("hdmi 2.1") !== -1 || text.indexOf("wi-fi 7") !== -1) return 84;
+  if (text.indexOf("pcie 4.0") !== -1) return 78;
+  if (text.indexOf("bluetooth 5.3") !== -1) return 72;
+  if (text.indexOf("bluetooth 5.1") !== -1) return 66;
+  if (text.indexOf("sata iii") !== -1 || text.indexOf("6.0 gb/s") !== -1) return 50;
+  return 70;
+}
+
+function scoreCompareArchitecture(arch) {
+  var text = String(arch || "").toLowerCase();
+  if (text.indexOf("blackwell") !== -1 || text.indexOf("gddr7") !== -1) return 98;
+  if (text.indexOf("zen 5") !== -1 || text.indexOf("16-core") !== -1) return 95;
+  if (text.indexOf("duet rail vrm") !== -1 || text.indexOf("server pcb") !== -1) return 90;
+  if (text.indexOf("rdna 3.5") !== -1 || text.indexOf("ray-tracing") !== -1) return 88;
+  if (text.indexOf("3d tlc nand") !== -1 || text.indexOf("dram cache") !== -1) return 85;
+  if (text.indexOf("neodymium") !== -1 || text.indexOf("dsp") !== -1) return 80;
+  if (text.indexOf("dual-actuator") !== -1 || text.indexOf("haptic") !== -1) return 76;
+  if (text.indexOf("7200 rpm") !== -1 || text.indexOf("cmr") !== -1) return 62;
+  return 74;
+}
+
+function scoreCompareWarranty(warranty) {
+  var text = String(warranty || "");
+  var yearMatch = text.match(/(\d+)\s*-?\s*Year/i);
+  var score = yearMatch ? parseInt(yearMatch[1], 10) * 10 : 20;
+  if (/bench verified|endurance|bios protection/i.test(text)) {
+    score += 3;
+  }
+  return score;
+}
+
+function evaluateCompareRow(compProducts, scoreFn, higherIsBetter, betterLabel, worseLabel) {
+  var statusById = {};
+  var labelById = {};
+  if (!compProducts || compProducts.length === 0) {
+    return { statusById: statusById, labelById: labelById };
+  }
+  var scores = [];
+  for (var i = 0; i < compProducts.length; i++) {
+    var p = compProducts[i];
+    var s = Number(scoreFn(p));
+    scores.push({ id: p.id, score: s });
+    statusById[p.id] = "neutral";
+    labelById[p.id] = "";
+  }
+  if (compProducts.length < 2) {
+    return { statusById: statusById, labelById: labelById };
+  }
+  var minVal = scores[0].score;
+  var maxVal = scores[0].score;
+  for (var j = 1; j < scores.length; j++) {
+    if (scores[j].score < minVal) minVal = scores[j].score;
+    if (scores[j].score > maxVal) maxVal = scores[j].score;
+  }
+  if (minVal < maxVal) {
+    var bestTarget = higherIsBetter ? maxVal : minVal;
+    var worstTarget = higherIsBetter ? minVal : maxVal;
+    for (var k = 0; k < scores.length; k++) {
+      if (scores[k].score === bestTarget) {
+        statusById[scores[k].id] = "better";
+        labelById[scores[k].id] = betterLabel;
+      } else if (scores[k].score === worstTarget) {
+        statusById[scores[k].id] = "worse";
+        labelById[scores[k].id] = worseLabel;
+      }
+    }
+  }
+  return { statusById: statusById, labelById: labelById };
+}
+
+function renderSpecIndicatorBadge(status, label) {
+  if (status === "better") {
+    return ' <span class="compare-spec-indicator better" data-indicator="better"><span class="compare-ind-arrow" aria-hidden="true">▲</span> ' + esc(label || "Better") + '</span>';
+  }
+  if (status === "worse") {
+    return ' <span class="compare-spec-indicator worse" data-indicator="worse"><span class="compare-ind-arrow" aria-hidden="true">▼</span> ' + esc(label || "Worse") + '</span>';
+  }
+  return "";
+}
+
 function renderComparisonTable() {
   var container = document.getElementById("compare-table-container");
   var countTag = document.getElementById("compare-modal-count-tag");
@@ -5477,115 +5768,158 @@ function renderComparisonTable() {
   // Identify lowest price item and price spread
   var lowestP = compProducts[0];
   var highestP = compProducts[0];
-  var highestStock = compProducts[0];
   for (var j = 0; j < compProducts.length; j++) {
     var cur = compProducts[j];
     if (cur.price < lowestP.price) lowestP = cur;
     if (cur.price > highestP.price) highestP = cur;
-    var curStock = getEffectiveStock(cur);
-    if (curStock > getEffectiveStock(highestStock)) highestStock = cur;
   }
   var spread = highestP.price - lowestP.price;
 
-  if (summaryText) {
-    if (compProducts.length === 1) {
-      summaryText.textContent = "Selected " + compProducts[0].title + " ($" + compProducts[0].price.toFixed(2) + "). Add another component above to start comparing.";
-    } else {
-      summaryText.textContent = "Comparing " + compProducts.length + " components. Lowest price is " + lowestP.title + " at $" + lowestP.price.toFixed(2) + (spread > 0 ? " ($" + spread.toFixed(2) + " price spread)." : " (identical prices).");
-    }
-  }
+  // Evaluate each comparable row for green (better) and red (worse) indicators
+  var priceEval = evaluateCompareRow(compProducts, function (p) { return p.price; }, false, "Best Price", "Highest Cost");
+  var historyEval = evaluateCompareRow(compProducts, function (p) {
+    var h = getPriceHistoryFor(p);
+    var prs = h.map(function (x) { return x.price; });
+    return prs.reduce(function (a, b) { return a + b; }, 0) / prs.length;
+  }, false, "Lowest 6M Avg", "Highest 6M Avg");
+  var archEval = evaluateCompareRow(compProducts, function (p) {
+    return scoreCompareArchitecture((p.specs && p.specs.architecture) || "Precision Solid-State");
+  }, true, "Top Silicon Tier", "Lower Tier");
+  var ifaceEval = evaluateCompareRow(compProducts, function (p) {
+    return scoreCompareInterface((p.specs && p.specs.interfaceSpec) || "PCIe 4.0 / USB-C");
+  }, true, "Faster Bus", "Slower Bus");
+  var powerEval = evaluateCompareRow(compProducts, function (p) {
+    return parseComparePowerWatts((p.specs && p.specs.powerDraw) || "65W Nominal");
+  }, false, "Best Efficiency", "High Power Draw");
+  var stockEval = evaluateCompareRow(compProducts, function (p) {
+    return getEffectiveStock(p);
+  }, true, "Best Availability", "Lowest Stock");
+  var warrantyEval = evaluateCompareRow(compProducts, function (p) {
+    return scoreCompareWarranty((p.specs && p.specs.warranty) || "3-Year Limited Hardware");
+  }, true, "Best Coverage", "Shorter Coverage");
 
   // Construct Spec Attributes Matrix
   var specRows = [
     {
       key: "price",
       label: "Retail Price",
+      evalResult: priceEval,
       values: compProducts.map(function (p) { return "$" + p.price.toFixed(2); }),
       isDiff: compProducts.some(function (p) { return p.price !== compProducts[0].price; }),
-      renderCell: function (p) {
-        var isBest = p.id === lowestP.id && spread > 0;
-        return '<div class="compare-price-val">$' + p.price.toFixed(2) + (isBest ? ' <span class="compare-best-badge">Best Value</span>' : '') + '</div>';
+      renderCell: function (p, status, label) {
+        return '<div class="compare-cell-content"><span class="compare-price-val">$' + p.price.toFixed(2) + '</span>' + renderSpecIndicatorBadge(status, label) + '</div>';
       }
     },
     {
       key: "history",
       label: "6-Month Low → Peak",
+      evalResult: historyEval,
       values: compProducts.map(function (p) {
         var h = getPriceHistoryFor(p);
         var prs = h.map(function (x) { return x.price; });
         return "$" + Math.min.apply(null, prs).toFixed(0) + " – $" + Math.max.apply(null, prs).toFixed(0);
       }),
-      isDiff: true,
-      renderCell: function (p) {
+      isDiff: compProducts.some(function (p) { return p.price !== compProducts[0].price || p.id !== compProducts[0].id; }),
+      renderCell: function (p, status, label) {
         var h = getPriceHistoryFor(p);
         var prs = h.map(function (x) { return x.price; });
         var minP = Math.min.apply(null, prs);
         var maxP = Math.max.apply(null, prs);
         var avgP = prs.reduce(function (a, b) { return a + b; }, 0) / prs.length;
-        return '<div class="compare-stat-line"><span class="mono">$' + minP.toFixed(0) + ' – $' + maxP.toFixed(0) + '</span><span class="compare-sub-note">Avg: $' + avgP.toFixed(0) + '</span></div>';
+        return '<div class="compare-cell-content"><div class="compare-stat-line"><span class="mono">$' + minP.toFixed(0) + ' – $' + maxP.toFixed(0) + '</span><span class="compare-sub-note">Avg: $' + avgP.toFixed(0) + '</span></div>' + renderSpecIndicatorBadge(status, label) + '</div>';
       }
     },
     {
       key: "group",
       label: "Category / Form Factor",
+      evalResult: { statusById: {}, labelById: {} },
       values: compProducts.map(function (p) { return getComponentGroup(p).toUpperCase(); }),
       isDiff: compProducts.some(function (p) { return getComponentGroup(p) !== getComponentGroup(compProducts[0]); }),
       renderCell: function (p) {
-        return '<span class="compare-category-tag">' + (p.specs && p.specs.groupLabel ? p.specs.groupLabel : getComponentGroup(p).toUpperCase()) + '</span>';
+        return '<div class="compare-cell-content"><span class="compare-category-tag">' + (p.specs && p.specs.groupLabel ? p.specs.groupLabel : getComponentGroup(p).toUpperCase()) + '</span></div>';
       }
     },
     {
       key: "architecture",
       label: "Silicon Architecture",
+      evalResult: archEval,
       values: compProducts.map(function (p) { return (p.specs && p.specs.architecture) || "Solid-State Silicon"; }),
       isDiff: compProducts.some(function (p) { return (p.specs && p.specs.architecture) !== (compProducts[0].specs && compProducts[0].specs.architecture); }),
-      renderCell: function (p) {
-        return '<span>' + esc((p.specs && p.specs.architecture) || "Precision Solid-State") + '</span>';
+      renderCell: function (p, status, label) {
+        return '<div class="compare-cell-content"><span>' + esc((p.specs && p.specs.architecture) || "Precision Solid-State") + '</span>' + renderSpecIndicatorBadge(status, label) + '</div>';
       }
     },
     {
       key: "interface",
       label: "Bus & Interface Spec",
+      evalResult: ifaceEval,
       values: compProducts.map(function (p) { return (p.specs && p.specs.interfaceSpec) || "PCIe / USB-C"; }),
       isDiff: compProducts.some(function (p) { return (p.specs && p.specs.interfaceSpec) !== (compProducts[0].specs && compProducts[0].specs.interfaceSpec); }),
-      renderCell: function (p) {
-        return '<span>' + esc((p.specs && p.specs.interfaceSpec) || "PCIe 4.0 / USB-C") + '</span>';
+      renderCell: function (p, status, label) {
+        return '<div class="compare-cell-content"><span>' + esc((p.specs && p.specs.interfaceSpec) || "PCIe 4.0 / USB-C") + '</span>' + renderSpecIndicatorBadge(status, label) + '</div>';
       }
     },
     {
       key: "power",
       label: "Thermal TDP & Power",
+      evalResult: powerEval,
       values: compProducts.map(function (p) { return (p.specs && p.specs.powerDraw) || "65W Nominal"; }),
       isDiff: compProducts.some(function (p) { return (p.specs && p.specs.powerDraw) !== (compProducts[0].specs && compProducts[0].specs.powerDraw); }),
-      renderCell: function (p) {
-        return '<span class="compare-power-tag">' + esc((p.specs && p.specs.powerDraw) || "65W Nominal") + '</span>';
+      renderCell: function (p, status, label) {
+        return '<div class="compare-cell-content"><span class="compare-power-tag">' + esc((p.specs && p.specs.powerDraw) || "65W Nominal") + '</span>' + renderSpecIndicatorBadge(status, label) + '</div>';
       }
     },
     {
       key: "stock",
       label: "Warehouse Stock Status",
+      evalResult: stockEval,
       values: compProducts.map(function (p) { return String(getEffectiveStock(p)); }),
       isDiff: compProducts.some(function (p) { return getEffectiveStock(p) !== getEffectiveStock(compProducts[0]); }),
-      renderCell: function (p) {
+      renderCell: function (p, status, label) {
         var s = getEffectiveStock(p);
         var isLow = isLowStockItem(p);
-        var isLeader = p.id === highestStock.id && compProducts.length > 1;
-        return '<div class="compare-stock-val">' +
+        return '<div class="compare-cell-content">' +
           '<span class="compare-stock-badge ' + (isLow ? 'low' : 'ok') + '">' + (isLow ? 'Low Stock (' + s + ')' : s + ' units') + '</span>' +
-          (isLeader ? ' <span class="compare-leader-badge">Readily Available</span>' : '') +
+          renderSpecIndicatorBadge(status, label) +
         '</div>';
       }
     },
     {
       key: "warranty",
       label: "Warranty & Certification",
+      evalResult: warrantyEval,
       values: compProducts.map(function (p) { return (p.specs && p.specs.warranty) || "3-Year Limited"; }),
       isDiff: compProducts.some(function (p) { return (p.specs && p.specs.warranty) !== (compProducts[0].specs && compProducts[0].specs.warranty); }),
-      renderCell: function (p) {
-        return '<span class="compare-warranty-val">' + icon("shield", 13) + ' ' + esc((p.specs && p.specs.warranty) || "3-Year Limited Hardware") + '</span>';
+      renderCell: function (p, status, label) {
+        return '<div class="compare-cell-content"><span class="compare-warranty-val">' + icon("shield", 13) + ' ' + esc((p.specs && p.specs.warranty) || "3-Year Limited Hardware") + '</span>' + renderSpecIndicatorBadge(status, label) + '</div>';
       }
     }
   ];
+
+  // Tally per-product better/worse counts
+  var betterCountById = {};
+  var worseCountById = {};
+  for (var m = 0; m < compProducts.length; m++) {
+    betterCountById[compProducts[m].id] = 0;
+    worseCountById[compProducts[m].id] = 0;
+  }
+  for (var sr = 0; sr < specRows.length; sr++) {
+    var ev = specRows[sr].evalResult;
+    if (!ev || !ev.statusById) continue;
+    for (var cpIdx = 0; cpIdx < compProducts.length; cpIdx++) {
+      var pid = compProducts[cpIdx].id;
+      if (ev.statusById[pid] === "better") betterCountById[pid]++;
+      else if (ev.statusById[pid] === "worse") worseCountById[pid]++;
+    }
+  }
+
+  if (summaryText) {
+    if (compProducts.length === 1) {
+      summaryText.textContent = "Selected " + compProducts[0].title + " ($" + compProducts[0].price.toFixed(2) + "). Add another component above to unlock green/red spec indicators.";
+    } else {
+      summaryText.textContent = "Comparing " + compProducts.length + " components. Lowest price: " + lowestP.title + " ($" + lowestP.price.toFixed(2) + (spread > 0 ? ", $" + spread.toFixed(2) + " spread" : "") + "). Green highlights the best value per row; red marks the weakest.";
+    }
+  }
 
   // Render Table Markup
   var tableHtml = '<table class="compare-table" role="grid" aria-label="Product comparison table">';
@@ -5598,6 +5932,8 @@ function renderComparisonTable() {
     var pImg = (prod.image && (prod.image.indexOf("http") === 0 || prod.image.indexOf("/") === 0)) ? prod.image : tileFor(prod.category);
     var pSku = getSkuFor(prod);
     var inCartQty = cart[prod.id] || 0;
+    var bCount = betterCountById[prod.id] || 0;
+    var wCount = worseCountById[prod.id] || 0;
     tableHtml += '<th class="compare-product-th" scope="col">';
     tableHtml +=   '<div class="compare-card-head">';
     tableHtml +=     '<button type="button" class="compare-remove-col-btn" onclick="toggleCompareItem(' + prod.id + ')" title="Remove ' + esc(prod.title) + ' from matrix" aria-label="Remove ' + esc(prod.title) + '">×</button>';
@@ -5606,6 +5942,12 @@ function renderComparisonTable() {
     tableHtml +=     '</div>';
     tableHtml +=     '<span class="compare-col-sku">' + esc(pSku) + '</span>';
     tableHtml +=     '<h4 class="compare-col-title" onclick="openSpecDrawer(' + prod.id + ')">' + esc(prod.title) + '</h4>';
+    if (compProducts.length >= 2) {
+      tableHtml +=   '<div class="compare-scorecard-row" aria-label="Spec comparison score">';
+      tableHtml +=     '<span class="compare-score-chip better" title="Wins ' + bCount + ' spec rows">▲ ' + bCount + ' Better</span>';
+      tableHtml +=     '<span class="compare-score-chip worse" title="Trails in ' + wCount + ' spec rows">▼ ' + wCount + ' Worse</span>';
+      tableHtml +=   '</div>';
+    }
     tableHtml +=     '<div class="compare-col-actions">';
     tableHtml +=       '<button type="button" class="compare-cart-btn" onclick="inc(' + prod.id + '); renderComparisonTable();">';
     tableHtml +=         icon("cart", 13) + ' <span>' + (inCartQty > 0 ? ('In Cart (' + inCartQty + ')') : 'Add to Cart') + '</span>';
@@ -5633,8 +5975,11 @@ function renderComparisonTable() {
     tableHtml +=   '</th>';
     for (var col = 0; col < compProducts.length; col++) {
       var colProd = compProducts[col];
-      tableHtml += '<td class="compare-cell">';
-      tableHtml +=   row.renderCell(colProd);
+      var cellStatus = (row.evalResult && row.evalResult.statusById && row.evalResult.statusById[colProd.id]) || "neutral";
+      var cellLabel = (row.evalResult && row.evalResult.labelById && row.evalResult.labelById[colProd.id]) || "";
+      var cellClass = "compare-cell" + (cellStatus === "better" ? " is-better" : (cellStatus === "worse" ? " is-worse" : ""));
+      tableHtml += '<td class="' + cellClass + '" data-spec-status="' + cellStatus + '">';
+      tableHtml +=   row.renderCell(colProd, cellStatus, cellLabel);
       tableHtml += '</td>';
     }
     tableHtml += '</tr>';
@@ -6142,28 +6487,303 @@ function watchScroll() {
 
 
 // ═══════════════════════════════════════════════════════════════════
-// QUANTUM SILICON WAFER & HOLOGRAPHIC CONSTELLATION BACKGROUND ENGINE
+// STUDIO UI & BACKGROUND TEMPLATE ENGINE + LIVE PSU ESTIMATOR
 // ═══════════════════════════════════════════════════════════════════
 
+var STUDIO_UI_THEMES = {
+  obsidian: {
+    id: "obsidian",
+    name: "Obsidian Studio",
+    shortLabel: "Obsidian",
+    legacyBgMode: "quantum"
+  },
+  blueprint: {
+    id: "blueprint",
+    name: "Cobalt Blueprint",
+    shortLabel: "Blueprint",
+    legacyBgMode: "overclock"
+  },
+  copper: {
+    id: "copper",
+    name: "Anodized Copper",
+    shortLabel: "Copper",
+    legacyBgMode: "copper"
+  },
+  titanium: {
+    id: "titanium",
+    name: "Titanium Lab",
+    shortLabel: "Titanium",
+    legacyBgMode: "cyber"
+  }
+};
+
+var STUDIO_THEME_ORDER = ["obsidian", "blueprint", "copper", "titanium"];
+var activeStudioThemeId = "obsidian";
+
+function resolveStudioThemeClient(rawInput) {
+  if (window.VoltboxQR && typeof window.VoltboxQR.resolveUiTemplateTheme === "function") {
+    return window.VoltboxQR.resolveUiTemplateTheme(rawInput);
+  }
+  var key = String(rawInput || "").trim().toLowerCase();
+  if (key === "blueprint" || key === "overclock" || key === "sapphire") return STUDIO_UI_THEMES.blueprint;
+  if (key === "copper" || key === "amber" || key === "gold") return STUDIO_UI_THEMES.copper;
+  if (key === "titanium" || key === "cyber" || key === "emerald") return STUDIO_UI_THEMES.titanium;
+  return STUDIO_UI_THEMES.obsidian;
+}
+
+function setStudioUiTheme() {
+  var spec = STUDIO_UI_THEMES.obsidian;
+  activeStudioThemeId = "obsidian";
+  document.body.setAttribute("data-ui-theme", "obsidian");
+  document.body.setAttribute("data-bg-mode", "quantum");
+  try {
+    localStorage.setItem("voltbox.ui.theme", "obsidian");
+  } catch (e) {}
+  return spec;
+}
+
 function cycleBgFxMode() {
-  currentBgModeIdx = (currentBgModeIdx + 1) % bgModes.length;
-  var mode = bgModes[currentBgModeIdx];
-  document.body.setAttribute("data-bg-mode", mode);
-  if (bgFxLabelEl) {
-    bgFxLabelEl.textContent = bgModeLabels[mode] || "Theme: Obsidian";
-  }
-  if (typeof window.triggerVoltboxShockwave === "function") {
-    window.triggerVoltboxShockwave(window.innerWidth * 0.5, 80);
-  }
+  setStudioUiTheme();
 }
 
 function initQuantumCanvasBg() {
   window.triggerVoltboxShockwave = function () {};
 }
 
+function computeClientPowerEstimate() {
+  var items = [];
+  for (var i = 0; i < products.length; i++) {
+    var p = products[i];
+    var q = cart[p.id] || 0;
+    if (q > 0) {
+      items.push({
+        id: p.id,
+        title: p.title,
+        category: p.category,
+        componentGroup: getComponentGroup(p),
+        quantity: q
+      });
+    }
+  }
+  if (window.VoltboxQR && typeof window.VoltboxQR.computeSystemPowerEstimate === "function") {
+    return window.VoltboxQR.computeSystemPowerEstimate(items);
+  }
+  var watts = 0;
+  var count = 0;
+  for (var j = 0; j < items.length; j++) {
+    count += items[j].quantity;
+    watts += 110 * items[j].quantity;
+  }
+  var peak = count > 0 ? (65 + watts) : 0;
+  return {
+    estimatedPeakWatts: peak,
+    recommendedPsuWatts: peak > 650 ? 1000 : 650,
+    psuTierLabel: peak > 650 ? "1000W ATX 3.1 Platinum" : "650W ATX 3.1 Ready",
+    loadPercentage: count > 0 ? Math.min(96, Math.max(18, Math.round((peak / 850) * 100))) : 12,
+    headroomStatus: peak >= 680 ? "high-draw" : (count > 0 ? "balanced" : "idle"),
+    activeComponentCount: count
+  };
+}
+
+function updateStudioCommandStrip() {
+  var est = computeClientPowerEstimate();
+  var wattsEl = document.getElementById("psu-peak-watts");
+  var tierEl = document.getElementById("psu-recommended-tier");
+  var barEl = document.getElementById("psu-load-bar");
+  var starterBtn = document.getElementById("quick-starter-rig-btn");
+  var rigStatus = computeRigStatus();
+
+  // Sync Rig Compatibility 4-Slot Status Card
+  var slotSummaryEl = document.getElementById("studio-rig-slot-summary");
+  var filledSlotCount = typeof rigStatus.completedCount === "number" ? rigStatus.completedCount : 0;
+  if (slotSummaryEl) {
+    slotSummaryEl.textContent = rigStatus.qualifies
+      ? (filledSlotCount + " / 4 Core Slots · 5% Off")
+      : (filledSlotCount + " / 4 Core Slots");
+  }
+  var slotBtns = document.querySelectorAll("#studio-slot-pills [data-slot-filter]");
+  for (var s = 0; s < slotBtns.length; s++) {
+    var slotBtn = slotBtns[s];
+    var groupKey = slotBtn.getAttribute("data-slot-filter");
+    var isFilled = Boolean(rigStatus.slots && rigStatus.slots[groupKey]);
+    slotBtn.classList.toggle("active", isFilled);
+    var dotEl = slotBtn.querySelector(".slot-dot");
+    if (dotEl) {
+      dotEl.className = "swatch-dot slot-dot " + (isFilled ? "titanium" : "obsidian");
+    }
+  }
+
+  if (wattsEl) {
+    wattsEl.textContent = est.activeComponentCount > 0
+      ? (est.estimatedPeakWatts + "W Peak")
+      : "Standby (0W)";
+  }
+  if (tierEl) {
+    tierEl.textContent = est.psuTierLabel;
+  }
+  if (barEl) {
+    barEl.style.width = est.loadPercentage + "%";
+    barEl.setAttribute("data-status", est.headroomStatus);
+  }
+  if (starterBtn) {
+    if (rigStatus.qualifies) {
+      starterBtn.innerHTML = icon("check", 13) + '<span>Rig Ready (5% Off)</span>';
+      starterBtn.classList.add("rig-unlocked");
+    } else {
+      starterBtn.innerHTML = icon("bolt", 13) + '<span>+ Starter Rig</span>';
+      starterBtn.classList.remove("rig-unlocked");
+    }
+  }
+
+  // Sync Instant Promo Offer chips
+  var dealStatusEl = document.getElementById("studio-deal-status");
+  var promoChips = document.querySelectorAll("#studio-promo-strip .studio-promo-chip");
+  for (var i = 0; i < promoChips.length; i++) {
+    var chip = promoChips[i];
+    var code = chip.getAttribute("data-promo-code");
+    var isAct = Boolean(activePromoCode && activePromoCode === code);
+    chip.classList.toggle("active", isAct);
+    chip.setAttribute("aria-pressed", isAct ? "true" : "false");
+  }
+  if (dealStatusEl) {
+    if (activePromoCode && PROMO_MAP[activePromoCode]) {
+      dealStatusEl.textContent = activePromoCode + " Active";
+      dealStatusEl.classList.add("active");
+    } else {
+      dealStatusEl.textContent = "Tap to apply";
+      dealStatusEl.classList.remove("active");
+    }
+  }
+}
+
+function applyStarterRigBundle() {
+  var requiredGroups = ["gpus", "cpus", "motherboards", "storage"];
+  var addedCount = 0;
+  for (var g = 0; g < requiredGroups.length; g++) {
+    var groupKey = requiredGroups[g];
+    var alreadyInCart = false;
+    for (var i = 0; i < products.length; i++) {
+      if (getComponentGroup(products[i]) === groupKey && (cart[products[i].id] || 0) > 0) {
+        alreadyInCart = true;
+        break;
+      }
+    }
+    if (!alreadyInCart) {
+      var best = null;
+      for (var j = 0; j < products.length; j++) {
+        var cand = products[j];
+        var candStock = typeof cand.stock === "number" ? cand.stock : (cand.stockQuantity || 10);
+        if (!cand || cand.takenDown || candStock <= 0) continue;
+        if (getComponentGroup(cand) === groupKey) {
+          if (!best || (cand.ratingRate || 0) > (best.ratingRate || 0)) {
+            best = cand;
+          }
+        }
+      }
+      if (best) {
+        cart[best.id] = 1;
+        refreshCard(best.id);
+        addedCount++;
+      }
+    }
+  }
+  recalc(true);
+  queueCartSave();
+  api("/api/cart/starter-rig", {
+    method: "POST",
+    body: JSON.stringify({ promoCode: activePromoCode || null })
+  }).catch(function () {});
+
+  if (addedCount > 0) {
+    showActivityToast("Starter Rig Bundle loaded (" + addedCount + " core parts added · 5% Rig Discount active)!");
+  } else {
+    openRigDrawer();
+  }
+}
+
+function applyStudioPromoOffer(code) {
+  var clean = String(code || "").trim().toUpperCase();
+  if (!clean || !PROMO_MAP[clean]) return;
+
+  if (activePromoCode === clean) {
+    activePromoCode = "";
+    if (promoInputEl) promoInputEl.value = "";
+    recalc(false);
+    showActivityToast("Removed promo code " + clean);
+    return;
+  }
+
+  activePromoCode = clean;
+  if (promoInputEl) promoInputEl.value = clean;
+  if (typeof syncPromoControls === "function") {
+    syncPromoControls("");
+  }
+  recalc(true);
+  api("/api/cart/promo", {
+    method: "POST",
+    body: JSON.stringify({ promoCode: clean })
+  }).catch(function () {});
+  showActivityToast("Applied promo code " + clean + " (" + PROMO_MAP[clean].label + ")!");
+}
+
+function initStudioCommandStrip() {
+  setStudioUiTheme();
+
+  var slotPillsEl = document.getElementById("studio-slot-pills");
+  if (slotPillsEl) {
+    slotPillsEl.addEventListener("click", function (e) {
+      var btn = e.target.closest("[data-slot-filter]");
+      if (!btn) return;
+      var filterCat = btn.getAttribute("data-slot-filter");
+      if (filterCat && typeof selectCategoryFilter === "function") {
+        selectCategoryFilter(filterCat);
+      } else if (filterCat) {
+        var tab = document.querySelector('#category-filters .filter-tab[data-filter="' + filterCat + '"]');
+        if (tab) tab.click();
+      }
+    });
+  }
+
+  var starterBtn = document.getElementById("quick-starter-rig-btn");
+  if (starterBtn) {
+    starterBtn.addEventListener("click", applyStarterRigBundle);
+  }
+
+  var promoStrip = document.getElementById("studio-promo-strip");
+  if (promoStrip) {
+    promoStrip.addEventListener("click", function (e) {
+      var chip = e.target.closest(".studio-promo-chip");
+      if (!chip) return;
+      var code = chip.getAttribute("data-promo-code");
+      if (code) applyStudioPromoOffer(code);
+    });
+  }
+
+  var attachToggleBtn = document.getElementById("ig-dm-attach-toggle");
+  var attachTrayEl = document.getElementById("ig-attach-tray");
+  if (attachToggleBtn && attachTrayEl) {
+    attachToggleBtn.addEventListener("click", function () {
+      if (chatProductSelectEl) chatProductSelectEl.focus();
+    });
+  }
+
+  var quickHeartBtn = document.getElementById("ig-quick-heart-btn");
+  if (quickHeartBtn) {
+    quickHeartBtn.addEventListener("click", function () {
+      if (!chatMessageInputEl) return;
+      chatMessageInputEl.value = "❤️ Loving this hardware setup! Can we verify PSU headroom?";
+      sendMessengerMessage();
+    });
+  }
+
+  updateStudioCommandStrip();
+}
+
+setTimeout(initStudioCommandStrip, 0);
+
 
 // ═══════════════════════════════════════════════════════════════════
-// BENCH MESSENGER (REAL-TIME HARDWARE CHAT & PART SHARING)
+// INSTAGRAM DIRECT-STYLE MESSENGER (REAL-TIME THREADS & PRODUCT TAGS)
 // ═══════════════════════════════════════════════════════════════════
 
 function setMobileDockActive(navKey) {
@@ -6216,7 +6836,7 @@ function closeMessenger() {
 function populateMessengerProductSelect() {
   if (!chatProductSelectEl) return;
   var currentVal = chatProductSelectEl.value;
-  var html = '<option value="">+ Attach Hardware Part (optional)</option>';
+  var html = '<option value="">None (Text message only)</option>';
   var sorted = products.slice().sort(function (a, b) { return a.title.localeCompare(b.title); });
   for (var i = 0; i < sorted.length; i++) {
     var p = sorted[i];
@@ -6224,6 +6844,18 @@ function populateMessengerProductSelect() {
   }
   chatProductSelectEl.innerHTML = html;
   if (currentVal) chatProductSelectEl.value = currentVal;
+}
+
+function formatIgHandleForSender(name, role) {
+  if (window.VoltboxQR && typeof window.VoltboxQR.formatInstagramHandle === "function") {
+    return window.VoltboxQR.formatInstagramHandle(name, role);
+  }
+  var slug = String(name || "builder").trim().toLowerCase().replace(/[^a-z0-9]+/g, ".").replace(/^\.+|\.+$/g, "") || "builder";
+  var roleLower = String(role || "").toLowerCase();
+  if (roleLower === "moderator" || roleLower === "staff_architect") {
+    return "@" + slug + ".voltbox";
+  }
+  return "@" + slug;
 }
 
 function loadMessengerMessages() {
@@ -6234,7 +6866,7 @@ function loadMessengerMessages() {
         chatMessages = data.messages;
       }
       if (data && typeof data.onlineCount === "number" && messengerOnlineEl) {
-        messengerOnlineEl.textContent = Math.max(3, data.onlineCount + 2) + " builders online";
+        messengerOnlineEl.textContent = "Active now · " + Math.max(4, data.onlineCount) + " specialists";
       }
       renderMessengerFeed();
     })
@@ -6244,6 +6876,20 @@ function loadMessengerMessages() {
 function renderMessengerFeed() {
   if (!messengerFeedEl) return;
   var currentChan = activeChatChannel || "engineering-desk";
+
+  // Sync Instagram Direct Header Handle & Subtitle with active channel pill
+  var activeChanBtn = document.querySelector('#messenger-channels .msg-channel-btn[data-channel="' + currentChan + '"]');
+  var igTitleEl = document.getElementById("ig-dm-active-title");
+  if (activeChanBtn) {
+    var handleAttr = activeChanBtn.getAttribute("data-ig-handle");
+    var subAttr = activeChanBtn.getAttribute("data-ig-sub");
+    if (igTitleEl && handleAttr) igTitleEl.textContent = handleAttr;
+    if (messengerOnlineEl && subAttr) messengerOnlineEl.textContent = subAttr;
+    if (chatMessageInputEl && handleAttr) {
+      chatMessageInputEl.placeholder = "Message @" + handleAttr + "…";
+    }
+  }
+
   var filtered = [];
   for (var i = 0; i < chatMessages.length; i++) {
     var m = chatMessages[i];
@@ -6256,23 +6902,20 @@ function renderMessengerFeed() {
 
   if (filtered.length === 0) {
     messengerFeedEl.innerHTML =
-      '<div class="msg-empty">' +
-        '<p>No messages in <b>#' + esc(currentChan) + '</b> yet.</p>' +
-        '<span>Ask a hardware question or embed a component spec to consult with Voltbox Lead Architects.</span>' +
+      '<div class="msg-empty ig-dm-empty">' +
+        '<p>No direct messages in this thread yet.</p>' +
+        '<span>Send a message or tag a hardware part below to start an Instagram Direct consultation.</span>' +
       '</div>';
     return;
   }
 
-  var html = "";
+  var html = '<div class="ig-dm-timestamp-divider"><span>TODAY · DIRECT ENCRYPTED</span></div>';
   for (var j = 0; j < filtered.length; j++) {
     var msg = filtered[j];
     var isSelf = me && msg.senderEmail === me.email;
-    var roleBadge = "";
-    if (msg.senderRole === "STAFF_ARCHITECT" || msg.senderRole === "moderator") {
-      roleBadge = '<span class="msg-role-pill architect">STAFF ARCHITECT</span>';
-    } else if (msg.senderRole === "VERIFIED_BUILDER" || msg.senderRole === "contributor") {
-      roleBadge = '<span class="msg-role-pill builder">VERIFIED BUILDER</span>';
-    }
+    var isVerified = msg.senderRole === "STAFF_ARCHITECT" || msg.senderRole === "moderator" || msg.senderRole === "VERIFIED_BUILDER" || msg.senderRole === "contributor";
+    var handleText = msg.senderHandle || formatIgHandleForSender(msg.senderName, msg.senderRole);
+    var verifiedTick = isVerified ? '<span class="ig-msg-verified" title="Verified Specialist">✓</span>' : '';
 
     var when = new Date(msg.createdAt || Date.now());
     var timeLabel = formatTime(when);
@@ -6284,7 +6927,7 @@ function renderMessengerFeed() {
       var pSku = msg.productSku || (liveProd ? getSkuFor(liveProd) : ("VB-PRT-" + msg.productId));
       var pImg = (liveProd && liveProd.image) ? liveProd.image : (msg.productImage || tileFor("components"));
       partCardHtml =
-        '<div class="msg-part-card" data-testid="messenger-part-card">' +
+        '<div class="msg-part-card ig-product-drop-card" data-testid="messenger-part-card">' +
           '<img class="msg-part-img" src="' + esc(pImg) + '" alt="" onerror="this.onerror=null;this.src=NO_IMAGE" />' +
           '<div class="msg-part-info">' +
             '<span class="msg-part-sku">' + esc(pSku) + '</span>' +
@@ -6292,39 +6935,51 @@ function renderMessengerFeed() {
             '<span class="msg-part-price">$' + Number(pPrice).toFixed(2) + '</span>' +
           '</div>' +
           '<div class="msg-part-actions">' +
-            '<button type="button" class="msg-part-btn specs" onclick="closeMessenger();openSpecDrawer(' + Number(msg.productId) + ')">Specs</button>' +
-            '<button type="button" class="msg-part-btn add" onclick="inc(' + Number(msg.productId) + ')">+ Rig</button>' +
+            '<button type="button" class="msg-part-btn specs" onclick="closeMessenger();openSpecDrawer(' + Number(msg.productId) + ')">View</button>' +
+            '<button type="button" class="msg-part-btn add" onclick="inc(' + Number(msg.productId) + ')">+ Bag</button>' +
           '</div>' +
         '</div>';
     }
 
-    var reactions = msg.reactions || { "⚡": 1 };
-    var reactionsHtml = '<div class="msg-reactions-row">';
-    var emojis = ["⚡", "🚀", "🔥", "💡", "👍"];
+    var reactions = msg.reactions || { "❤️": 1 };
+    var reactionsHtml = '<div class="msg-reactions-row ig-reactions-tray">';
+    var emojis = ["❤️", "🔥", "⚡", "🚀"];
     for (var e = 0; e < emojis.length; e++) {
       var em = emojis[e];
       var cnt = reactions[em] || 0;
       reactionsHtml +=
         '<button type="button" class="msg-reaction-pill' + (cnt > 0 ? ' reacted' : '') + '" onclick="toggleMsgReaction(' + msg.id + ', \'' + em + '\')">' +
-          em + (cnt > 0 ? (' ' + cnt) : '') +
+          em + (cnt > 0 ? (' <span>' + cnt + '</span>') : '') +
         '</button>';
     }
     reactionsHtml += '</div>';
 
+    var seenHtml = isSelf
+      ? '<div class="ig-seen-note">' + esc(msg.seenStatus || "Seen just now") + ' · ' + esc(timeLabel) + '</div>'
+      : '';
+
     html +=
-      '<article class="msg-card' + (isSelf ? ' self' : '') + '" data-testid="messenger-msg-card">' +
-        '<div class="msg-avatar" style="background:' + esc(msg.senderColor || "#3b82f6") + '">' +
-          esc((msg.senderName || "V").charAt(0).toUpperCase()) +
-        '</div>' +
-        '<div class="msg-body">' +
-          '<div class="msg-meta">' +
-            '<span class="msg-author">' + esc(msg.senderName || "Engineer") + '</span>' +
-            roleBadge +
+      '<article class="msg-card ig-dm-row' + (isSelf ? ' self' : '') + '" data-testid="messenger-msg-card">' +
+        (isSelf ? '' : (
+          '<div class="ig-msg-avatar-wrap">' +
+            '<div class="msg-avatar ig-msg-avatar" style="background:' + esc(msg.senderColor || "#3b82f6") + '">' +
+              esc((msg.senderName || "V").charAt(0).toUpperCase()) +
+            '</div>' +
+          '</div>'
+        )) +
+        '<div class="msg-body ig-dm-bubble-col">' +
+          '<div class="msg-meta ig-dm-meta">' +
+            '<span class="msg-author">' + esc(msg.senderName || "Specialist") + '</span>' +
+            verifiedTick +
+            '<span class="ig-msg-handle">' + esc(handleText) + '</span>' +
             '<span class="msg-time">' + esc(timeLabel) + '</span>' +
           '</div>' +
-          '<div class="msg-text">' + esc(msg.text) + '</div>' +
-          partCardHtml +
+          '<div class="ig-dm-bubble">' +
+            '<div class="msg-text">' + esc(msg.text) + '</div>' +
+            partCardHtml +
+          '</div>' +
           reactionsHtml +
+          seenHtml +
         '</div>' +
       '</article>';
   }

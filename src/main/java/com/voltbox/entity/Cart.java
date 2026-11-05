@@ -26,6 +26,7 @@ public class Cart {
     private double total;
     private String appliedPromo;
     private RigBundleState rigBundle;
+    private PowerEstimateState powerEstimate;
     private long updatedAt;
 
     public static class RigBundleState {
@@ -36,6 +37,18 @@ public class Cart {
         public int completedCoreCount;
         public boolean qualifiesForBundle;
         public double discountRate;
+    }
+
+    public static class PowerEstimateState {
+        public int baseSystemWatts;
+        public int componentsWatts;
+        public int estimatedPeakWatts;
+        public int recommendedPsuWatts;
+        public String psuTierLabel;
+        public int loadPercentage;
+        public String headroomStatus;
+        public int activeComponentCount;
+        public int thermalBtuPerHour;
     }
 
     public Cart() {}
@@ -81,6 +94,9 @@ public class Cart {
 
     public RigBundleState getRigBundle() { return rigBundle; }
     public void setRigBundle(RigBundleState rigBundle) { this.rigBundle = rigBundle; }
+
+    public PowerEstimateState getPowerEstimate() { return powerEstimate; }
+    public void setPowerEstimate(PowerEstimateState powerEstimate) { this.powerEstimate = powerEstimate; }
 
     public long getUpdatedAt() { return updatedAt; }
     public void setUpdatedAt(long updatedAt) { this.updatedAt = updatedAt; }

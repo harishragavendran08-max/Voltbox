@@ -90,12 +90,52 @@ export function getProductQuantity(product: { id?: number; quantity?: number; st
   return 10;
 }
 
+export type StockAvailabilityStatus = 'available-now' | 'backorder';
+export type QuickStockFilterMode = 'all' | 'available-now' | 'backorder';
+
+export function getStockAvailabilityStatus(product: {
+  id?: number;
+  quantity?: number;
+  stock?: number;
+  stockQuantity?: number;
+  backorder?: boolean;
+  stockStatus?: string;
+}): StockAvailabilityStatus {
+  if (product.backorder === true || String(product.stockStatus || '').trim().toLowerCase() === 'backorder') {
+    return 'backorder';
+  }
+  const qty =
+    typeof product.stockQuantity === 'number' && !Number.isNaN(product.stockQuantity)
+      ? Math.max(0, Math.floor(product.stockQuantity))
+      : getProductQuantity(product);
+  return qty > 0 ? 'available-now' : 'backorder';
+}
+
+export function isBackorderProduct(product: {
+  id?: number;
+  quantity?: number;
+  stock?: number;
+  stockQuantity?: number;
+  backorder?: boolean;
+  stockStatus?: string;
+}): boolean {
+  return getStockAvailabilityStatus(product) === 'backorder';
+}
+
 export function isLowStock(product: { id?: number; quantity?: number; stock?: number }): boolean {
   const qty = getProductQuantity(product);
   return qty < LOW_STOCK_THRESHOLD;
 }
 
-export function getStockBadgeLabel(product: { id?: number; quantity?: number; stock?: number }): string | null {
+export function getStockBadgeLabel(product: {
+  id?: number;
+  quantity?: number;
+  stock?: number;
+  stockQuantity?: number;
+  backorder?: boolean;
+  stockStatus?: string;
+}): string | null {
+  if (isBackorderProduct(product)) return 'Backorder';
   return isLowStock(product) ? 'Low Stock' : null;
 }
 
@@ -367,13 +407,13 @@ export function generatePriceHistory(product: { id: number; price: number }): Pr
   const basePrice = Math.max(1, Number(product.price) || 100);
   const seed = (Number(product.id) || 1) * 17;
 
-  // Deterministic realistic historical curve ending at current price in Oct
+  // Deterministic realistic historical curve with seasonal peaks and promotional dips ending at current price in Oct
   const multipliers = [
-    1.14 - ((seed % 7) * 0.01),
-    1.10 + ((seed % 5) * 0.008),
-    1.06 - ((seed % 4) * 0.01),
-    1.08 + ((seed % 6) * 0.005),
-    1.03 - ((seed % 3) * 0.007),
+    1.12 - ((seed % 5) * 0.01),
+    1.07 + ((seed % 4) * 0.008),
+    0.94 - ((seed % 3) * 0.005),
+    1.04 + ((seed % 5) * 0.006),
+    0.90 - ((seed % 4) * 0.005),
     1.0,
   ];
 
@@ -1082,6 +1122,8 @@ export interface ProductJpaEntity {
   quantity: number;
   stock: number;
   lowStock: boolean;
+  backorder: boolean;
+  stockStatus: StockAvailabilityStatus;
   category: string;
   componentGroup: ComponentGroup;
   description: string;
@@ -1164,6 +1206,8 @@ export function toProductJpaEntity(product: {
     quantity: qty,
     stock: qty,
     lowStock: qty < LOW_STOCK_THRESHOLD,
+    backorder: qty <= 0,
+    stockStatus: qty > 0 ? 'available-now' : 'backorder',
     category: resolvedCategory,
     componentGroup,
     description: product.description || '',
@@ -2379,6 +2423,8 @@ export function buildUpiPaymentRequestPayload(input: {
 // 12. SIDE-BY-SIDE PRODUCT COMPARISON LOGIC
 // ─────────────────────────────────────────────────────────────
 
+export type SpecIndicatorStatus = 'better' | 'worse' | 'neutral';
+
 export interface ComparisonProductItem {
   id: number;
   sku: string;
@@ -2399,6 +2445,11 @@ export interface ComparisonMetricRow {
   values: Record<number, string | number>;
   hasDifference: boolean;
   bestProductId?: number;
+  worstProductId?: number;
+  bestProductIds?: number[];
+  worstProductIds?: number[];
+  indicators?: Record<number, SpecIndicatorStatus>;
+  indicatorLabels?: Record<number, string>;
   highlightNote?: string;
 }
 
@@ -2413,6 +2464,121 @@ export interface ProductComparisonResult {
   priceSpread: number;
   metrics: ComparisonMetricRow[];
   summary: string;
+}
+
+export function parsePowerWatts(powerDraw: string): number {
+  const text = String(powerDraw || '').trim();
+  const wattMatch = text.match(/(\d+(?:\.\d+)?)\s*W\b/i);
+  if (wattMatch) {
+    return parseFloat(wattMatch[1]);
+  }
+  const mahMatch = text.match(/([\d,]+)\s*mAh/i);
+  if (mahMatch) {
+    return 8;
+  }
+  const hourMatch = text.match(/(\d+)\s*-?\s*Hour/i);
+  if (hourMatch) {
+    return 10;
+  }
+  if (/24-Pin\s*ATX/i.test(text)) {
+    return 45;
+  }
+  return 65;
+}
+
+export function scoreInterfaceBandwidth(interfaceSpec: string): number {
+  const text = String(interfaceSpec || '').toLowerCase();
+  if (text.includes('pcie 5.0') || text.includes('gen5')) return 100;
+  if (text.includes('7,450 mb/s') || text.includes('nvme 2.0') || text.includes('pcie gen4')) return 92;
+  if (text.includes('ddr5-6400') || text.includes('socket am5')) return 88;
+  if (text.includes('hdmi 2.1') || text.includes('wi-fi 7')) return 84;
+  if (text.includes('pcie 4.0')) return 78;
+  if (text.includes('bluetooth 5.3')) return 72;
+  if (text.includes('bluetooth 5.1')) return 66;
+  if (text.includes('sata iii') || text.includes('6.0 gb/s')) return 50;
+  return 70;
+}
+
+export function scoreArchitectureTier(architecture: string): number {
+  const text = String(architecture || '').toLowerCase();
+  if (text.includes('blackwell') || text.includes('gddr7')) return 98;
+  if (text.includes('zen 5') || text.includes('16-core')) return 95;
+  if (text.includes('duet rail vrm') || text.includes('server pcb')) return 90;
+  if (text.includes('rdna 3.5') || text.includes('ray-tracing')) return 88;
+  if (text.includes('3d tlc nand') || text.includes('dram cache')) return 85;
+  if (text.includes('neodymium') || text.includes('dsp')) return 80;
+  if (text.includes('dual-actuator') || text.includes('haptic')) return 76;
+  if (text.includes('7200 rpm') || text.includes('cmr')) return 62;
+  return 74;
+}
+
+export function parseWarrantyScore(warranty: string): number {
+  const text = String(warranty || '');
+  const yearMatch = text.match(/(\d+)\s*-?\s*Year/i);
+  let score = yearMatch ? parseInt(yearMatch[1], 10) * 10 : 20;
+  if (/bench verified|endurance|bios protection/i.test(text)) {
+    score += 3;
+  }
+  return score;
+}
+
+export function evaluateSpecRowIndicators(
+  scoresByProductId: Record<number, number>,
+  higherIsBetter: boolean,
+  betterLabel = 'Better',
+  worseLabel = 'Worse'
+): {
+  indicators: Record<number, SpecIndicatorStatus>;
+  indicatorLabels: Record<number, string>;
+  bestProductId?: number;
+  worstProductId?: number;
+  bestProductIds: number[];
+  worstProductIds: number[];
+} {
+  const entries = Object.entries(scoresByProductId).map(([k, v]) => [Number(k), Number(v)] as [number, number]);
+  const indicators: Record<number, SpecIndicatorStatus> = {};
+  const indicatorLabels: Record<number, string> = {};
+  for (const [id] of entries) {
+    indicators[id] = 'neutral';
+    indicatorLabels[id] = '';
+  }
+
+  if (entries.length === 0) {
+    return { indicators, indicatorLabels, bestProductIds: [], worstProductIds: [] };
+  }
+
+  let minVal = entries[0][1];
+  let maxVal = entries[0][1];
+  for (const [, val] of entries) {
+    if (val < minVal) minVal = val;
+    if (val > maxVal) maxVal = val;
+  }
+
+  const targetBestVal = higherIsBetter ? maxVal : minVal;
+  const targetWorstVal = higherIsBetter ? minVal : maxVal;
+
+  const bestProductIds = entries.filter(([, val]) => val === targetBestVal).map(([id]) => id);
+  const worstProductIds = minVal < maxVal ? entries.filter(([, val]) => val === targetWorstVal).map(([id]) => id) : [];
+
+  if (entries.length >= 2 && minVal < maxVal) {
+    for (const id of bestProductIds) {
+      indicators[id] = 'better';
+      indicatorLabels[id] = betterLabel;
+    }
+    for (const id of worstProductIds) {
+      indicators[id] = 'worse';
+      indicatorLabels[id] = worseLabel;
+    }
+  }
+
+  return {
+    indicators,
+    indicatorLabels,
+    bestProductId: bestProductIds[0],
+    worstProductId: worstProductIds[0],
+    bestProductIds,
+    worstProductIds,
+  };
 }
 
 export function buildProductComparison(
@@ -2485,6 +2651,49 @@ export function buildProductComparison(
     if (item.stock > highestStockItem.stock) highestStockItem = item;
   }
 
+  const priceEval = evaluateSpecRowIndicators(
+    Object.fromEntries(enrichedProducts.map((p) => [p.id, p.price])),
+    false,
+    'Best Price',
+    'Highest Cost'
+  );
+  const archEval = evaluateSpecRowIndicators(
+    Object.fromEntries(enrichedProducts.map((p) => [p.id, scoreArchitectureTier(p.specs.architecture)])),
+    true,
+    'Top Silicon Tier',
+    'Lower Tier'
+  );
+  const interfaceEval = evaluateSpecRowIndicators(
+    Object.fromEntries(enrichedProducts.map((p) => [p.id, scoreInterfaceBandwidth(p.specs.interfaceSpec)])),
+    true,
+    'Faster Bus',
+    'Slower Bus'
+  );
+  const powerEval = evaluateSpecRowIndicators(
+    Object.fromEntries(enrichedProducts.map((p) => [p.id, parsePowerWatts(p.specs.powerDraw)])),
+    false,
+    'Best Efficiency',
+    'High Power Draw'
+  );
+  const historyEval = evaluateSpecRowIndicators(
+    Object.fromEntries(enrichedProducts.map((p) => [p.id, p.specs.avgPrice])),
+    false,
+    'Lowest 6M Avg',
+    'Highest 6M Avg'
+  );
+  const stockEval = evaluateSpecRowIndicators(
+    Object.fromEntries(enrichedProducts.map((p) => [p.id, p.stock])),
+    true,
+    'Best Availability',
+    'Lowest Stock'
+  );
+  const warrantyEval = evaluateSpecRowIndicators(
+    Object.fromEntries(enrichedProducts.map((p) => [p.id, parseWarrantyScore(p.specs.warranty)])),
+    true,
+    'Longest Coverage',
+    'Shorter Coverage'
+  );
+
   // Construct comparative rows
   const metrics: ComparisonMetricRow[] = [
     {
@@ -2494,6 +2703,11 @@ export function buildProductComparison(
       values: Object.fromEntries(enrichedProducts.map((p) => [p.id, `$${p.price.toFixed(2)}`])),
       hasDifference: enrichedProducts.some((p) => p.price !== enrichedProducts[0].price),
       bestProductId: lowestPriceItem.id,
+      worstProductId: priceEval.worstProductId,
+      bestProductIds: priceEval.bestProductIds,
+      worstProductIds: priceEval.worstProductIds,
+      indicators: priceEval.indicators,
+      indicatorLabels: priceEval.indicatorLabels,
       highlightNote: priceSpread > 0 ? `$${priceSpread.toFixed(2)} price difference` : 'Identical pricing',
     },
     {
@@ -2502,6 +2716,8 @@ export function buildProductComparison(
       category: 'hardware',
       values: Object.fromEntries(enrichedProducts.map((p) => [p.id, p.groupLabel])),
       hasDifference: enrichedProducts.some((p) => p.groupLabel !== enrichedProducts[0].groupLabel),
+      indicators: Object.fromEntries(enrichedProducts.map((p) => [p.id, 'neutral' as SpecIndicatorStatus])),
+      indicatorLabels: Object.fromEntries(enrichedProducts.map((p) => [p.id, ''])),
     },
     {
       key: 'architecture',
@@ -2509,6 +2725,12 @@ export function buildProductComparison(
       category: 'hardware',
       values: Object.fromEntries(enrichedProducts.map((p) => [p.id, p.specs.architecture])),
       hasDifference: enrichedProducts.some((p) => p.specs.architecture !== enrichedProducts[0].specs.architecture),
+      bestProductId: archEval.bestProductId,
+      worstProductId: archEval.worstProductId,
+      bestProductIds: archEval.bestProductIds,
+      worstProductIds: archEval.worstProductIds,
+      indicators: archEval.indicators,
+      indicatorLabels: archEval.indicatorLabels,
     },
     {
       key: 'interfaceSpec',
@@ -2516,6 +2738,12 @@ export function buildProductComparison(
       category: 'hardware',
       values: Object.fromEntries(enrichedProducts.map((p) => [p.id, p.specs.interfaceSpec])),
       hasDifference: enrichedProducts.some((p) => p.specs.interfaceSpec !== enrichedProducts[0].specs.interfaceSpec),
+      bestProductId: interfaceEval.bestProductId,
+      worstProductId: interfaceEval.worstProductId,
+      bestProductIds: interfaceEval.bestProductIds,
+      worstProductIds: interfaceEval.worstProductIds,
+      indicators: interfaceEval.indicators,
+      indicatorLabels: interfaceEval.indicatorLabels,
     },
     {
       key: 'powerDraw',
@@ -2523,6 +2751,12 @@ export function buildProductComparison(
       category: 'power',
       values: Object.fromEntries(enrichedProducts.map((p) => [p.id, p.specs.powerDraw])),
       hasDifference: enrichedProducts.some((p) => p.specs.powerDraw !== enrichedProducts[0].specs.powerDraw),
+      bestProductId: powerEval.bestProductId,
+      worstProductId: powerEval.worstProductId,
+      bestProductIds: powerEval.bestProductIds,
+      worstProductIds: powerEval.worstProductIds,
+      indicators: powerEval.indicators,
+      indicatorLabels: powerEval.indicatorLabels,
     },
     {
       key: 'priceHistory',
@@ -2537,6 +2771,12 @@ export function buildProductComparison(
       hasDifference: enrichedProducts.some(
         (p) => p.specs.lowestPrice !== enrichedProducts[0].specs.lowestPrice || p.specs.highestPrice !== enrichedProducts[0].specs.highestPrice
       ),
+      bestProductId: historyEval.bestProductId,
+      worstProductId: historyEval.worstProductId,
+      bestProductIds: historyEval.bestProductIds,
+      worstProductIds: historyEval.worstProductIds,
+      indicators: historyEval.indicators,
+      indicatorLabels: historyEval.indicatorLabels,
     },
     {
       key: 'stockStatus',
@@ -2550,6 +2790,11 @@ export function buildProductComparison(
       ),
       hasDifference: enrichedProducts.some((p) => p.stock !== enrichedProducts[0].stock),
       bestProductId: highestStockItem.id,
+      worstProductId: stockEval.worstProductId,
+      bestProductIds: stockEval.bestProductIds,
+      worstProductIds: stockEval.worstProductIds,
+      indicators: stockEval.indicators,
+      indicatorLabels: stockEval.indicatorLabels,
     },
     {
       key: 'warranty',
@@ -2557,6 +2802,12 @@ export function buildProductComparison(
       category: 'support',
       values: Object.fromEntries(enrichedProducts.map((p) => [p.id, p.specs.warranty])),
       hasDifference: enrichedProducts.some((p) => p.specs.warranty !== enrichedProducts[0].specs.warranty),
+      bestProductId: warrantyEval.bestProductId,
+      worstProductId: warrantyEval.worstProductId,
+      bestProductIds: warrantyEval.bestProductIds,
+      worstProductIds: warrantyEval.worstProductIds,
+      indicators: warrantyEval.indicators,
+      indicatorLabels: warrantyEval.indicatorLabels,
     },
   ];
 
@@ -2782,6 +3033,103 @@ export function computeSuggestedPriceThresholds(
       savingsPct: lowPct,
     },
   ];
+}
+
+export interface PriceAlertThresholdInsight {
+  sixMonthLow: number;
+  sixMonthHigh: number;
+  sixMonthAvg: number;
+  targetPrice: number;
+  currentPrice: number;
+  monthsAtOrBelowTarget: number;
+  totalMonths: number;
+  diffFromLow: number;
+  likelihoodTier: 'instant-trigger' | 'high-probability' | 'near-6m-low' | 'aggressive-below-low';
+  badgeLabel: string;
+  guidanceText: string;
+}
+
+export function evaluatePriceAlertThresholdVsHistory(
+  history: Array<{ month?: string; price: number }> | undefined | null,
+  currentPrice: number,
+  targetPrice: number
+): PriceAlertThresholdInsight {
+  const cur = Math.max(0.01, roundMoney(Number(currentPrice) || 100));
+  const tgt = Math.max(0.01, roundMoney(Number(targetPrice) || cur));
+  const validPrices =
+    Array.isArray(history) && history.length > 0
+      ? history.map((h) => roundMoney(Number(h.price) || cur)).filter((v) => v > 0)
+      : [cur];
+  const prices = validPrices.length > 0 ? validPrices : [cur];
+  const sixMonthLow = roundMoney(Math.min(...prices));
+  const sixMonthHigh = roundMoney(Math.max(...prices));
+  const sixMonthAvg = roundMoney(prices.reduce((a, b) => a + b, 0) / prices.length);
+  const monthsAtOrBelowTarget = prices.filter((v) => v <= tgt + 0.01).length;
+  const totalMonths = prices.length;
+  const diffFromLow = roundMoney(tgt - sixMonthLow);
+
+  if (tgt >= cur) {
+    return {
+      sixMonthLow,
+      sixMonthHigh,
+      sixMonthAvg,
+      targetPrice: tgt,
+      currentPrice: cur,
+      monthsAtOrBelowTarget,
+      totalMonths,
+      diffFromLow,
+      likelihoodTier: 'instant-trigger',
+      badgeLabel: 'Instant Trigger',
+      guidanceText: `Target ($${tgt.toFixed(2)}) is at or above current price ($${cur.toFixed(2)}) — alert triggers immediately.`,
+    };
+  }
+
+  if (tgt < sixMonthLow - 0.05) {
+    const belowBy = Math.abs(diffFromLow);
+    return {
+      sixMonthLow,
+      sixMonthHigh,
+      sixMonthAvg,
+      targetPrice: tgt,
+      currentPrice: cur,
+      monthsAtOrBelowTarget,
+      totalMonths,
+      diffFromLow,
+      likelihoodTier: 'aggressive-below-low',
+      badgeLabel: 'Below 6M Low',
+      guidanceText: `$${belowBy.toFixed(2)} below the 6-month floor ($${sixMonthLow.toFixed(2)}). Consider $${sixMonthLow.toFixed(2)} for a higher hit rate.`,
+    };
+  }
+
+  if (Math.abs(tgt - sixMonthLow) <= Math.max(1.5, cur * 0.015) || monthsAtOrBelowTarget === 1) {
+    return {
+      sixMonthLow,
+      sixMonthHigh,
+      sixMonthAvg,
+      targetPrice: tgt,
+      currentPrice: cur,
+      monthsAtOrBelowTarget: Math.max(1, monthsAtOrBelowTarget),
+      totalMonths,
+      diffFromLow,
+      likelihoodTier: 'near-6m-low',
+      badgeLabel: '6M Floor Sweet Spot',
+      guidanceText: `Matches the 6-month historical floor ($${sixMonthLow.toFixed(2)}) — optimal balance of maximum savings and realistic fill.`,
+    };
+  }
+
+  return {
+    sixMonthLow,
+    sixMonthHigh,
+    sixMonthAvg,
+    targetPrice: tgt,
+    currentPrice: cur,
+    monthsAtOrBelowTarget,
+    totalMonths,
+    diffFromLow,
+    likelihoodTier: 'high-probability',
+    badgeLabel: 'High Likelihood',
+    guidanceText: `Reached in ${monthsAtOrBelowTarget} of ${totalMonths} months ($${diffFromLow.toFixed(2)} above 6M low of $${sixMonthLow.toFixed(2)}).`,
+  };
 }
 
 export function validatePriceAlertInput(input: {
@@ -3071,6 +3419,8 @@ export interface CatalogFilterProduct {
   quantity?: number;
   stock?: number;
   stockQuantity?: number;
+  backorder?: boolean;
+  stockStatus?: string;
   ratingRate?: number;
   ratingCount?: number;
   addedByName?: string;
@@ -3080,6 +3430,7 @@ export interface CatalogFilterOptions {
   categoryFilter?: string;
   searchQuery?: string;
   maxBudget?: number | null;
+  stockFilter?: QuickStockFilterMode;
   sortMode?: CatalogSortMode;
   wishlistIds?: number[];
 }
@@ -3088,6 +3439,8 @@ export interface CatalogFilterResult<T extends CatalogFilterProduct> {
   items: T[];
   visibleCount: number;
   totalCount: number;
+  availableNowCount: number;
+  backorderCount: number;
   hasActiveFilters: boolean;
   activeFilterLabels: string[];
 }
@@ -3104,8 +3457,21 @@ export function filterAndSortCatalogProducts<T extends CatalogFilterProduct>(
     typeof options.maxBudget === 'number' && Number.isFinite(options.maxBudget) && options.maxBudget > 0
       ? options.maxBudget
       : null;
+  const rawStockFilter = (options.stockFilter || 'all').trim().toLowerCase();
+  const stockFilter: QuickStockFilterMode =
+    rawStockFilter === 'available-now' || rawStockFilter === 'backorder' ? rawStockFilter : 'all';
   const sortMode: CatalogSortMode = options.sortMode || 'featured';
   const wishlistSet = new Set((options.wishlistIds || []).map((id) => Number(id)));
+
+  let availableNowCount = 0;
+  let backorderCount = 0;
+  for (const item of list) {
+    if (getStockAvailabilityStatus(item) === 'backorder') {
+      backorderCount++;
+    } else {
+      availableNowCount++;
+    }
+  }
 
   // 1. Sort
   if (sortMode === 'price-asc') {
@@ -3143,6 +3509,11 @@ export function filterAndSortCatalogProducts<T extends CatalogFilterProduct>(
       return false;
     }
 
+    if (stockFilter !== 'all') {
+      const availStatus = getStockAvailabilityStatus(p);
+      if (availStatus !== stockFilter) return false;
+    }
+
     return true;
   });
 
@@ -3150,13 +3521,18 @@ export function filterAndSortCatalogProducts<T extends CatalogFilterProduct>(
   if (cat !== 'all') activeFilterLabels.push(`Category: ${cat}`);
   if (query) activeFilterLabels.push(`Search: "${query}"`);
   if (maxBudget !== null) activeFilterLabels.push(`Under $${maxBudget}`);
+  if (stockFilter === 'available-now') activeFilterLabels.push('Stock: Available Now');
+  if (stockFilter === 'backorder') activeFilterLabels.push('Stock: Backorder');
   if (sortMode !== 'featured') activeFilterLabels.push(`Sort: ${sortMode}`);
 
   return {
     items: filtered,
     visibleCount: filtered.length,
     totalCount,
-    hasActiveFilters: cat !== 'all' || query.length > 0 || maxBudget !== null || sortMode !== 'featured',
+    availableNowCount,
+    backorderCount,
+    hasActiveFilters:
+      cat !== 'all' || query.length > 0 || maxBudget !== null || stockFilter !== 'all' || sortMode !== 'featured',
     activeFilterLabels,
   };
 }
@@ -3282,4 +3658,244 @@ export function normalizeVoiceSearchTranscript(rawTranscript: string): VoiceSear
   };
 }
 
+// ==========================================================================
+// STUDIO UI & BACKGROUND TEMPLATE ENGINE + LIVE PSU / TDP WATTAGE ESTIMATOR
+// ==========================================================================
 
+export type UiTemplateId = 'obsidian' | 'blueprint' | 'copper' | 'titanium';
+
+export interface UiBackgroundTemplateSpec {
+  id: UiTemplateId;
+  name: string;
+  shortLabel: string;
+  tagline: string;
+  legacyBgMode: 'quantum' | 'overclock' | 'cyber' | 'copper';
+  bgHex: string;
+  cardHex: string;
+  accentHex: string;
+  accentSecondaryHex: string;
+  gridStyle: 'wafer-cyan' | 'cad-cobalt' | 'anodized-amber' | 'lab-emerald';
+}
+
+export const UI_BACKGROUND_TEMPLATES: Record<UiTemplateId, UiBackgroundTemplateSpec> = {
+  obsidian: {
+    id: 'obsidian',
+    name: 'Obsidian Studio',
+    shortLabel: 'Obsidian',
+    tagline: 'Architectural Carbon & Precision Cyan',
+    legacyBgMode: 'quantum',
+    bgHex: '#090d16',
+    cardHex: '#121826',
+    accentHex: '#38bdf8',
+    accentSecondaryHex: '#2dd4bf',
+    gridStyle: 'wafer-cyan',
+  },
+  blueprint: {
+    id: 'blueprint',
+    name: 'Cobalt Blueprint',
+    shortLabel: 'Blueprint',
+    tagline: 'CAD Schematic Navy & Royal Cobalt',
+    legacyBgMode: 'overclock',
+    bgHex: '#070e1e',
+    cardHex: '#0f1930',
+    accentHex: '#60a5fa',
+    accentSecondaryHex: '#3b82f6',
+    gridStyle: 'cad-cobalt',
+  },
+  copper: {
+    id: 'copper',
+    name: 'Anodized Copper',
+    shortLabel: 'Copper',
+    tagline: 'Warm Gunmetal & Brushed Amber Gold',
+    legacyBgMode: 'copper',
+    bgHex: '#110e0c',
+    cardHex: '#1c1714',
+    accentHex: '#f59e0b',
+    accentSecondaryHex: '#fbbf24',
+    gridStyle: 'anodized-amber',
+  },
+  titanium: {
+    id: 'titanium',
+    name: 'Titanium Lab',
+    shortLabel: 'Titanium',
+    tagline: 'Clean Bench Slate & Emerald Telemetry',
+    legacyBgMode: 'cyber',
+    bgHex: '#0a1015',
+    cardHex: '#121c24',
+    accentHex: '#10b981',
+    accentSecondaryHex: '#2dd4bf',
+    gridStyle: 'lab-emerald',
+  },
+};
+
+export const UI_TEMPLATE_ORDER: UiTemplateId[] = ['obsidian', 'blueprint', 'copper', 'titanium'];
+
+export function resolveUiTemplateTheme(rawInput?: string | null): UiBackgroundTemplateSpec {
+  const key = String(rawInput || '').trim().toLowerCase();
+  if (key === 'obsidian' || key === 'quantum') return UI_BACKGROUND_TEMPLATES.obsidian;
+  if (key === 'blueprint' || key === 'overclock' || key === 'sapphire') return UI_BACKGROUND_TEMPLATES.blueprint;
+  if (key === 'copper' || key === 'amber' || key === 'gold') return UI_BACKGROUND_TEMPLATES.copper;
+  if (key === 'titanium' || key === 'cyber' || key === 'emerald') return UI_BACKGROUND_TEMPLATES.titanium;
+  return UI_BACKGROUND_TEMPLATES.obsidian;
+}
+
+export function getNextUiTemplateTheme(currentInput?: string | null): UiBackgroundTemplateSpec {
+  const current = resolveUiTemplateTheme(currentInput);
+  const idx = UI_TEMPLATE_ORDER.indexOf(current.id);
+  const nextId = UI_TEMPLATE_ORDER[(idx + 1) % UI_TEMPLATE_ORDER.length];
+  return UI_BACKGROUND_TEMPLATES[nextId];
+}
+
+export interface PowerEstimateInputItem {
+  id?: number;
+  title?: string;
+  category?: string;
+  componentGroup?: string;
+  price?: number;
+  quantity?: number;
+}
+
+export interface SystemPowerEstimate {
+  baseSystemWatts: number;
+  componentsWatts: number;
+  estimatedPeakWatts: number;
+  recommendedPsuWatts: number;
+  psuTierLabel: string;
+  loadPercentage: number;
+  headroomStatus: 'idle' | 'optimal' | 'balanced' | 'high-draw';
+  activeComponentCount: number;
+}
+
+/**
+ * Estimates total PC / hardware system wattage (TDP) and recommends an appropriate
+ * ATX 3.1 power supply tier based on cart/rig items.
+ */
+export function computeSystemPowerEstimate(
+  items: PowerEstimateInputItem[]
+): SystemPowerEstimate {
+  const baseSystemWatts = 65; // Fans, AIO pump, RGB controller, USB peripherals baseline
+  let componentsWatts = 0;
+  let activeComponentCount = 0;
+
+  if (Array.isArray(items)) {
+    for (const item of items) {
+      if (!item) continue;
+      const qty = Math.max(0, Math.floor(Number(item.quantity ?? 1)));
+      if (qty <= 0) continue;
+
+      activeComponentCount += qty;
+      const group = (item.componentGroup || classifyComponentGroup(item as any) || '').toLowerCase();
+      const titleLower = String(item.title || '').toLowerCase();
+
+      let unitWatts = 18;
+      if (group === 'gpus') {
+        if (titleLower.includes('5090') || titleLower.includes('4090')) unitWatts = 450;
+        else if (titleLower.includes('5080') || titleLower.includes('4080')) unitWatts = 320;
+        else unitWatts = 250;
+      } else if (group === 'cpus') {
+        if (titleLower.includes('ryzen 9') || titleLower.includes('i9')) unitWatts = 170;
+        else if (titleLower.includes('ryzen 7') || titleLower.includes('i7')) unitWatts = 120;
+        else unitWatts = 95;
+      } else if (group === 'motherboards') {
+        unitWatts = 55;
+      } else if (group === 'storage') {
+        unitWatts = 12;
+      } else if (group === 'gaming') {
+        unitWatts = 35;
+      } else if (group === 'audio') {
+        unitWatts = 10;
+      }
+
+      componentsWatts += unitWatts * qty;
+    }
+  }
+
+  const estimatedPeakWatts = activeComponentCount > 0 ? baseSystemWatts + componentsWatts : 0;
+
+  // Compute recommended PSU with ~30% transient spike & efficiency headroom
+  const targetWithHeadroom = Math.ceil(estimatedPeakWatts * 1.32);
+  let recommendedPsuWatts = 550;
+  let psuTierLabel = '550W 80+ Bronze';
+
+  if (activeComponentCount === 0) {
+    recommendedPsuWatts = 650;
+    psuTierLabel = '650W ATX 3.1 Ready';
+  } else if (targetWithHeadroom <= 550) {
+    recommendedPsuWatts = 550;
+    psuTierLabel = '550W 80+ Bronze';
+  } else if (targetWithHeadroom <= 650) {
+    recommendedPsuWatts = 650;
+    psuTierLabel = '650W 80+ Gold';
+  } else if (targetWithHeadroom <= 750) {
+    recommendedPsuWatts = 750;
+    psuTierLabel = '750W 80+ Gold';
+  } else if (targetWithHeadroom <= 850) {
+    recommendedPsuWatts = 850;
+    psuTierLabel = '850W ATX 3.1 Gold';
+  } else if (targetWithHeadroom <= 1000) {
+    recommendedPsuWatts = 1000;
+    psuTierLabel = '1000W ATX 3.1 Platinum';
+  } else {
+    recommendedPsuWatts = 1200;
+    psuTierLabel = '1200W ATX 3.1 Titanium';
+  }
+
+  const loadPercentage =
+    activeComponentCount === 0
+      ? 12
+      : Math.min(98, Math.max(15, Math.round((estimatedPeakWatts / recommendedPsuWatts) * 100)));
+
+  let headroomStatus: 'idle' | 'optimal' | 'balanced' | 'high-draw' = 'idle';
+  if (activeComponentCount > 0) {
+    if (estimatedPeakWatts >= 680) headroomStatus = 'high-draw';
+    else if (estimatedPeakWatts >= 350) headroomStatus = 'balanced';
+    else headroomStatus = 'optimal';
+  }
+
+  return {
+    baseSystemWatts: activeComponentCount > 0 ? baseSystemWatts : 0,
+    componentsWatts,
+    estimatedPeakWatts,
+    recommendedPsuWatts,
+    psuTierLabel,
+    loadPercentage,
+    headroomStatus,
+    activeComponentCount,
+  };
+}
+
+export function formatInstagramHandle(name?: string | null, role?: string | null): string {
+  const raw = String(name || 'builder').trim().toLowerCase();
+  const slug = raw.replace(/[^a-z0-9]+/g, '.').replace(/^\.+|\.+$/g, '') || 'builder';
+  const roleStr = String(role || '').trim().toLowerCase();
+  if (roleStr === 'moderator' || roleStr === 'staff_architect') {
+    return `@${slug}.voltbox`;
+  }
+  return `@${slug}`;
+}
+
+export function recommendStarterRigBundle<
+  T extends { id: number; title?: string; category?: string; componentGroup?: string; price: number; ratingRate?: number; takenDown?: boolean }
+>(catalog: T[]): T[] {
+  if (!Array.isArray(catalog) || catalog.length === 0) return [];
+  const requiredGroups = ['gpus', 'cpus', 'motherboards', 'storage'];
+  const selected: T[] = [];
+
+  for (const group of requiredGroups) {
+    const candidates = catalog.filter((p) => {
+      if (!p || p.takenDown) return false;
+      if (getProductQuantity(p as any) <= 0) return false;
+      const g = (p.componentGroup || classifyComponentGroup(p as any) || '').toLowerCase();
+      return g === group;
+    });
+    candidates.sort((a, b) => {
+      const rDiff = (Number(b.ratingRate) || 0) - (Number(a.ratingRate) || 0);
+      if (Math.abs(rDiff) > 0.001) return rDiff;
+      return a.price - b.price;
+    });
+    if (candidates.length > 0) {
+      selected.push(candidates[0]);
+    }
+  }
+  return selected;
+}

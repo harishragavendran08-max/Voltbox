@@ -171,6 +171,13 @@ export class Store {
           p.stock = 2;
           updated = true;
         }
+        if ((p.id === 29 || p.id === 37 || p.id === 41) && (p as { _backorderSeeded?: boolean })._backorderSeeded !== true) {
+          qty = 0;
+          p.quantity = 0;
+          p.stock = 0;
+          (p as { _backorderSeeded?: boolean })._backorderSeeded = true;
+          updated = true;
+        }
         if (p.quantity !== qty || p.stock !== qty || p.lowStock !== isLowStock({ quantity: qty })) {
           p.quantity = qty;
           p.stock = qty;

@@ -51,6 +51,11 @@ import {
   normalizeUpiAppId,
   buildUpiPaymentRequestPayload,
   buildProductComparison,
+  evaluateSpecRowIndicators,
+  parsePowerWatts,
+  scoreInterfaceBandwidth,
+  scoreArchitectureTier,
+  parseWarrantyScore,
   IpRateLimiter,
   computeSuggestedPriceThresholds,
   validatePriceAlertInput,
@@ -64,7 +69,15 @@ import {
   clearScanHistory,
   formatScanHistoryRelativeTime,
   filterAndSortCatalogProducts,
+  getStockAvailabilityStatus,
+  isBackorderProduct,
   normalizeVoiceSearchTranscript,
+  resolveUiTemplateTheme,
+  getNextUiTemplateTheme,
+  computeSystemPowerEstimate,
+  formatInstagramHandle,
+  recommendStarterRigBundle,
+  evaluatePriceAlertThresholdVsHistory,
 } from './inventory';
 
 test('LOW_STOCK_THRESHOLD is 5', () => {
@@ -81,11 +94,16 @@ test('isLowStock returns true when quantity is below 5 and false when 5 or above
   assert.equal(isLowStock({ quantity: 12 }), false);
 });
 
-test('getStockBadgeLabel returns "Low Stock" only when quantity < 5', () => {
+test('getStockBadgeLabel returns "Low Stock" only when quantity < 5 and "Backorder" when 0', () => {
+  assert.equal(getStockBadgeLabel({ quantity: 0 }), 'Backorder');
   assert.equal(getStockBadgeLabel({ quantity: 4 }), 'Low Stock');
   assert.equal(getStockBadgeLabel({ quantity: 1 }), 'Low Stock');
   assert.equal(getStockBadgeLabel({ quantity: 5 }), null);
   assert.equal(getStockBadgeLabel({ quantity: 10 }), null);
+  assert.equal(getStockAvailabilityStatus({ quantity: 5 }), 'available-now');
+  assert.equal(getStockAvailabilityStatus({ quantity: 0 }), 'backorder');
+  assert.equal(isBackorderProduct({ quantity: 0 }), true);
+  assert.equal(isBackorderProduct({ quantity: 3 }), false);
 });
 
 test('getProductQuantity falls back to stock or default seed map', () => {
@@ -871,11 +889,57 @@ test('buildProductComparison builds side-by-side matrix, diff detection, and val
   assert.equal(priceMetric.values[19], '$200.00');
   assert.equal(priceMetric.values[20], '$180.00');
   assert.equal(priceMetric.bestProductId, 20);
+  assert.equal(priceMetric.worstProductId, 19);
+  assert.equal(priceMetric.indicators?.[20], 'better');
+  assert.equal(priceMetric.indicators?.[19], 'worse');
+  assert.equal(priceMetric.indicatorLabels?.[20], 'Best Price');
+  assert.equal(priceMetric.indicatorLabels?.[19], 'Highest Cost');
 
   const stockMetric = comp.metrics.find((m) => m.key === 'stockStatus');
   assert.ok(stockMetric);
   assert.ok(String(stockMetric.values[20]).includes('Low Stock!'));
   assert.equal(stockMetric.bestProductId, 19);
+  assert.equal(stockMetric.worstProductId, 20);
+  assert.equal(stockMetric.indicators?.[19], 'better');
+  assert.equal(stockMetric.indicators?.[20], 'worse');
+
+  const powerMetric = comp.metrics.find((m) => m.key === 'powerDraw');
+  assert.ok(powerMetric);
+  // CPU (170W) has lower power draw than GPU (450W)
+  assert.equal(powerMetric.indicators?.[20], 'better');
+  assert.equal(powerMetric.indicators?.[19], 'worse');
+
+  const archMetric = comp.metrics.find((m) => m.key === 'architecture');
+  assert.ok(archMetric);
+  // GPU Blackwell (98) vs CPU Zen 5 (95)
+  assert.equal(archMetric.indicators?.[19], 'better');
+  assert.equal(archMetric.indicators?.[20], 'worse');
+
+  // 3-product comparison check (better, neutral, worse)
+  const p3 = {
+    id: 21,
+    title: 'Samsung 990 Pro NVMe',
+    price: 150,
+    category: 'storage',
+    quantity: 5,
+    image: 'https://images.unsplash.com/photo-nvme',
+  };
+  const comp3 = buildProductComparison([p1, p2, p3]);
+  const priceMetric3 = comp3.metrics.find((m) => m.key === 'price');
+  assert.ok(priceMetric3);
+  assert.equal(priceMetric3.indicators?.[21], 'better'); // $150
+  assert.equal(priceMetric3.indicators?.[20], 'neutral'); // $180
+  assert.equal(priceMetric3.indicators?.[19], 'worse'); // $200
+
+  assert.equal(parsePowerWatts('450W TDP (16-Pin 12V-2x6)'), 450);
+  assert.equal(parsePowerWatts('5.4W Active / 40mW DevSleep'), 5.4);
+  assert.ok(scoreInterfaceBandwidth('PCIe 5.0 x16') > scoreInterfaceBandwidth('SATA III 6.0 Gb/s'));
+  assert.ok(scoreArchitectureTier('Blackwell / Ada 32GB GDDR7') > scoreArchitectureTier('CMR 7200 RPM Multi-Platter Cache'));
+  assert.ok(parseWarrantyScore('5-Year / 600 TBW Endurance') > parseWarrantyScore('1-Year Hardware Replacement'));
+
+  const tiedEval = evaluateSpecRowIndicators({ 1: 100, 2: 100 }, false);
+  assert.equal(tiedEval.indicators[1], 'neutral');
+  assert.equal(tiedEval.indicators[2], 'neutral');
 
   // Single product comparison check
   const singleComp = buildProductComparison([p1]);
@@ -1011,6 +1075,32 @@ test('Notify Me price drop alert logic validates inputs, computes presets, upser
   const removed = removePriceAlertSubscription(evalDrop.updatedAlerts, 19);
   assert.equal(removed.removed, true);
   assert.equal(removed.alerts.length, 0);
+
+  // 7. Evaluate target price relative to 6-month historical sparkline data
+  const sample6mHistory = [
+    { month: 'Jun', price: 205 },
+    { month: 'Jul', price: 198 },
+    { month: 'Aug', price: 185 },
+    { month: 'Sep', price: 192 },
+    { month: 'Oct', price: 176 },
+    { month: 'Nov', price: 190 },
+  ];
+  const instantEval = evaluatePriceAlertThresholdVsHistory(sample6mHistory, 190, 195);
+  assert.equal(instantEval.likelihoodTier, 'instant-trigger');
+  assert.equal(instantEval.sixMonthLow, 176);
+  assert.equal(instantEval.sixMonthHigh, 205);
+
+  const highProbEval = evaluatePriceAlertThresholdVsHistory(sample6mHistory, 190, 186);
+  assert.equal(highProbEval.likelihoodTier, 'high-probability');
+  assert.equal(highProbEval.monthsAtOrBelowTarget, 2);
+
+  const sweetSpotEval = evaluatePriceAlertThresholdVsHistory(sample6mHistory, 190, 176);
+  assert.equal(sweetSpotEval.likelihoodTier, 'near-6m-low');
+  assert.equal(sweetSpotEval.badgeLabel, '6M Floor Sweet Spot');
+
+  const aggressiveEval = evaluatePriceAlertThresholdVsHistory(sample6mHistory, 190, 160);
+  assert.equal(aggressiveEval.likelihoodTier, 'aggressive-below-low');
+  assert.equal(aggressiveEval.badgeLabel, 'Below 6M Low');
 });
 
 test('QR Scan History: records scanned products in most-recent-first order, deduplicates re-scans, and caps at 10 items', () => {
@@ -1108,6 +1198,30 @@ test('filterAndSortCatalogProducts filters by category, budget ceiling, search q
     byRating.items.map((p) => p.id),
     [22, 19, 20, 21]
   );
+
+  // Quick Stock Filter: Available Now vs Backorder
+  const mixedStockCatalog = [
+    ...sampleCatalog,
+    { id: 29, title: 'Alienware 34" QD-OLED Curved Monitor', category: 'monitors', price: 249, quantity: 0, ratingRate: 4.9, ratingCount: 64 },
+    { id: 37, title: 'ASUS ROG Crosshair X870E Hero Motherboard', category: 'motherboards', price: 230, quantity: 0, backorder: true, ratingRate: 4.9, ratingCount: 58 },
+  ];
+  const allStockRes = filterAndSortCatalogProducts(mixedStockCatalog, { stockFilter: 'all' });
+  assert.equal(allStockRes.totalCount, 6);
+  assert.equal(allStockRes.availableNowCount, 4);
+  assert.equal(allStockRes.backorderCount, 2);
+  assert.equal(allStockRes.visibleCount, 6);
+
+  const availNowRes = filterAndSortCatalogProducts(mixedStockCatalog, { stockFilter: 'available-now' });
+  assert.equal(availNowRes.visibleCount, 4);
+  assert.equal(availNowRes.hasActiveFilters, true);
+  assert.ok(availNowRes.activeFilterLabels.includes('Stock: Available Now'));
+  assert.equal(availNowRes.items.every((p) => (p.quantity ?? 0) > 0), true);
+
+  const backorderRes = filterAndSortCatalogProducts(mixedStockCatalog, { stockFilter: 'backorder' });
+  assert.equal(backorderRes.visibleCount, 2);
+  assert.equal(backorderRes.hasActiveFilters, true);
+  assert.ok(backorderRes.activeFilterLabels.includes('Stock: Backorder'));
+  assert.deepEqual(backorderRes.items.map((p) => p.id), [29, 37]);
 });
 
 test('Product Spec Drawer Share: generates descriptions across tones and builds Twitter, WhatsApp, and Facebook share URLs', () => {
@@ -1178,5 +1292,43 @@ test('Web Speech API Voice Search: normalizeVoiceSearchTranscript strips filler,
   assert.equal(res4.isClearCommand, true);
 });
 
+test('Studio UI Templates, Live PSU Wattage Estimator, Instagram Direct Handles & Starter Rig Recommender', () => {
+  // 1. UI & Background Template resolution & cycling
+  const obsidian = resolveUiTemplateTheme('obsidian');
+  assert.equal(obsidian.id, 'obsidian');
+  assert.equal(obsidian.name, 'Obsidian Studio');
 
+  const nextTheme = getNextUiTemplateTheme('obsidian');
+  assert.equal(nextTheme.id, 'blueprint');
+  assert.equal(resolveUiTemplateTheme('copper').id, 'copper');
+  assert.equal(resolveUiTemplateTheme('titanium').id, 'titanium');
 
+  // 2. System Power & ATX 3.1 PSU Wattage Estimator
+  const idleEst = computeSystemPowerEstimate([]);
+  assert.equal(idleEst.estimatedPeakWatts, 0);
+  assert.equal(idleEst.recommendedPsuWatts, 650);
+
+  const rigEst = computeSystemPowerEstimate([
+    { title: 'Nvidia RTX 5090', componentGroup: 'gpus', quantity: 1 },
+    { title: 'AMD Ryzen 9', componentGroup: 'cpus', quantity: 1 },
+    { title: 'MSI MotherBoard B570', componentGroup: 'motherboards', quantity: 1 },
+    { title: 'Samsung 1TB SSD', componentGroup: 'storage', quantity: 1 },
+  ]);
+  assert.equal(rigEst.estimatedPeakWatts, 65 + 450 + 170 + 55 + 12); // 752W
+  assert.equal(rigEst.recommendedPsuWatts, 1000);
+  assert.equal(rigEst.psuTierLabel, '1000W ATX 3.1 Platinum');
+  assert.equal(rigEst.headroomStatus, 'high-draw');
+
+  // 3. Instagram Direct Handle Formatting
+  assert.equal(formatInstagramHandle('Elena Vance', 'STAFF_ARCHITECT'), '@elena.vance.voltbox');
+  assert.equal(formatInstagramHandle('Marcus Chen', 'VERIFIED_BUILDER'), '@marcus.chen');
+
+  // 4. Starter Rig 4-Part Bundle Recommender
+  const starter = recommendStarterRigBundle([
+    { id: 19, title: 'Nvidia RTX 5090', componentGroup: 'gpus', price: 1999, ratingRate: 4.9 },
+    { id: 20, title: 'AMD RYZEN 9', componentGroup: 'cpus', price: 549, ratingRate: 4.8 },
+    { id: 21, title: 'MSI MotherBoard B570', componentGroup: 'motherboards', price: 219, ratingRate: 4.7 },
+    { id: 22, title: 'Samsung 1TB SSD', componentGroup: 'storage', price: 99, ratingRate: 4.9 },
+  ]);
+  assert.equal(starter.length, 4);
+});

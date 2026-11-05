@@ -162,4 +162,40 @@ public class CartController {
                 "cart", evaluated
         ));
     }
+
+    @PostMapping("/starter-rig")
+    public ResponseEntity<?> applyStarterRig(
+            @RequestHeader(value = "Authorization", required = false) String auth,
+            @RequestBody(required = false) Map<String, Object> body) {
+        User u = authUser(auth);
+        if (u == null) {
+            return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
+                    .body(Map.of("ok", false, "message", "You're not signed in."));
+        }
+        String promoCode = body != null && body.get("promoCode") != null
+                ? String.valueOf(body.get("promoCode")).trim().toUpperCase()
+                : null;
+        Cart updated = cartService.applyStarterRigBundle(u, promoCode);
+        return ResponseEntity.ok(Map.of(
+                "ok", true,
+                "cart", updated,
+                "powerEstimate", updated.getPowerEstimate()
+        ));
+    }
+
+    @GetMapping("/power-estimate")
+    public ResponseEntity<?> getCartPowerEstimate(
+            @RequestHeader(value = "Authorization", required = false) String auth) {
+        User u = authUser(auth);
+        if (u == null) {
+            return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
+                    .body(Map.of("ok", false, "message", "You're not signed in."));
+        }
+        Cart evaluated = cartService.buildCartEntity(u, null);
+        return ResponseEntity.ok(Map.of(
+                "ok", true,
+                "powerEstimate", evaluated.getPowerEstimate(),
+                "rigBundle", evaluated.getRigBundle()
+        ));
+    }
 }

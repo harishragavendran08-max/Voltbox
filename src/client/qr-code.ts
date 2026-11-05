@@ -407,10 +407,150 @@ export function normalizeVoiceSearchTranscript(rawTranscript: string): {
   };
 }
 
+export const UI_BACKGROUND_TEMPLATES = {
+  obsidian: {
+    id: 'obsidian',
+    name: 'Obsidian Studio',
+    shortLabel: 'Obsidian',
+    tagline: 'Architectural Carbon & Precision Cyan',
+    legacyBgMode: 'quantum',
+  },
+  blueprint: {
+    id: 'blueprint',
+    name: 'Cobalt Blueprint',
+    shortLabel: 'Blueprint',
+    tagline: 'CAD Schematic Navy & Royal Cobalt',
+    legacyBgMode: 'overclock',
+  },
+  copper: {
+    id: 'copper',
+    name: 'Anodized Copper',
+    shortLabel: 'Copper',
+    tagline: 'Warm Gunmetal & Brushed Amber Gold',
+    legacyBgMode: 'copper',
+  },
+  titanium: {
+    id: 'titanium',
+    name: 'Titanium Lab',
+    shortLabel: 'Titanium',
+    tagline: 'Clean Bench Slate & Emerald Telemetry',
+    legacyBgMode: 'cyber',
+  },
+} as const;
+
+export function resolveUiTemplateTheme(rawInput?: string | null) {
+  var key = String(rawInput || '').trim().toLowerCase();
+  if (key === 'blueprint' || key === 'overclock' || key === 'sapphire') return UI_BACKGROUND_TEMPLATES.blueprint;
+  if (key === 'copper' || key === 'amber' || key === 'gold') return UI_BACKGROUND_TEMPLATES.copper;
+  if (key === 'titanium' || key === 'cyber' || key === 'emerald') return UI_BACKGROUND_TEMPLATES.titanium;
+  return UI_BACKGROUND_TEMPLATES.obsidian;
+}
+
+export function computeSystemPowerEstimate(
+  items: Array<{ title?: string; category?: string; componentGroup?: string; quantity?: number }>
+) {
+  var baseSystemWatts = 65;
+  var componentsWatts = 0;
+  var activeComponentCount = 0;
+
+  if (Array.isArray(items)) {
+    for (var i = 0; i < items.length; i++) {
+      var item = items[i];
+      if (!item) continue;
+      var qty = Math.max(0, Math.floor(Number(item.quantity == null ? 1 : item.quantity)));
+      if (qty <= 0) continue;
+      activeComponentCount += qty;
+
+      var group = String(item.componentGroup || item.category || '').toLowerCase();
+      var titleLower = String(item.title || '').toLowerCase();
+      var unitWatts = 18;
+      if (group === 'gpus' || titleLower.indexOf('rtx') !== -1 || titleLower.indexOf('radeon') !== -1) {
+        if (titleLower.indexOf('5090') !== -1 || titleLower.indexOf('4090') !== -1) unitWatts = 450;
+        else if (titleLower.indexOf('5080') !== -1 || titleLower.indexOf('4080') !== -1) unitWatts = 320;
+        else unitWatts = 250;
+      } else if (group === 'cpus' || titleLower.indexOf('ryzen') !== -1 || titleLower.indexOf('core') !== -1) {
+        if (titleLower.indexOf('ryzen 9') !== -1 || titleLower.indexOf('i9') !== -1 || titleLower.indexOf('ultra 9') !== -1) unitWatts = 170;
+        else if (titleLower.indexOf('ryzen 7') !== -1 || titleLower.indexOf('i7') !== -1) unitWatts = 120;
+        else unitWatts = 95;
+      } else if (group === 'motherboards' || titleLower.indexOf('motherboard') !== -1) {
+        unitWatts = 55;
+      } else if (group === 'storage' || titleLower.indexOf('ssd') !== -1 || titleLower.indexOf('harddisk') !== -1) {
+        unitWatts = 12;
+      } else if (group === 'gaming') {
+        unitWatts = 35;
+      } else if (group === 'audio') {
+        unitWatts = 10;
+      }
+      componentsWatts += unitWatts * qty;
+    }
+  }
+
+  var estimatedPeakWatts = activeComponentCount > 0 ? baseSystemWatts + componentsWatts : 0;
+  var targetWithHeadroom = Math.ceil(estimatedPeakWatts * 1.32);
+  var recommendedPsuWatts = 650;
+  var psuTierLabel = '650W ATX 3.1 Ready';
+
+  if (activeComponentCount > 0) {
+    if (targetWithHeadroom <= 550) {
+      recommendedPsuWatts = 550;
+      psuTierLabel = '550W 80+ Bronze';
+    } else if (targetWithHeadroom <= 650) {
+      recommendedPsuWatts = 650;
+      psuTierLabel = '650W 80+ Gold';
+    } else if (targetWithHeadroom <= 750) {
+      recommendedPsuWatts = 750;
+      psuTierLabel = '750W 80+ Gold';
+    } else if (targetWithHeadroom <= 850) {
+      recommendedPsuWatts = 850;
+      psuTierLabel = '850W ATX 3.1 Gold';
+    } else if (targetWithHeadroom <= 1000) {
+      recommendedPsuWatts = 1000;
+      psuTierLabel = '1000W ATX 3.1 Platinum';
+    } else {
+      recommendedPsuWatts = 1200;
+      psuTierLabel = '1200W ATX 3.1 Titanium';
+    }
+  }
+
+  var loadPercentage =
+    activeComponentCount === 0
+      ? 12
+      : Math.min(98, Math.max(15, Math.round((estimatedPeakWatts / recommendedPsuWatts) * 100)));
+
+  var headroomStatus = 'idle';
+  if (activeComponentCount > 0) {
+    if (estimatedPeakWatts >= 680) headroomStatus = 'high-draw';
+    else if (estimatedPeakWatts >= 350) headroomStatus = 'balanced';
+    else headroomStatus = 'optimal';
+  }
+
+  return {
+    baseSystemWatts: activeComponentCount > 0 ? baseSystemWatts : 0,
+    componentsWatts: componentsWatts,
+    estimatedPeakWatts: estimatedPeakWatts,
+    recommendedPsuWatts: recommendedPsuWatts,
+    psuTierLabel: psuTierLabel,
+    loadPercentage: loadPercentage,
+    headroomStatus: headroomStatus,
+    activeComponentCount: activeComponentCount,
+  };
+}
+
+export function formatInstagramHandle(name?: string | null, role?: string | null): string {
+  var raw = String(name || 'builder').trim().toLowerCase();
+  var slug = raw.replace(/[^a-z0-9]+/g, '.').replace(/^\.+|\.+$/g, '') || 'builder';
+  var roleStr = String(role || '').trim().toLowerCase();
+  if (roleStr === 'moderator' || roleStr === 'staff_architect') {
+    return '@' + slug + '.voltbox';
+  }
+  return '@' + slug;
+}
+
 // Expose globally on window for app.js
 if (typeof window !== 'undefined') {
   (window as any).VoltboxQR = {
     themes: VOLTBOX_QR_THEMES,
+    uiTemplates: UI_BACKGROUND_TEMPLATES,
     MAX_SCAN_HISTORY_ITEMS,
     generateProductUrl,
     generateQrSvg,
@@ -425,6 +565,9 @@ if (typeof window !== 'undefined') {
     generateProductShareDescription,
     buildSocialShareUrls,
     normalizeVoiceSearchTranscript,
+    resolveUiTemplateTheme,
+    computeSystemPowerEstimate,
+    formatInstagramHandle,
   };
 }
 

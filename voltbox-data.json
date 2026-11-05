@@ -3,7 +3,7 @@
   "nextProductId": 42,
   "nextApplicationId": 1,
   "nextReportId": 29,
-  "nextMessageId": 15,
+  "nextMessageId": 16,
   "users": [
     {
       "id": 1,
@@ -13,7 +13,12 @@
       "avatarColor": "#ffd23f",
       "billEmail": "harshan.v.s2004@gmail.com",
       "role": "moderator",
-      "cart": {},
+      "cart": {
+        "19": 1,
+        "28": 1,
+        "30": 1,
+        "38": 1
+      },
       "orders": [
         {
           "id": "VB-8B38",
@@ -1967,6 +1972,24 @@
       "productImage": "/src/assets/images/product_handheld_oled_console_1793517566556.jpg",
       "createdAt": 1793622367032,
       "id": 14
+    },
+    {
+      "channel": "general",
+      "senderName": "Harish",
+      "senderEmail": "harish@voltbox.test",
+      "senderRole": "STAFF_ARCHITECT",
+      "senderColor": "#ffd23f",
+      "text": "Ready to build my RTX 5090 + X870E studio rig!",
+      "productId": null,
+      "productTitle": null,
+      "productPrice": null,
+      "productSku": null,
+      "productImage": null,
+      "reactions": {
+        "⚡": 1
+      },
+      "id": 15,
+      "createdAt": 1793898581914
     }
   ]
 }

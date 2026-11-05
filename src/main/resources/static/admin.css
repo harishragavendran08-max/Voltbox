@@ -1,19 +1,19 @@
 :root {
-  --bg-canvas: #0b0f17;
+  --bg-canvas: #090d16;
   --bg-surface: #111827;
-  --bg-elevated: #161f30;
+  --bg-elevated: #182235;
   --bg-hover: #1e293b;
-  --border-subtle: #1f2937;
+  --border-subtle: #24324a;
   --border-strong: #334155;
   --text-primary: #f8fafc;
   --text-secondary: #94a3b8;
   --text-muted: #64748b;
-  --accent-amber: #ffd23f;
-  --accent-amber-hover: #f5c422;
+  --accent-amber: #38bdf8;
+  --accent-amber-hover: #0ea5e9;
   --accent-teal: #2dd4bf;
-  --status-ok: #16a34a;
-  --status-warn: #d97706;
-  --status-crit: #dc2626;
+  --status-ok: #10b981;
+  --status-warn: #f59e0b;
+  --status-crit: #ef4444;
   --font-display: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, sans-serif;
   --font-body: 'DM Sans', -apple-system, BlinkMacSystemFont, sans-serif;
   --font-mono: 'JetBrains Mono', monospace;
@@ -27,6 +27,10 @@ html, body {
   margin: 0;
   padding: 0;
   background-color: var(--bg-canvas);
+  background-image:
+    radial-gradient(1100px 580px at 50% -8%, rgba(56, 189, 248, 0.14), rgba(45, 212, 191, 0.05) 52%, transparent 80%),
+    linear-gradient(180deg, #0b111e 0%, #090d16 55%, #060911 100%);
+  background-attachment: fixed;
   color: var(--text-primary);
   font-family: var(--font-body);
   font-size: 14px;

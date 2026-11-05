@@ -3,13 +3,17 @@ package com.voltbox.controller;
 import com.voltbox.CommunitySocket;
 import com.voltbox.Store;
 import com.voltbox.model.Application;
+import com.voltbox.model.ChatMessage;
 import com.voltbox.model.Product;
 import com.voltbox.model.Report;
 import com.voltbox.model.User;
+import com.voltbox.service.ProductService;
+import com.voltbox.service.RigPowerEstimatorService;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
@@ -18,10 +22,18 @@ import java.util.stream.Collectors;
 public class CommunityController {
     private final Store store;
     private final CommunitySocket socket;
+    private final ProductService productService;
+    private final RigPowerEstimatorService powerEstimatorService;
 
-    public CommunityController(Store store, CommunitySocket socket) {
+    public CommunityController(
+            Store store,
+            CommunitySocket socket,
+            ProductService productService,
+            RigPowerEstimatorService powerEstimatorService) {
         this.store = store;
         this.socket = socket;
+        this.productService = productService;
+        this.powerEstimatorService = powerEstimatorService;
     }
 
     private User authUser(String authHeader) {
@@ -190,5 +202,97 @@ public class CommunityController {
         }
         store.save();
         return ResponseEntity.ok(Map.of("ok", true, "status", r.status));
+    }
+
+    @GetMapping("/api/messages")
+    public ResponseEntity<?> getMessages(@RequestParam(value = "channel", required = false) String channel) {
+        List<ChatMessage> list = store.getMessages(channel);
+        for (ChatMessage msg : list) {
+            if (msg.senderHandle == null || msg.senderHandle.isBlank()) {
+                msg.senderHandle = ChatMessage.formatInstagramHandle(msg.senderName, msg.senderRole);
+            }
+            if (msg.seenStatus == null || msg.seenStatus.isBlank()) {
+                msg.seenStatus = "Seen just now";
+            }
+        }
+        Map<String, Object> res = new LinkedHashMap<>();
+        res.put("ok", true);
+        res.put("messages", list);
+        res.put("onlineCount", 8);
+        return ResponseEntity.ok(res);
+    }
+
+    @PostMapping("/api/messages")
+    public ResponseEntity<?> postMessage(
+            @RequestHeader(value = "Authorization", required = false) String auth,
+            @RequestBody Map<String, Object> body) {
+        User u = authUser(auth);
+        if (u == null) {
+            return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
+                    .body(Map.of("ok", false, "message", "You're not signed in."));
+        }
+        String text = String.valueOf(body.getOrDefault("text", "")).trim();
+        String channel = String.valueOf(body.getOrDefault("channel", "engineering-desk")).trim();
+        if (text.isEmpty() && body.get("productId") == null) {
+            return ResponseEntity.badRequest()
+                    .body(Map.of("ok", false, "message", "Message cannot be empty."));
+        }
+
+        ChatMessage m = new ChatMessage();
+        m.channel = channel.isEmpty() ? "engineering-desk" : channel;
+        m.senderName = u.name;
+        m.senderEmail = u.email;
+        m.senderRole = u.role;
+        m.senderColor = u.avatarColor;
+        m.senderHandle = ChatMessage.formatInstagramHandle(u.name, u.role);
+        m.verified = !"member".equalsIgnoreCase(u.role);
+        m.text = text;
+        m.seenStatus = "Delivered · Just now";
+        m.reactions.put("❤️", 1);
+
+        if (body.get("productId") != null) {
+            try {
+                int pid = Integer.parseInt(String.valueOf(body.get("productId")));
+                Product p = store.findProduct(pid);
+                if (p != null && !p.takenDown) {
+                    m.productId = p.id;
+                    m.productTitle = p.title;
+                    m.productPrice = p.price;
+                    m.productSku = productService.computeSku(p);
+                    m.productImage = p.image;
+                }
+            } catch (NumberFormatException ignored) {}
+        }
+
+        ChatMessage created = store.addMessage(m);
+        socket.broadcastToAll(Map.of("type", "chat-message", "message", created, "onlineCount", 8));
+        return ResponseEntity.ok(created);
+    }
+
+    @PostMapping("/api/messages/{id}/reactions")
+    public ResponseEntity<?> reactToMessage(
+            @PathVariable("id") int id,
+            @RequestBody Map<String, Object> body) {
+        String emoji = String.valueOf(body.getOrDefault("emoji", "❤️")).trim();
+        for (ChatMessage m : store.getMessages("all")) {
+            if (m.id == id) {
+                m.toggleReaction(emoji);
+                store.save();
+                return ResponseEntity.ok(Map.of("ok", true, "message", m));
+            }
+        }
+        return ResponseEntity.status(HttpStatus.NOT_FOUND).body(Map.of("ok", false));
+    }
+
+    @GetMapping("/api/studio/telemetry")
+    public ResponseEntity<?> getStudioTelemetry(@RequestParam(value = "theme", required = false) String theme) {
+        RigPowerEstimatorService.StudioTemplateSpec resolvedTheme = powerEstimatorService.resolveStudioThemeTemplate(theme);
+        List<Product> starterRig = powerEstimatorService.recommendStarterRigBundle(store.getProducts());
+        return ResponseEntity.ok(Map.of(
+                "ok", true,
+                "theme", resolvedTheme,
+                "starterRigProductIds", starterRig.stream().map(p -> p.id).collect(Collectors.toList()),
+                "engine", "Voltbox Java 21 Spring Boot Hardware Engine"
+        ));
     }
 }

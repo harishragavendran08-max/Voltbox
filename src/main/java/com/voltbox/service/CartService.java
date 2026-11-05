@@ -21,10 +21,12 @@ public class CartService {
 
     private final Store store;
     private final ProductService productService;
+    private final RigPowerEstimatorService powerEstimatorService;
 
-    public CartService(Store store, ProductService productService) {
+    public CartService(Store store, ProductService productService, RigPowerEstimatorService powerEstimatorService) {
         this.store = store;
         this.productService = productService;
+        this.powerEstimatorService = powerEstimatorService;
     }
 
     public Cart buildCartEntity(User user, String promoCode) {
@@ -107,6 +109,8 @@ public class CartService {
         rigBundle.qualifiesForBundle = qualifiesForBundle;
         rigBundle.discountRate = qualifiesForBundle ? RIG_BUNDLE_DISCOUNT_RATE : 0.0;
 
+        Cart.PowerEstimateState powerEstimate = powerEstimatorService.estimateSystemPower(items);
+
         Cart cart = new Cart();
         cart.setUserEmail(user.email);
         cart.setRawCart(cleanRaw);
@@ -122,6 +126,7 @@ public class CartService {
         cart.setTotal(total);
         cart.setAppliedPromo(promoRate != null ? cleanPromo : null);
         cart.setRigBundle(rigBundle);
+        cart.setPowerEstimate(powerEstimate);
         cart.setUpdatedAt(System.currentTimeMillis());
         return cart;
     }
@@ -172,5 +177,15 @@ public class CartService {
         user.cart.clear();
         store.save();
         return buildCartEntity(user, null);
+    }
+
+    public synchronized Cart applyStarterRigBundle(User user, String promoCode) {
+        List<Product> starterParts = powerEstimatorService.recommendStarterRigBundle(store.getProducts());
+        for (Product part : starterParts) {
+            String key = String.valueOf(part.id);
+            user.cart.put(key, Math.max(1, user.cart.getOrDefault(key, 0)));
+        }
+        store.save();
+        return buildCartEntity(user, promoCode);
     }
 }
