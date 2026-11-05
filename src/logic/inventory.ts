@@ -424,6 +424,31 @@ export function generatePriceHistory(product: { id: number; price: number }): Pr
   });
 }
 
+export interface SixMonthPriceDropMetrics {
+  sixMonthAvg: number;
+  currentPrice: number;
+  percentageDrop: number;
+  savingsAmount: number;
+  isDeal: boolean;
+}
+
+export function computePriceDropFromSixMonthAvg(product: { id: number; price: number }): SixMonthPriceDropMetrics {
+  const history = generatePriceHistory(product);
+  const prices = history.map((h) => h.price);
+  const sixMonthAvg = roundMoney(prices.reduce((acc, v) => acc + v, 0) / prices.length);
+  const currentPrice = roundMoney(product.price);
+  const savingsAmount = roundMoney(Math.max(0, sixMonthAvg - currentPrice));
+  const percentageDrop =
+    sixMonthAvg > 0 ? roundMoney(((sixMonthAvg - currentPrice) / sixMonthAvg) * 100) : 0;
+  return {
+    sixMonthAvg,
+    currentPrice,
+    percentageDrop,
+    savingsAmount,
+    isDeal: percentageDrop > 0,
+  };
+}
+
 export function getProductSpecs(product: { id: number; title?: string; category?: string; price: number }): ProductSpecs {
   const group = classifyComponentGroup(product);
   const sku = getProductSku(product);
@@ -2960,9 +2985,35 @@ export interface PriceAlertSubscription {
   targetPrice: number;
   priceAtCreation: number;
   createdAt: number;
+  expiresAt: number | null;
+  isExpired: boolean;
   triggered: boolean;
   triggeredAt: number | null;
   triggeredPrice: number | null;
+}
+
+export function parsePriceAlertExpiryDate(raw: unknown): number | null {
+  if (raw === null || raw === undefined || raw === '' || raw === 0) return null;
+  if (typeof raw === 'number' && Number.isFinite(raw) && raw > 0) return Math.floor(raw);
+  if (typeof raw === 'string') {
+    const trimmed = raw.trim();
+    if (!trimmed || trimmed === 'none' || trimmed === 'never') return null;
+    const isoString = trimmed.includes('T') ? trimmed : `${trimmed}T23:59:59.999Z`;
+    const parsed = Date.parse(isoString);
+    if (!Number.isNaN(parsed) && parsed > 0) return parsed;
+  }
+  return null;
+}
+
+export function isPriceAlertExpired(
+  alert: { expiresAt?: number | null; isExpired?: boolean } | undefined | null,
+  nowMs = Date.now()
+): boolean {
+  if (!alert) return false;
+  if (alert.isExpired === true) return true;
+  const exp = Number(alert.expiresAt);
+  if (!Number.isFinite(exp) || exp <= 0) return false;
+  return nowMs > exp;
 }
 
 export interface PriceAlertEmailNotification {
@@ -3182,6 +3233,8 @@ export function upsertPriceAlertSubscription(
     product: { id: number; title?: string; category?: string; price: number };
     email: string;
     targetPrice: number;
+    expiresAt?: number | string | null;
+    expiryDate?: number | string | null;
     nowMs?: number;
   }
 ): { alerts: PriceAlertSubscription[]; subscription: PriceAlertSubscription; isUpdate: boolean } {
@@ -3193,6 +3246,8 @@ export function upsertPriceAlertSubscription(
   const cleanTarget = roundMoney(params.targetPrice);
   const currentPrice = roundMoney(params.product.price);
   const cleanEmail = params.email.trim().toLowerCase();
+  const parsedExpiresAt = parsePriceAlertExpiryDate(params.expiresAt ?? params.expiryDate ?? null);
+  const isExpired = isPriceAlertExpired({ expiresAt: parsedExpiresAt, isExpired: false }, now);
 
   const existingIdx = list.findIndex((a) => a.productId === params.product.id);
   const alreadyBelow = currentPrice < cleanTarget;
@@ -3209,9 +3264,11 @@ export function upsertPriceAlertSubscription(
     targetPrice: cleanTarget,
     priceAtCreation: currentPrice,
     createdAt: now,
-    triggered: alreadyBelow,
-    triggeredAt: alreadyBelow ? now : null,
-    triggeredPrice: alreadyBelow ? currentPrice : null,
+    expiresAt: parsedExpiresAt,
+    isExpired,
+    triggered: alreadyBelow && !isExpired,
+    triggeredAt: alreadyBelow && !isExpired ? now : null,
+    triggeredPrice: alreadyBelow && !isExpired ? currentPrice : null,
   };
 
   if (existingIdx >= 0) {
@@ -3297,6 +3354,11 @@ export function evaluatePriceDropAlerts(
 
   for (const alert of list) {
     if (alert.productId !== Number(productId)) continue;
+    // Check if expired - skip notification and mark expired
+    if (isPriceAlertExpired(alert, nowMs)) {
+      alert.isExpired = true;
+      continue;
+    }
     // Trigger when newPrice drops below or equals the user-defined threshold
     if (cleanNew <= alert.targetPrice) {
       alert.triggered = true;
@@ -3406,7 +3468,7 @@ export function formatScanHistoryRelativeTime(scannedAt: number, nowMs = Date.no
 
 // ── Smart Catalog Toolbar: Budget Ceiling, Category, Search & Rating Sort Pure Logic ──
 
-export type CatalogSortMode = 'featured' | 'price-asc' | 'price-desc' | 'rating-desc' | 'stock-asc';
+export type CatalogSortMode = 'featured' | 'price-asc' | 'price-desc' | 'rating-desc' | 'stock-asc' | 'best-deal';
 export type CatalogViewMode = 'grid' | 'list';
 
 export interface CatalogFilterProduct {
@@ -3486,6 +3548,13 @@ export function filterAndSortCatalogProducts<T extends CatalogFilterProduct>(
     });
   } else if (sortMode === 'stock-asc') {
     list.sort((a, b) => getProductQuantity(a) - getProductQuantity(b));
+  } else if (sortMode === 'best-deal') {
+    list.sort((a, b) => {
+      const dropA = computePriceDropFromSixMonthAvg(a).percentageDrop;
+      const dropB = computePriceDropFromSixMonthAvg(b).percentageDrop;
+      if (Math.abs(dropB - dropA) > 0.001) return dropB - dropA;
+      return a.price - b.price;
+    });
   }
 
   // 2. Filter
@@ -3523,7 +3592,9 @@ export function filterAndSortCatalogProducts<T extends CatalogFilterProduct>(
   if (maxBudget !== null) activeFilterLabels.push(`Under $${maxBudget}`);
   if (stockFilter === 'available-now') activeFilterLabels.push('Stock: Available Now');
   if (stockFilter === 'backorder') activeFilterLabels.push('Stock: Backorder');
-  if (sortMode !== 'featured') activeFilterLabels.push(`Sort: ${sortMode}`);
+  if (sortMode !== 'featured') {
+    activeFilterLabels.push(sortMode === 'best-deal' ? 'Sort: Best Deal (6M Drop)' : `Sort: ${sortMode}`);
+  }
 
   return {
     items: filtered,

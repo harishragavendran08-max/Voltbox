@@ -600,6 +600,16 @@ function paintPriceAlerts() {
       ? ('Triggered at $' + Number(al.triggeredPrice || currentP).toFixed(2))
       : ('Target: &lt; $' + Number(al.targetPrice).toFixed(2));
 
+    var isExp = al.isExpired === true || (al.expiresAt && Date.now() > Number(al.expiresAt));
+    var expiryBadge = "";
+    if (isExp) {
+      expiryBadge = '<span class="price-alert-expiry-badge expired" data-testid="price-alert-expired-badge">⚠️ Expired</span>';
+    } else if (al.expiresAt) {
+      var expD = new Date(Number(al.expiresAt));
+      var expStr = expD.toISOString().split("T")[0];
+      expiryBadge = '<span class="price-alert-expiry-badge active">Until ' + expStr + '</span>';
+    }
+
     html +=
       '<div class="wishlist-item price-alert-sheet-item" data-product-id="' + al.productId + '">' +
         '<img class="wishlist-thumb" src="' + esc(img) + '" alt="" onerror="this.onerror=null;this.src=NO_IMAGE" />' +
@@ -607,6 +617,7 @@ function paintPriceAlerts() {
           '<strong class="wishlist-item-title">' + esc(title) + '</strong>' +
           '<div class="wishlist-item-meta">' +
             '<span class="wishlist-item-price">' + statusText + '</span>' +
+            expiryBadge +
             '<span class="wishlist-item-stock">' + esc(al.email) + '</span>' +
           '</div>' +
         '</div>' +
@@ -823,6 +834,25 @@ function openPriceAlertModal(e, productId) {
   if (msgEl) msgEl.hidden = true;
   renderPriceAlertEmailPreview(null);
 
+  // Initialize Expiry Date input & status
+  var expiryInput = document.getElementById("price-alert-expiry-input");
+  var todayIso = new Date().toISOString().split("T")[0];
+  if (expiryInput) {
+    expiryInput.min = todayIso;
+    if (existing && existing.expiresAt) {
+      var expD = new Date(Number(existing.expiresAt));
+      var yyyy = expD.getUTCFullYear();
+      var mm = String(expD.getUTCMonth() + 1).padStart(2, "0");
+      var dd = String(expD.getUTCDate()).padStart(2, "0");
+      expiryInput.value = yyyy + "-" + mm + "-" + dd;
+    } else {
+      expiryInput.value = "";
+    }
+  }
+  if (typeof updateExpiryUIFromInput === "function") {
+    updateExpiryUIFromInput();
+  }
+
   // Build 4 quick-select preset buttons
   if (presetsGridEl) {
     var p5 = Math.max(1, round(p.price * 0.95));
@@ -879,12 +909,14 @@ function savePriceAlert(e) {
 
   var thresholdInput = document.getElementById("price-alert-threshold-input");
   var emailInput = document.getElementById("price-alert-email-input");
+  var expiryInput = document.getElementById("price-alert-expiry-input");
   var saveBtn = document.getElementById("price-alert-save-btn");
   var removeBtn = document.getElementById("price-alert-remove-btn");
   var saveLabelEl = document.getElementById("price-alert-save-label");
 
   var targetPrice = parseFloat(thresholdInput ? thresholdInput.value : "0");
   var email = emailInput ? emailInput.value.trim() : "";
+  var expiryVal = expiryInput && expiryInput.value ? expiryInput.value.trim() : null;
 
   if (!targetPrice || targetPrice <= 0) {
     showPriceAlertMsg("Please enter a target price threshold greater than $0.00.", true);
@@ -902,7 +934,8 @@ function savePriceAlert(e) {
     body: JSON.stringify({
       productId: activePriceAlertProductId,
       targetPrice: targetPrice,
-      email: email
+      email: email,
+      expiresAt: expiryVal
     })
   })
     .then(function (res) {
@@ -967,8 +1000,10 @@ function simulatePriceDropAlert() {
   var testBtn = document.getElementById("price-alert-test-btn");
   var thresholdInput = document.getElementById("price-alert-threshold-input");
   var emailInput = document.getElementById("price-alert-email-input");
+  var expiryInput = document.getElementById("price-alert-expiry-input");
   var targetVal = parseFloat(thresholdInput ? thresholdInput.value : "0");
   var emailVal = emailInput ? emailInput.value.trim() : "";
+  var expiryVal = expiryInput && expiryInput.value ? expiryInput.value.trim() : null;
 
   if (testBtn) testBtn.disabled = true;
 
@@ -978,7 +1013,8 @@ function simulatePriceDropAlert() {
     body: JSON.stringify({
       productId: id,
       targetPrice: targetVal > 0 ? targetVal : undefined,
-      email: emailVal || undefined
+      email: emailVal || undefined,
+      expiresAt: expiryVal
     })
   })
     .then(function () {
@@ -1370,6 +1406,32 @@ function getStockStatusForProduct(p) {
   return isBackorderItem(p) ? "backorder" : "available-now";
 }
 
+function getProductDiscountFrom6mAvg(p) {
+  if (!p) return { avg: 0, current: 0, dropPct: 0, savings: 0, isDeal: false };
+  var h = getPriceHistoryFor(p);
+  var prs = h.map(function (x) { return x.price; });
+  var avg = prs.length > 0 ? (prs.reduce(function (a, b) { return a + b; }, 0) / prs.length) : p.price;
+  avg = Math.round(avg * 100) / 100;
+  var current = Math.round(Number(p.price) * 100) / 100;
+  var savings = Math.max(0, Math.round((avg - current) * 100) / 100);
+  var dropPct = avg > 0 ? Math.round(((avg - current) / avg) * 1000) / 10 : 0;
+  return {
+    avg: avg,
+    current: current,
+    dropPct: dropPct,
+    savings: savings,
+    isDeal: dropPct > 0
+  };
+}
+
+function syncBestDealPillUI() {
+  var pill = document.getElementById("catalog-best-deal-pill");
+  if (!pill) return;
+  var isActive = activeSortMode === "best-deal";
+  pill.classList.toggle("active", isActive);
+  pill.setAttribute("aria-pressed", isActive ? "true" : "false");
+}
+
 function getSortedProductsList() {
   var copy = products.slice();
   if (activeSortMode === "price-asc") {
@@ -1384,6 +1446,13 @@ function getSortedProductsList() {
     });
   } else if (activeSortMode === "stock-asc") {
     copy.sort(function (a, b) { return getEffectiveStock(a) - getEffectiveStock(b); });
+  } else if (activeSortMode === "best-deal") {
+    copy.sort(function (a, b) {
+      var dropA = getProductDiscountFrom6mAvg(a).dropPct;
+      var dropB = getProductDiscountFrom6mAvg(b).dropPct;
+      if (Math.abs(dropB - dropA) > 0.01) return dropB - dropA;
+      return a.price - b.price;
+    });
   }
   return copy;
 }
@@ -1450,11 +1519,17 @@ function renderAllCards() {
     var minPrice = Math.min.apply(null, prices);
     var maxPrice = Math.max.apply(null, prices);
 
+    var dealMetrics = getProductDiscountFrom6mAvg(p);
+    var dealBadge = dealMetrics.isDeal
+      ? '<span class="card-deal-badge" id="deal-badge-' + p.id + '" data-testid="card-deal-badge-' + p.id + '" title="' + dealMetrics.dropPct.toFixed(1) + '% below 6-month historical average of $' + dealMetrics.avg.toFixed(2) + '"><span class="deal-fire">🔥</span> ' + dealMetrics.dropPct.toFixed(0) + '% off 6M avg</span>'
+      : '';
+
     var card = document.createElement("article");
-    card.className = "card" + (lowStock ? " is-low-stock" : "") + (isBackorder ? " is-backorder" : "");
+    card.className = "card" + (lowStock ? " is-low-stock" : "") + (isBackorder ? " is-backorder" : "") + (dealMetrics.isDeal ? " has-deal-drop" : "");
     card.id = "card-" + p.id;
     card.setAttribute("data-stock", String(stockQty));
     card.setAttribute("data-stock-status", isBackorder ? "backorder" : "available-now");
+    card.setAttribute("data-deal-drop", String(dealMetrics.dropPct));
     card.setAttribute("data-group", getComponentGroup(p));
     card.style.setProperty("--stagger-idx", String(i));
 
@@ -1524,6 +1599,7 @@ function renderAllCards() {
         '     loading="lazy"' +
         '     onerror="this.onerror=null;this.src=\'' + tileFor(p.category) + '\'" />' +
         lowStockBadge +
+        dealBadge +
         notifyBtn +
         wishBtn +
         flag +
@@ -2810,6 +2886,7 @@ function resetAllCatalogFilters() {
 
   if (searchEl) searchEl.value = "";
   if (sortSelectEl) sortSelectEl.value = "featured";
+  syncBestDealPillUI();
 
   if (filterBarEl) {
     var tabs = filterBarEl.querySelectorAll(".filter-tab");
@@ -4031,6 +4108,22 @@ function wireUpButtons() {
   if (sortSelectEl) {
     sortSelectEl.addEventListener("change", function () {
       activeSortMode = sortSelectEl.value || "featured";
+      syncBestDealPillUI();
+      renderAllCards();
+    });
+  }
+
+  // Best Deal quick-filter pill
+  var bestDealPillEl = document.getElementById("catalog-best-deal-pill");
+  if (bestDealPillEl) {
+    bestDealPillEl.addEventListener("click", function () {
+      if (activeSortMode === "best-deal") {
+        activeSortMode = "featured";
+      } else {
+        activeSortMode = "best-deal";
+      }
+      if (sortSelectEl) sortSelectEl.value = activeSortMode;
+      syncBestDealPillUI();
       renderAllCards();
     });
   }
@@ -4345,6 +4438,89 @@ function wireUpButtons() {
   }
   if (priceAlertEmailInputEl) {
     priceAlertEmailInputEl.addEventListener("input", onPriceAlertFieldInput);
+  }
+
+  // Price Alert Expiry Date inputs & duration presets
+  var priceAlertExpiryPresetsEl = document.getElementById("price-alert-expiry-presets");
+  var priceAlertExpiryInputEl = document.getElementById("price-alert-expiry-input");
+
+  window.updateExpiryUIFromInput = function () {
+    var expiryInput = document.getElementById("price-alert-expiry-input");
+    var statusEl = document.getElementById("price-alert-expiry-status");
+    var hintEl = document.getElementById("price-alert-expiry-hint");
+    var presetsEl = document.getElementById("price-alert-expiry-presets");
+    if (!expiryInput) return;
+    var rawVal = expiryInput.value ? expiryInput.value.trim() : "";
+    if (!rawVal) {
+      if (statusEl) {
+        statusEl.textContent = "Active until canceled";
+        statusEl.className = "price-alert-expiry-status";
+      }
+      if (hintEl) {
+        hintEl.textContent = "Price monitoring will run continuously until you manually remove or cancel the alert.";
+      }
+      if (presetsEl) {
+        var chips = presetsEl.querySelectorAll(".expiry-preset-chip");
+        for (var i = 0; i < chips.length; i++) {
+          chips[i].classList.toggle("active", chips[i].getAttribute("data-days") === "0");
+        }
+      }
+      return;
+    }
+    var expDate = new Date(rawVal + "T23:59:59.999Z");
+    var now = Date.now();
+    var isPast = expDate.getTime() < now;
+    if (statusEl) {
+      if (isPast) {
+        statusEl.textContent = "⚠️ Expired (" + rawVal + ")";
+        statusEl.className = "price-alert-expiry-status expired";
+      } else {
+        var daysLeft = Math.ceil((expDate.getTime() - now) / (1000 * 60 * 60 * 24));
+        statusEl.textContent = "Active until " + rawVal + " (" + daysLeft + "d left)";
+        statusEl.className = "price-alert-expiry-status active";
+      }
+    }
+    if (hintEl) {
+      hintEl.textContent = isPast
+        ? "This alert has passed its expiry date and is currently deactivated. Select a future date to re-enable monitoring."
+        : "Alert monitoring will automatically deactivate at the end of " + rawVal + ".";
+    }
+  };
+
+  if (priceAlertExpiryPresetsEl) {
+    priceAlertExpiryPresetsEl.addEventListener("click", function (e) {
+      var chip = e.target.closest(".expiry-preset-chip");
+      if (!chip) return;
+      var expiryInput = document.getElementById("price-alert-expiry-input");
+      if (!expiryInput) return;
+      var days = parseInt(chip.getAttribute("data-days") || "0", 10);
+      if (days > 0) {
+        var targetDate = new Date(Date.now() + days * 86400000);
+        var yyyy = targetDate.getUTCFullYear();
+        var mm = String(targetDate.getUTCMonth() + 1).padStart(2, "0");
+        var dd = String(targetDate.getUTCDate()).padStart(2, "0");
+        expiryInput.value = yyyy + "-" + mm + "-" + dd;
+      } else {
+        expiryInput.value = "";
+      }
+      var allChips = priceAlertExpiryPresetsEl.querySelectorAll(".expiry-preset-chip");
+      for (var i = 0; i < allChips.length; i++) {
+        allChips[i].classList.toggle("active", allChips[i] === chip);
+      }
+      window.updateExpiryUIFromInput();
+    });
+  }
+
+  if (priceAlertExpiryInputEl) {
+    priceAlertExpiryInputEl.addEventListener("change", function () {
+      window.updateExpiryUIFromInput();
+      if (priceAlertExpiryPresetsEl) {
+        var allChips = priceAlertExpiryPresetsEl.querySelectorAll(".expiry-preset-chip");
+        for (var i = 0; i < allChips.length; i++) {
+          allChips[i].classList.remove("active");
+        }
+      }
+    });
   }
 
   checkoutEl.addEventListener("click", openCheckoutModal);

@@ -425,6 +425,7 @@
             <span class="sort-label" data-icon="sliders" data-icon-size="14"></span>
             <select id="sort-select" aria-label="Sort products">
               <option value="featured">Sort: Featured</option>
+              <option value="best-deal">Discount: Best Deals (6M Drop)</option>
               <option value="price-asc">Price: Low → High</option>
               <option value="price-desc">Price: High → Low</option>
               <option value="rating-desc">Rating: Highest First</option>
@@ -470,6 +471,12 @@
         </div>
 
         <div class="catalog-quick-filters-wrap">
+          <button type="button" class="catalog-best-deal-pill" id="catalog-best-deal-pill" data-testid="catalog-best-deal-pill" aria-pressed="false" title="Sort components by highest percentage drop relative to 6-month historical average">
+            <span class="deal-fire-icon" aria-hidden="true">🔥</span>
+            <span class="deal-pill-text">Best Deals</span>
+            <span class="deal-chip-badge">6M Drop</span>
+          </button>
+
           <div class="stock-quick-filter-strip" id="stock-quick-filter-strip" data-testid="stock-quick-filter-strip" role="group" aria-label="Quick filter by stock availability">
             <span class="budget-strip-label">Stock:</span>
             <button type="button" class="stock-filter-chip active" data-stock-filter="all" aria-pressed="true">
@@ -1605,6 +1612,23 @@
             <span class="field-label">Alert Email Address</span>
             <input id="price-alert-email-input" data-testid="price-alert-email-input" type="email" required placeholder="you@gmail.com" autocomplete="email" />
           </label>
+        </div>
+
+        <div class="field price-alert-expiry-field" id="price-alert-expiry-field">
+          <div class="price-alert-expiry-header">
+            <span class="field-label">Alert Expiry Date <span class="field-optional">(Optional)</span></span>
+            <span class="price-alert-expiry-status" id="price-alert-expiry-status">Active until canceled</span>
+          </div>
+          <div class="price-alert-expiry-input-row">
+            <input id="price-alert-expiry-input" data-testid="price-alert-expiry-input" type="date" aria-label="Alert expiry date" />
+            <div class="price-alert-expiry-presets" id="price-alert-expiry-presets" role="group" aria-label="Quick expiry durations">
+              <button type="button" class="expiry-preset-chip" data-days="7">+7 Days</button>
+              <button type="button" class="expiry-preset-chip" data-days="30">+30 Days</button>
+              <button type="button" class="expiry-preset-chip" data-days="90">+90 Days</button>
+              <button type="button" class="expiry-preset-chip clear-expiry" data-days="0">No Expiry</button>
+            </div>
+          </div>
+          <p class="field-help" id="price-alert-expiry-hint">Automatically stop price monitoring and mute notifications after this date.</p>
         </div>
 
         <div class="price-alert-savings-callout" id="price-alert-savings-callout">

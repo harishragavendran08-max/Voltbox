@@ -354,6 +354,21 @@
       ],
       "priceAlerts": [
         {
+          "id": "PA-20-1UHU",
+          "productId": 20,
+          "productTitle": "AMD RYZEN 9",
+          "sku": "VB-CPU-020",
+          "email": "harshan.v.s2004@gmail.com",
+          "targetPrice": 171,
+          "priceAtCreation": 180,
+          "createdAt": 1793903986178,
+          "expiresAt": 1796515199999,
+          "isExpired": false,
+          "triggered": false,
+          "triggeredAt": null,
+          "triggeredPrice": null
+        },
+        {
           "id": "PA-19-ZO7",
           "productId": 19,
           "productTitle": "Nvidia RTX 5090",
@@ -1218,9 +1233,10 @@
       "official": true,
       "createdAt": 1793511806605,
       "takenDown": false,
-      "quantity": 7,
-      "stock": 7,
-      "lowStock": false
+      "quantity": 0,
+      "stock": 0,
+      "lowStock": true,
+      "_backorderSeeded": true
     },
     {
       "id": 30,
@@ -1370,9 +1386,10 @@
       "official": true,
       "createdAt": 1793518459135,
       "takenDown": false,
-      "quantity": 7,
-      "stock": 7,
-      "lowStock": false
+      "quantity": 0,
+      "stock": 0,
+      "lowStock": true,
+      "_backorderSeeded": true
     },
     {
       "id": 38,
@@ -1446,9 +1463,10 @@
       "official": true,
       "createdAt": 1793518459135,
       "takenDown": false,
-      "quantity": 7,
-      "stock": 7,
-      "lowStock": false
+      "quantity": 0,
+      "stock": 0,
+      "lowStock": true,
+      "_backorderSeeded": true
     }
   ],
   "applications": [],

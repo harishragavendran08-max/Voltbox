@@ -78,6 +78,9 @@ import {
   formatInstagramHandle,
   recommendStarterRigBundle,
   evaluatePriceAlertThresholdVsHistory,
+  computePriceDropFromSixMonthAvg,
+  parsePriceAlertExpiryDate,
+  isPriceAlertExpired,
 } from './inventory';
 
 test('LOW_STOCK_THRESHOLD is 5', () => {
@@ -1332,3 +1335,94 @@ test('Studio UI Templates, Live PSU Wattage Estimator, Instagram Direct Handles 
   ]);
   assert.equal(starter.length, 4);
 });
+
+test('Best Deal quick-filter: computePriceDropFromSixMonthAvg and filterAndSortCatalogProducts with best-deal sort mode', () => {
+  const p1 = { id: 1, price: 100 };
+  const dealMetrics1 = computePriceDropFromSixMonthAvg(p1);
+  assert.equal(typeof dealMetrics1.sixMonthAvg, 'number');
+  assert.equal(typeof dealMetrics1.percentageDrop, 'number');
+  assert.equal(typeof dealMetrics1.savingsAmount, 'number');
+  assert.equal(typeof dealMetrics1.isDeal, 'boolean');
+
+  // Multi-product sort check
+  const products = [
+    { id: 1, title: 'Component A', price: 100 },
+    { id: 2, title: 'Component B', price: 200 },
+    { id: 3, title: 'Component C', price: 300 },
+  ];
+
+  const sortedResult = filterAndSortCatalogProducts(products, { sortMode: 'best-deal' });
+  assert.equal(sortedResult.items.length, 3);
+  assert.ok(sortedResult.activeFilterLabels.includes('Sort: Best Deal (6M Drop)'));
+
+  // Verify descending order of percentage drop
+  const drop0 = computePriceDropFromSixMonthAvg(sortedResult.items[0]).percentageDrop;
+  const drop1 = computePriceDropFromSixMonthAvg(sortedResult.items[1]).percentageDrop;
+  const drop2 = computePriceDropFromSixMonthAvg(sortedResult.items[2]).percentageDrop;
+  assert.ok(drop0 >= drop1, `drop0 (${drop0}) should be >= drop1 (${drop1})`);
+  assert.ok(drop1 >= drop2, `drop1 (${drop1}) should be >= drop2 (${drop2})`);
+});
+
+test('Price Drop Alert Expiry Date: parsePriceAlertExpiryDate, isPriceAlertExpired, upsert and evaluatePriceDropAlerts', () => {
+  const now = 1700000000000;
+
+  // 1. Parsing raw values
+  assert.equal(parsePriceAlertExpiryDate(null), null);
+  assert.equal(parsePriceAlertExpiryDate(''), null);
+  assert.equal(parsePriceAlertExpiryDate('none'), null);
+  assert.equal(parsePriceAlertExpiryDate(now + 86400000), now + 86400000);
+
+  const dateParsed = parsePriceAlertExpiryDate('2026-12-31');
+  assert.ok(typeof dateParsed === 'number' && dateParsed > 0);
+  assert.ok(new Date(dateParsed).toISOString().includes('2026-12-31'));
+
+  // 2. Expiry evaluation
+  const futureAlert = { expiresAt: now + 50000, isExpired: false };
+  const pastAlert = { expiresAt: now - 50000, isExpired: false };
+  const noExpiryAlert = { expiresAt: null, isExpired: false };
+  const alreadyExpiredAlert = { expiresAt: now + 50000, isExpired: true };
+
+  assert.equal(isPriceAlertExpired(futureAlert, now), false);
+  assert.equal(isPriceAlertExpired(pastAlert, now), true);
+  assert.equal(isPriceAlertExpired(noExpiryAlert, now), false);
+  assert.equal(isPriceAlertExpired(alreadyExpiredAlert, now), true);
+
+  // 3. Upserting with expiry date
+  const product = { id: 19, title: 'Nvidia RTX 5090', price: 1000 };
+  const res = upsertPriceAlertSubscription([], {
+    product,
+    email: 'builder@example.com',
+    targetPrice: 900,
+    expiresAt: now + 86400000,
+    nowMs: now,
+  });
+
+  assert.equal(res.subscription.expiresAt, now + 86400000);
+  assert.equal(res.subscription.isExpired, false);
+  assert.equal(res.subscription.triggered, false);
+
+  // 4. evaluatePriceDropAlerts skips expired alert
+  const expiredRes = evaluatePriceDropAlerts(
+    res.alerts,
+    19,
+    850,
+    now + 100000000 // future timestamp where alert is expired
+  );
+  assert.equal(expiredRes.triggeredNotifications.length, 0);
+  assert.equal(expiredRes.updatedAlerts[0].isExpired, true);
+
+  // 5. evaluatePriceDropAlerts triggers active (non-expired) alert
+  const activeAlerts = upsertPriceAlertSubscription([], {
+    product,
+    email: 'builder@example.com',
+    targetPrice: 900,
+    expiresAt: now + 86400000,
+    nowMs: now,
+  }).alerts;
+
+  const activeRes = evaluatePriceDropAlerts(activeAlerts, 19, 850, now + 1000);
+  assert.equal(activeRes.triggeredNotifications.length, 1);
+  assert.equal(activeRes.updatedAlerts[0].triggered, true);
+  assert.equal(activeRes.triggeredNotifications[0].newPrice, 850);
+});
+

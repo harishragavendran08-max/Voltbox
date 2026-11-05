@@ -39,6 +39,7 @@ import {
   buildPriceAlertEmailPayload,
   evaluatePriceDropAlerts,
   computeSuggestedPriceThresholds,
+  isPriceAlertExpired,
   resolveUiTemplateTheme,
   computeSystemPowerEstimate,
   formatInstagramHandle,
@@ -803,15 +804,18 @@ app.post(['/api/price-alerts', '/api/products/:id/price-alert'], (req, res) => {
     return badRequest(res, validation.message || 'Invalid price alert configuration.');
   }
 
+  const rawExpiresAt = req.body?.expiresAt ?? req.body?.expiryDate ?? null;
+
   const upserted = upsertPriceAlertSubscription(user.priceAlerts, {
     product,
     email: validation.normalizedEmail,
     targetPrice: validation.normalizedTargetPrice,
+    expiresAt: rawExpiresAt,
   });
   user.priceAlerts = upserted.alerts;
 
   let emailNotification: PriceAlertEmailNotification | null = null;
-  if (product.price <= validation.normalizedTargetPrice) {
+  if (!upserted.subscription.isExpired && product.price <= validation.normalizedTargetPrice) {
     upserted.subscription.triggered = true;
     upserted.subscription.triggeredAt = Date.now();
     upserted.subscription.triggeredPrice = roundMoney(product.price);
@@ -869,6 +873,12 @@ app.post('/api/price-alerts/:productId/simulate-drop', (req, res) => {
 
   const userAlerts = Array.isArray(user.priceAlerts) ? user.priceAlerts : [];
   let sub = userAlerts.find((a) => a.productId === productId);
+  if (sub && (sub.isExpired || isPriceAlertExpired(sub))) {
+    return badRequest(
+      res,
+      'This price alert has expired. Please renew or pick a future expiry date in the alert settings.'
+    );
+  }
   if (!sub) {
     const defaultTarget = roundMoney(product.price * 0.95);
     const created = upsertPriceAlertSubscription(userAlerts, {
