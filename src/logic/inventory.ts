@@ -4624,3 +4624,452 @@ export function synthesizeScanPingPcmBuffer(sampleRate = 44100, config?: ScanPin
 
   return buffer;
 }
+
+// ─────────────────────────────────────────────────────────────
+// Subtle Wishlist Toast Notification Logic
+// ─────────────────────────────────────────────────────────────
+
+export interface WishlistToastPayload {
+  productId: number;
+  productTitle: string;
+  productPrice: number;
+  productSku: string;
+  added: boolean;
+  actionType: 'wishlist-added' | 'wishlist-removed';
+  badgeLabel: string;
+  headline: string;
+  subline: string;
+  message: string;
+  wishlistCount: number;
+  icon: 'heart' | 'trash';
+  accentTone: 'rose' | 'slate';
+  undoActionLabel: string;
+}
+
+/**
+ * Builds a structured, non-modal toast notification payload when a user adds or removes
+ * a hardware component from their personal wishlist.
+ */
+export function buildWishlistToastPayload(
+  product: { id: number; title?: string; price?: number; sku?: string; category?: string } | null | undefined,
+  added: boolean,
+  wishlistCount: number
+): WishlistToastPayload {
+  const productId = product && typeof product.id === 'number' ? Math.floor(product.id) : 0;
+  const productTitle = (product && product.title ? String(product.title).trim() : '') || (productId > 0 ? `Component #${productId}` : 'Hardware Component');
+  const productPrice = product && typeof product.price === 'number' && Number.isFinite(product.price) ? Math.round(product.price * 100) / 100 : 0;
+  const productSku = (product && product.sku ? String(product.sku).trim() : '') || (productId > 0 ? getProductSku({ id: productId, title: productTitle, category: product?.category }) : 'VB-PRT-000');
+  const cleanCount = Math.max(0, Math.floor(Number(wishlistCount) || 0));
+  const isAdded = Boolean(added);
+
+  const countSuffix = `${cleanCount} ${cleanCount === 1 ? 'item' : 'items'} in wishlist`;
+  const priceTag = productPrice > 0 ? ` ($${productPrice.toFixed(2)})` : '';
+
+  if (isAdded) {
+    return {
+      productId,
+      productTitle,
+      productPrice,
+      productSku,
+      added: true,
+      actionType: 'wishlist-added',
+      badgeLabel: 'Saved to Wishlist',
+      headline: `Saved to Wishlist: ${productTitle}`,
+      subline: `${productSku}${priceTag} · ${countSuffix}`,
+      message: `Saved to Wishlist: ${productTitle} · ${countSuffix}`,
+      wishlistCount: cleanCount,
+      icon: 'heart',
+      accentTone: 'rose',
+      undoActionLabel: 'Undo',
+    };
+  }
+
+  return {
+    productId,
+    productTitle,
+    productPrice,
+    productSku,
+    added: false,
+    actionType: 'wishlist-removed',
+    badgeLabel: 'Removed from Wishlist',
+    headline: `Removed from Wishlist: ${productTitle}`,
+    subline: `${productSku} removed · ${countSuffix}`,
+    message: `Removed from Wishlist: ${productTitle} · ${countSuffix}`,
+    wishlistCount: cleanCount,
+    icon: 'heart',
+    accentTone: 'slate',
+    undoActionLabel: 'Restore',
+  };
+}
+
+// ─────────────────────────────────────────────────────────────
+// Checkout Modal 'Print Summary' & Printable Order Estimate
+// ─────────────────────────────────────────────────────────────
+
+export interface CheckoutSummaryLineItem {
+  id: number;
+  sku: string;
+  title: string;
+  category: string;
+  unitPrice: number;
+  quantity: number;
+  lineTotal: number;
+}
+
+export interface CheckoutPrintSummary {
+  summaryId: string;
+  generatedAt: string;
+  recipientName: string;
+  shippingAddress: string;
+  paymentMethodSummary: string;
+  promoCode: string | null;
+  promoLabel: string | null;
+  items: CheckoutSummaryLineItem[];
+  totalQuantity: number;
+  subtotal: number;
+  rigDiscount: number;
+  promoDiscount: number;
+  taxRatePercent: number;
+  tax: number;
+  shippingCost: number;
+  totalUsd: number;
+  totalInr: number;
+}
+
+/**
+ * Generates a structured pre-purchase order summary for the Checkout modal's 'Print Summary' view.
+ */
+export function buildCheckoutPrintSummary(
+  cartItems: Array<{ id: number; title?: string; price: number; quantity: number; category?: string; sku?: string }>,
+  options?: {
+    recipientName?: string;
+    shippingAddress?: string;
+    paymentMethodSummary?: string;
+    promoCode?: string | null;
+    promoDiscount?: number;
+    rigDiscount?: number;
+    taxRate?: number;
+    nowMs?: number;
+  }
+): CheckoutPrintSummary {
+  const opts = options || {};
+  const now = typeof opts.nowMs === 'number' && Number.isFinite(opts.nowMs) ? new Date(opts.nowMs) : new Date();
+  const lines: CheckoutSummaryLineItem[] = [];
+  let subtotal = 0;
+  let totalQuantity = 0;
+
+  if (Array.isArray(cartItems)) {
+    for (const item of cartItems) {
+      if (!item || typeof item.quantity !== 'number' || item.quantity <= 0) continue;
+      const qty = Math.floor(item.quantity);
+      const unitPrice = Math.max(0, Math.round(Number(item.price || 0) * 100) / 100);
+      const lineTotal = Math.round(unitPrice * qty * 100) / 100;
+      const sku = item.sku || getProductSku({ id: item.id, title: item.title, category: item.category });
+      lines.push({
+        id: Number(item.id),
+        sku,
+        title: String(item.title || `Component #${item.id}`).trim(),
+        category: String(item.category || 'components').trim(),
+        unitPrice,
+        quantity: qty,
+        lineTotal,
+      });
+      subtotal = Math.round((subtotal + lineTotal) * 100) / 100;
+      totalQuantity += qty;
+    }
+  }
+
+  const rigDiscount = Math.max(0, Math.round(Number(opts.rigDiscount || 0) * 100) / 100);
+  const promoDiscount = Math.max(0, Math.round(Number(opts.promoDiscount || 0) * 100) / 100);
+  const discountedSubtotal = Math.max(0, Math.round((subtotal - rigDiscount - promoDiscount) * 100) / 100);
+  const taxRate = typeof opts.taxRate === 'number' && opts.taxRate >= 0 ? opts.taxRate : 0.08;
+  const tax = Math.round(discountedSubtotal * taxRate * 100) / 100;
+  const totalUsd = Math.round((discountedSubtotal + tax) * 100) / 100;
+  const totalInr = Math.round(totalUsd * 83.5);
+
+  const hashSeed = Math.abs(Math.floor(totalUsd * 100) + totalQuantity * 37 + lines.length * 13) % 9000 + 1000;
+  const summaryId = `VB-SUM-${hashSeed}`;
+
+  return {
+    summaryId,
+    generatedAt: now.toLocaleString('en-US', {
+      year: 'numeric',
+      month: 'short',
+      day: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit',
+    }),
+    recipientName: String(opts.recipientName || 'Valued Builder').trim() || 'Valued Builder',
+    shippingAddress: String(opts.shippingAddress || '42 Circuit Lane, Silicon Bay').trim() || '42 Circuit Lane, Silicon Bay',
+    paymentMethodSummary: String(opts.paymentMethodSummary || 'UPI / Instant').trim() || 'UPI / Instant',
+    promoCode: opts.promoCode ? String(opts.promoCode).trim().toUpperCase() : null,
+    promoLabel: opts.promoCode ? `Promo (${String(opts.promoCode).trim().toUpperCase()})` : null,
+    items: lines,
+    totalQuantity,
+    subtotal,
+    rigDiscount,
+    promoDiscount,
+    taxRatePercent: Math.round(taxRate * 100),
+    tax,
+    shippingCost: 0,
+    totalUsd,
+    totalInr,
+  };
+}
+
+// ─────────────────────────────────────────────────────────────
+// Storefront Advanced Settings State & Validation
+// ─────────────────────────────────────────────────────────────
+
+export interface StorefrontAdvancedSettings {
+  audioPingEnabled: boolean;
+  audioPingProfile: 'subtle' | 'crystal' | 'classic';
+  wishlistToastsEnabled: boolean;
+  toastDurationMs: 2500 | 3800 | 5500;
+  cardParallaxTiltEnabled: boolean;
+  backgroundAnimationEnabled: boolean;
+  gridDensity: 'comfortable' | 'compact';
+  showDualCurrencyInr: boolean;
+  autoExpandCheckoutSummary: boolean;
+}
+
+export const DEFAULT_ADVANCED_SETTINGS: StorefrontAdvancedSettings = {
+  audioPingEnabled: true,
+  audioPingProfile: 'subtle',
+  wishlistToastsEnabled: true,
+  toastDurationMs: 3800,
+  cardParallaxTiltEnabled: true,
+  backgroundAnimationEnabled: true,
+  gridDensity: 'comfortable',
+  showDualCurrencyInr: false,
+  autoExpandCheckoutSummary: true,
+};
+
+export function resolveAdvancedSettings(raw?: Partial<Record<keyof StorefrontAdvancedSettings, unknown>> | null): StorefrontAdvancedSettings {
+  if (!raw || typeof raw !== 'object') {
+    return { ...DEFAULT_ADVANCED_SETTINGS };
+  }
+  const profileRaw = String(raw.audioPingProfile || '').toLowerCase();
+  const audioPingProfile: 'subtle' | 'crystal' | 'classic' =
+    profileRaw === 'crystal' || profileRaw === 'classic' ? profileRaw : 'subtle';
+
+  const durNum = Number(raw.toastDurationMs);
+  const toastDurationMs: 2500 | 3800 | 5500 =
+    durNum === 2500 || durNum === 5500 ? durNum : 3800;
+
+  const densityRaw = String(raw.gridDensity || '').toLowerCase();
+  const gridDensity: 'comfortable' | 'compact' =
+    densityRaw === 'compact' ? 'compact' : 'comfortable';
+
+  return {
+    audioPingEnabled: typeof raw.audioPingEnabled === 'boolean' ? raw.audioPingEnabled : DEFAULT_ADVANCED_SETTINGS.audioPingEnabled,
+    audioPingProfile,
+    wishlistToastsEnabled: typeof raw.wishlistToastsEnabled === 'boolean' ? raw.wishlistToastsEnabled : DEFAULT_ADVANCED_SETTINGS.wishlistToastsEnabled,
+    toastDurationMs,
+    cardParallaxTiltEnabled: typeof raw.cardParallaxTiltEnabled === 'boolean' ? raw.cardParallaxTiltEnabled : DEFAULT_ADVANCED_SETTINGS.cardParallaxTiltEnabled,
+    backgroundAnimationEnabled: typeof raw.backgroundAnimationEnabled === 'boolean' ? raw.backgroundAnimationEnabled : DEFAULT_ADVANCED_SETTINGS.backgroundAnimationEnabled,
+    gridDensity,
+    showDualCurrencyInr: typeof raw.showDualCurrencyInr === 'boolean' ? raw.showDualCurrencyInr : DEFAULT_ADVANCED_SETTINGS.showDualCurrencyInr,
+    autoExpandCheckoutSummary: typeof raw.autoExpandCheckoutSummary === 'boolean' ? raw.autoExpandCheckoutSummary : DEFAULT_ADVANCED_SETTINGS.autoExpandCheckoutSummary,
+  };
+}
+
+// ─────────────────────────────────────────────────────────────
+// Catalog Toolbar 'Compare All Visible' Selection Logic
+// ─────────────────────────────────────────────────────────────
+
+export const MAX_COMPARISON_ITEMS = 4;
+
+export interface CompareAllVisibleResult {
+  nextCompareIds: number[];
+  addedIds: number[];
+  alreadySelectedIds: number[];
+  visibleCount: number;
+  eligibleCount: number;
+  cappedAtLimit: boolean;
+  allVisibleAlreadyCompared: boolean;
+  replacedPreviousFullSelection: boolean;
+  maxLimit: number;
+  buttonLabel: string;
+  toastMessage: string;
+}
+
+export interface CompareAllVisibleButtonState {
+  visibleCount: number;
+  eligibleCount: number;
+  maxLimit: number;
+  disabled: boolean;
+  isAllCompared: boolean;
+  labelText: string;
+  badgeText: string;
+  ariaLabel: string;
+}
+
+/**
+ * Computes the button label, count badge, and active/disabled state for the
+ * 'Compare All Visible' button in the catalog toolbar.
+ */
+export function getCompareAllVisibleButtonState(
+  visibleProductsOrIds: Array<number | { id: number }>,
+  currentCompareIds: number[] = [],
+  maxLimit: number = MAX_COMPARISON_ITEMS
+): CompareAllVisibleButtonState {
+  const limit = Math.max(1, Math.floor(Number(maxLimit) || MAX_COMPARISON_ITEMS));
+  const visibleIds: number[] = [];
+  if (Array.isArray(visibleProductsOrIds)) {
+    for (const item of visibleProductsOrIds) {
+      const rawId = typeof item === 'number' ? item : item && typeof item === 'object' ? item.id : 0;
+      const id = Math.floor(Number(rawId));
+      if (id > 0 && !visibleIds.includes(id)) {
+        visibleIds.push(id);
+      }
+    }
+  }
+
+  const compareSet = new Set<number>(
+    Array.isArray(currentCompareIds)
+      ? currentCompareIds.map((x) => Math.floor(Number(x))).filter((x) => x > 0)
+      : []
+  );
+
+  const visibleCount = visibleIds.length;
+  const eligibleCount = Math.min(visibleCount, limit);
+  const targetSlice = visibleIds.slice(0, limit);
+  const isAllCompared = targetSlice.length > 0 && targetSlice.every((id) => compareSet.has(id));
+  const disabled = visibleCount === 0;
+  const labelText = isAllCompared ? 'Comparing Visible' : 'Compare All Visible';
+  const badgeText = visibleCount > limit ? `${eligibleCount}/${limit}` : String(eligibleCount);
+  const ariaLabel = disabled
+    ? 'Compare all visible products (no visible products)'
+    : isAllCompared
+      ? `All ${eligibleCount} visible products are in comparison — click to view matrix`
+      : `Compare all visible products (adds up to ${eligibleCount} of ${visibleCount} filtered components)`;
+
+  return {
+    visibleCount,
+    eligibleCount,
+    maxLimit: limit,
+    disabled,
+    isAllCompared,
+    labelText,
+    badgeText,
+    ariaLabel,
+  };
+}
+
+/**
+ * Selects all currently filtered/visible products (up to maxLimit = 4) for the comparison tool.
+ * Preserves existing compared items when slots are available, or loads the top visible filtered
+ * items when the comparison slots were previously full with other items.
+ */
+export function selectVisibleProductsForComparison(
+  visibleProductsOrIds: Array<number | { id: number; title?: string }>,
+  currentCompareIds: number[] = [],
+  maxLimit: number = MAX_COMPARISON_ITEMS
+): CompareAllVisibleResult {
+  const limit = Math.max(1, Math.floor(Number(maxLimit) || MAX_COMPARISON_ITEMS));
+
+  const visibleIds: number[] = [];
+  if (Array.isArray(visibleProductsOrIds)) {
+    for (const item of visibleProductsOrIds) {
+      const rawId = typeof item === 'number' ? item : item && typeof item === 'object' ? item.id : 0;
+      const id = Math.floor(Number(rawId));
+      if (id > 0 && !visibleIds.includes(id)) {
+        visibleIds.push(id);
+      }
+    }
+  }
+
+  const existingIds: number[] = [];
+  if (Array.isArray(currentCompareIds)) {
+    for (const raw of currentCompareIds) {
+      const id = Math.floor(Number(raw));
+      if (id > 0 && !existingIds.includes(id) && existingIds.length < limit) {
+        existingIds.push(id);
+      }
+    }
+  }
+
+  const visibleCount = visibleIds.length;
+  const eligibleCount = Math.min(visibleCount, limit);
+  const cappedAtLimit = visibleCount > limit;
+  const targetSlice = visibleIds.slice(0, limit);
+
+  if (visibleCount === 0) {
+    return {
+      nextCompareIds: existingIds,
+      addedIds: [],
+      alreadySelectedIds: [],
+      visibleCount: 0,
+      eligibleCount: 0,
+      cappedAtLimit: false,
+      allVisibleAlreadyCompared: false,
+      replacedPreviousFullSelection: false,
+      maxLimit: limit,
+      buttonLabel: 'Compare All Visible',
+      toastMessage: 'No visible components match current filters to compare.',
+    };
+  }
+
+  const alreadySelectedIds = targetSlice.filter((id) => existingIds.includes(id));
+  const allVisibleAlreadyCompared = alreadySelectedIds.length === targetSlice.length && targetSlice.length > 0;
+
+  if (allVisibleAlreadyCompared) {
+    return {
+      nextCompareIds: existingIds,
+      addedIds: [],
+      alreadySelectedIds,
+      visibleCount,
+      eligibleCount,
+      cappedAtLimit,
+      allVisibleAlreadyCompared: true,
+      replacedPreviousFullSelection: false,
+      maxLimit: limit,
+      buttonLabel: 'Comparing Visible',
+      toastMessage: `All ${targetSlice.length} visible component${targetSlice.length === 1 ? '' : 's'} already in comparison.`,
+    };
+  }
+
+  let nextCompareIds: number[];
+  let addedIds: number[];
+  let replacedPreviousFullSelection = false;
+
+  if (existingIds.length < limit) {
+    nextCompareIds = [...existingIds];
+    addedIds = [];
+    for (const id of visibleIds) {
+      if (nextCompareIds.length >= limit) break;
+      if (!nextCompareIds.includes(id)) {
+        nextCompareIds.push(id);
+        addedIds.push(id);
+      }
+    }
+  } else {
+    // Existing selection was already at maxLimit (4) from another filter; load top visible filtered products
+    nextCompareIds = [...targetSlice];
+    addedIds = targetSlice.filter((id) => !existingIds.includes(id));
+    replacedPreviousFullSelection = true;
+  }
+
+  const countAdded = addedIds.length;
+  const limitSuffix = cappedAtLimit ? ` (max ${limit} limit reached)` : '';
+  const toastMessage = replacedPreviousFullSelection
+    ? `Loaded top ${nextCompareIds.length} visible component${nextCompareIds.length === 1 ? '' : 's'} into comparison${limitSuffix}.`
+    : `Added ${countAdded} visible component${countAdded === 1 ? '' : 's'} to comparison (${nextCompareIds.length}/${limit} selected)${limitSuffix}.`;
+
+  return {
+    nextCompareIds,
+    addedIds,
+    alreadySelectedIds,
+    visibleCount,
+    eligibleCount,
+    cappedAtLimit,
+    allVisibleAlreadyCompared: false,
+    replacedPreviousFullSelection,
+    maxLimit: limit,
+    buttonLabel: 'Comparing Visible',
+    toastMessage,
+  };
+}
+
+

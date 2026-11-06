@@ -552,6 +552,13 @@ export {
   validateQrScanAudioTrigger,
   formatAudioPingToggleState,
   synthesizeScanPingPcmBuffer,
+  buildWishlistToastPayload,
+  buildCheckoutPrintSummary,
+  DEFAULT_ADVANCED_SETTINGS,
+  resolveAdvancedSettings,
+  MAX_COMPARISON_ITEMS,
+  getCompareAllVisibleButtonState,
+  selectVisibleProductsForComparison,
 } from '../logic/inventory';
 
 import {
@@ -560,6 +567,13 @@ import {
   validateQrScanAudioTrigger,
   formatAudioPingToggleState,
   synthesizeScanPingPcmBuffer,
+  buildWishlistToastPayload,
+  buildCheckoutPrintSummary,
+  DEFAULT_ADVANCED_SETTINGS,
+  resolveAdvancedSettings,
+  MAX_COMPARISON_ITEMS,
+  getCompareAllVisibleButtonState,
+  selectVisibleProductsForComparison,
 } from '../logic/inventory';
 
 // Expose globally on window for app.js
@@ -568,6 +582,7 @@ if (typeof window !== 'undefined') {
     themes: VOLTBOX_QR_THEMES,
     uiTemplates: UI_BACKGROUND_TEMPLATES,
     MAX_SCAN_HISTORY_ITEMS,
+    MAX_COMPARISON_ITEMS,
     generateProductUrl,
     generateQrSvg,
     generateQrDataUrl,
@@ -589,7 +604,14 @@ if (typeof window !== 'undefined') {
     validateQrScanAudioTrigger,
     formatAudioPingToggleState,
     synthesizeScanPingPcmBuffer,
+    buildWishlistToastPayload,
+    buildCheckoutPrintSummary,
+    DEFAULT_ADVANCED_SETTINGS,
+    resolveAdvancedSettings,
+    getCompareAllVisibleButtonState,
+    selectVisibleProductsForComparison,
   };
 }
+
 
 

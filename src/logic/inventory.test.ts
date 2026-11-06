@@ -92,6 +92,13 @@ import {
   validateQrScanAudioTrigger,
   formatAudioPingToggleState,
   synthesizeScanPingPcmBuffer,
+  buildWishlistToastPayload,
+  buildCheckoutPrintSummary,
+  DEFAULT_ADVANCED_SETTINGS,
+  resolveAdvancedSettings,
+  MAX_COMPARISON_ITEMS,
+  getCompareAllVisibleButtonState,
+  selectVisibleProductsForComparison,
 } from './inventory';
 
 test('LOW_STOCK_THRESHOLD is 5', () => {
@@ -1674,4 +1681,144 @@ test('QR Scanner Audio Ping: getScanPingAudioConfig, calculateScanPingSchedule, 
   const tailSample = Math.abs(pcm[pcm.length - 1]);
   assert.ok(tailSample < 0.0001, 'Audio ping must taper smoothly to zero at tail');
 });
+
+test('Subtle Wishlist Toast Notification: buildWishlistToastPayload generates non-modal confirmation payloads for add and remove', () => {
+  const sampleGpu = { id: 19, title: 'Nvidia RTX 5090', price: 999.99, category: 'gpus' };
+
+  const addedToast = buildWishlistToastPayload(sampleGpu, true, 3);
+  assert.equal(addedToast.productId, 19);
+  assert.equal(addedToast.productTitle, 'Nvidia RTX 5090');
+  assert.equal(addedToast.added, true);
+  assert.equal(addedToast.actionType, 'wishlist-added');
+  assert.equal(addedToast.badgeLabel, 'Saved to Wishlist');
+  assert.equal(addedToast.headline, 'Saved to Wishlist: Nvidia RTX 5090');
+  assert.ok(addedToast.subline.includes('3 items in wishlist'));
+  assert.ok(addedToast.subline.includes('$999.99'));
+  assert.equal(addedToast.accentTone, 'rose');
+  assert.equal(addedToast.undoActionLabel, 'Undo');
+
+  const removedToast = buildWishlistToastPayload(sampleGpu, false, 1);
+  assert.equal(removedToast.productId, 19);
+  assert.equal(removedToast.added, false);
+  assert.equal(removedToast.actionType, 'wishlist-removed');
+  assert.equal(removedToast.badgeLabel, 'Removed from Wishlist');
+  assert.equal(removedToast.headline, 'Removed from Wishlist: Nvidia RTX 5090');
+  assert.ok(removedToast.subline.includes('1 item in wishlist'));
+  assert.equal(removedToast.accentTone, 'slate');
+  assert.equal(removedToast.undoActionLabel, 'Restore');
+});
+
+test('Checkout Print Summary & Advanced Settings: buildCheckoutPrintSummary and resolveAdvancedSettings', () => {
+  const summary = buildCheckoutPrintSummary(
+    [
+      { id: 19, title: 'Nvidia RTX 5090', price: 1000, quantity: 1, category: 'gpus' },
+      { id: 20, title: 'AMD Ryzen 9', price: 500, quantity: 2, category: 'cpus' },
+    ],
+    {
+      recipientName: 'Harish Ragavendran',
+      shippingAddress: '42 Circuit Lane, Silicon Bay',
+      paymentMethodSummary: 'Google Pay (UPI)',
+      promoCode: 'VOLT10',
+      promoDiscount: 200,
+      rigDiscount: 0,
+      taxRate: 0.08,
+      nowMs: 1762400000000,
+    }
+  );
+
+  assert.equal(summary.items.length, 2);
+  assert.equal(summary.totalQuantity, 3);
+  assert.equal(summary.subtotal, 2000);
+  assert.equal(summary.promoDiscount, 200);
+  assert.equal(summary.tax, 144); // 8% of (2000 - 200)
+  assert.equal(summary.totalUsd, 1944);
+  assert.equal(summary.recipientName, 'Harish Ragavendran');
+  assert.equal(summary.promoCode, 'VOLT10');
+  assert.ok(summary.summaryId.startsWith('VB-SUM-'));
+
+  const defaults = resolveAdvancedSettings(null);
+  assert.deepEqual(defaults, DEFAULT_ADVANCED_SETTINGS);
+
+  const custom = resolveAdvancedSettings({
+    audioPingEnabled: false,
+    audioPingProfile: 'crystal',
+    toastDurationMs: 5500,
+    gridDensity: 'compact',
+    showDualCurrencyInr: true,
+  });
+  assert.equal(custom.audioPingEnabled, false);
+  assert.equal(custom.audioPingProfile, 'crystal');
+  assert.equal(custom.toastDurationMs, 5500);
+  assert.equal(custom.gridDensity, 'compact');
+  assert.equal(custom.showDualCurrencyInr, true);
+});
+
+test('Catalog Toolbar Compare All Visible: selectVisibleProductsForComparison and getCompareAllVisibleButtonState enforce 4-item limit and filter state', () => {
+  assert.equal(MAX_COMPARISON_ITEMS, 4);
+
+  // 1. Empty visible list disables button and leaves existing comparison untouched
+  const emptyBtn = getCompareAllVisibleButtonState([], [19]);
+  assert.equal(emptyBtn.disabled, true);
+  assert.equal(emptyBtn.visibleCount, 0);
+  assert.equal(emptyBtn.eligibleCount, 0);
+  assert.equal(emptyBtn.badgeText, '0');
+
+  const emptyRes = selectVisibleProductsForComparison([], [19]);
+  assert.deepEqual(emptyRes.nextCompareIds, [19]);
+  assert.deepEqual(emptyRes.addedIds, []);
+  assert.equal(emptyRes.visibleCount, 0);
+
+  // 2. Filtered category with 2 visible products (e.g. GPUs) adds both
+  const twoVisible = [{ id: 19, title: 'Nvidia RTX 5090' }, { id: 42, title: 'AMD Radeon RX 7900 XTX' }];
+  const btnTwo = getCompareAllVisibleButtonState(twoVisible, []);
+  assert.equal(btnTwo.disabled, false);
+  assert.equal(btnTwo.visibleCount, 2);
+  assert.equal(btnTwo.eligibleCount, 2);
+  assert.equal(btnTwo.badgeText, '2');
+  assert.equal(btnTwo.isAllCompared, false);
+  assert.equal(btnTwo.labelText, 'Compare All Visible');
+
+  const resTwo = selectVisibleProductsForComparison(twoVisible, []);
+  assert.deepEqual(resTwo.nextCompareIds, [19, 42]);
+  assert.deepEqual(resTwo.addedIds, [19, 42]);
+  assert.equal(resTwo.cappedAtLimit, false);
+  assert.equal(resTwo.allVisibleAlreadyCompared, false);
+
+  // 3. Large visible catalog (e.g. 6 items) caps at 4 items
+  const sixVisible = [19, 20, 21, 22, 23, 24];
+  const btnSix = getCompareAllVisibleButtonState(sixVisible, []);
+  assert.equal(btnSix.visibleCount, 6);
+  assert.equal(btnSix.eligibleCount, 4);
+  assert.equal(btnSix.badgeText, '4/4');
+
+  const resSix = selectVisibleProductsForComparison(sixVisible, []);
+  assert.deepEqual(resSix.nextCompareIds, [19, 20, 21, 22]);
+  assert.deepEqual(resSix.addedIds, [19, 20, 21, 22]);
+  assert.equal(resSix.cappedAtLimit, true);
+  assert.equal(resSix.eligibleCount, 4);
+
+  // 4. Additive behavior when 1 item is already selected
+  const resAdditive = selectVisibleProductsForComparison([20, 21, 22, 23, 24], [19]);
+  assert.deepEqual(resAdditive.nextCompareIds, [19, 20, 21, 22]);
+  assert.deepEqual(resAdditive.addedIds, [20, 21, 22]);
+  assert.equal(resAdditive.replacedPreviousFullSelection, false);
+
+  // 5. All visible items (up to 4) already selected -> marks allVisibleAlreadyCompared = true
+  const btnAlready = getCompareAllVisibleButtonState([19, 20, 21, 22, 23], [19, 20, 21, 22]);
+  assert.equal(btnAlready.isAllCompared, true);
+  assert.equal(btnAlready.labelText, 'Comparing Visible');
+
+  const resAlready = selectVisibleProductsForComparison([19, 20, 21, 22, 23], [19, 20, 21, 22]);
+  assert.equal(resAlready.allVisibleAlreadyCompared, true);
+  assert.deepEqual(resAlready.addedIds, []);
+  assert.deepEqual(resAlready.nextCompareIds, [19, 20, 21, 22]);
+
+  // 6. Switching to a new filtered category when 4 other items were previously selected replaces with new visible items
+  const resReplace = selectVisibleProductsForComparison([31, 32, 33, 34, 35], [19, 20, 21, 22]);
+  assert.equal(resReplace.replacedPreviousFullSelection, true);
+  assert.deepEqual(resReplace.nextCompareIds, [31, 32, 33, 34]);
+  assert.deepEqual(resReplace.addedIds, [31, 32, 33, 34]);
+});
+
+
 

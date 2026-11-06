@@ -450,7 +450,11 @@ function toggleWishlist(e, productId) {
         applyFiltersAndSearch();
       }
       var title = prod ? prod.title : ("Part #" + id);
-      showActivityToast(nowIn ? ("Saved to Wishlist: " + title) : ("Removed from Wishlist: " + title));
+      if (typeof showWishlistToast === "function") {
+        showWishlistToast(prod || { id: id, title: title, price: 0 }, nowIn, wishlist.length);
+      } else {
+        showActivityToast(nowIn ? ("Saved to Wishlist: " + title) : ("Removed from Wishlist: " + title));
+      }
       return data;
     })
     .catch(function (err) {
@@ -1735,7 +1739,7 @@ function renderAllCards() {
       (p.description ? '<p class="card-desc">' + esc(p.description) + '</p>' : '') +
       ratingRow +
       '<div class="card-price-row">' +
-        '<p class="card-price">$' + p.price.toFixed(2) + '</p>' +
+        '<p class="card-price">$' + p.price.toFixed(2) + '<span class="card-price-inr-sub">≈ ₹' + Math.round(p.price * 83.5).toLocaleString("en-IN") + '</span></p>' +
         '<button type="button" class="chart-toggle-btn' + (isChartOpen ? ' active' : '') + '" ' +
                 'id="chart-toggle-' + p.id + '" ' +
                 'aria-expanded="' + (isChartOpen ? 'true' : 'false') + '" ' +
@@ -1783,7 +1787,8 @@ function renderAllCards() {
 
     // Cursor radial spotlight + 3D parallax tilt tracking (strictly desktop > 1024px only; locked on mobile & iPad)
     card.addEventListener("mousemove", function (ev) {
-      if (window.innerWidth <= 1024 || (window.matchMedia && window.matchMedia("(pointer: coarse)").matches)) {
+      var tiltDisabled = window.voltboxAdvSettings && window.voltboxAdvSettings.cardParallaxTiltEnabled === false;
+      if (tiltDisabled || window.innerWidth <= 1024 || (window.matchMedia && window.matchMedia("(pointer: coarse)").matches)) {
         this.classList.remove("is-tilting");
         this.style.setProperty("--card-rx", "0deg");
         this.style.setProperty("--card-ry", "0deg");
@@ -2431,8 +2436,9 @@ function playScanSuccessChime(forcePreview) {
     var scheduleAudioPing = function (audioCtx) {
       try {
         var now = audioCtx.currentTime;
+        var activeProfile = (window.voltboxAdvSettings && window.voltboxAdvSettings.audioPingProfile) || "subtle";
         var cfg = (window.VoltboxQR && typeof window.VoltboxQR.getScanPingAudioConfig === "function")
-          ? window.VoltboxQR.getScanPingAudioConfig("subtle")
+          ? window.VoltboxQR.getScanPingAudioConfig(activeProfile)
           : {
               masterGain: 0.22,
               tones: [
@@ -3068,18 +3074,102 @@ window.onProductRestocked = function (updated) {
   }
 };
 
+var lastWishlistToastProductId = null;
+
+function dismissActivityToast() {
+  if (!activityToastEl) return;
+  clearTimeout(toastTimer);
+  activityToastEl.classList.remove("visible");
+  setTimeout(function () {
+    if (activityToastEl) activityToastEl.hidden = true;
+  }, 220);
+}
+
 window.showActivityToast = function (message) {
   if (!activityToastEl || !activityTextEl) return;
+  var iconEl = document.getElementById("live-activity-icon");
+  var badgeRowEl = document.getElementById("live-activity-badge-row");
+  var subtextEl = document.getElementById("live-activity-subtext");
+  var actionsEl = document.getElementById("live-activity-actions");
+
+  activityToastEl.classList.remove("toast-wishlist-added", "toast-wishlist-removed");
+  activityToastEl.removeAttribute("data-toast-type");
+  if (iconEl) iconEl.innerHTML = icon("refresh", 15);
+  if (badgeRowEl) badgeRowEl.hidden = true;
+  if (subtextEl) {
+    subtextEl.hidden = true;
+    subtextEl.textContent = "";
+  }
+  if (actionsEl) actionsEl.hidden = true;
+
   activityTextEl.textContent = message;
   activityToastEl.hidden = false;
   activityToastEl.classList.add("visible");
   clearTimeout(toastTimer);
+  var dur = (window.voltboxAdvSettings && window.voltboxAdvSettings.toastDurationMs) ? Number(window.voltboxAdvSettings.toastDurationMs) : 3800;
   toastTimer = setTimeout(function () {
-    activityToastEl.classList.remove("visible");
-    setTimeout(function () {
-      activityToastEl.hidden = true;
-    }, 220);
-  }, 3800);
+    dismissActivityToast();
+  }, dur);
+};
+
+window.showWishlistToast = function (product, added, wishlistCount) {
+  if (window.voltboxAdvSettings && window.voltboxAdvSettings.wishlistToastsEnabled === false) {
+    return;
+  }
+  if (!activityToastEl || !activityTextEl) return;
+
+  var payload = (window.VoltboxQR && typeof window.VoltboxQR.buildWishlistToastPayload === "function")
+    ? window.VoltboxQR.buildWishlistToastPayload(product, added, wishlistCount)
+    : {
+        productId: product ? Number(product.id) : 0,
+        productTitle: product && product.title ? product.title : "Component",
+        added: Boolean(added),
+        actionType: added ? "wishlist-added" : "wishlist-removed",
+        badgeLabel: added ? "Saved to Wishlist" : "Removed from Wishlist",
+        headline: (added ? "Saved to Wishlist: " : "Removed from Wishlist: ") + (product && product.title ? product.title : "Component"),
+        subline: wishlistCount + (wishlistCount === 1 ? " item in wishlist" : " items in wishlist"),
+        undoActionLabel: added ? "Undo" : "Restore"
+      };
+
+  lastWishlistToastProductId = payload.productId;
+
+  var iconEl = document.getElementById("live-activity-icon");
+  var badgeRowEl = document.getElementById("live-activity-badge-row");
+  var badgeEl = document.getElementById("live-activity-badge");
+  var subtextEl = document.getElementById("live-activity-subtext");
+  var actionsEl = document.getElementById("live-activity-actions");
+  var undoBtn = document.getElementById("toast-undo-btn");
+
+  activityToastEl.classList.remove("toast-wishlist-added", "toast-wishlist-removed");
+  activityToastEl.classList.add(payload.added ? "toast-wishlist-added" : "toast-wishlist-removed");
+  activityToastEl.setAttribute("data-toast-type", payload.actionType);
+
+  if (iconEl) {
+    iconEl.innerHTML = icon("heart", 16);
+  }
+  if (badgeRowEl && badgeEl) {
+    badgeEl.textContent = payload.badgeLabel;
+    badgeRowEl.hidden = false;
+  }
+  activityTextEl.textContent = payload.headline;
+  if (subtextEl) {
+    subtextEl.textContent = payload.subline;
+    subtextEl.hidden = false;
+  }
+  if (undoBtn) {
+    undoBtn.textContent = payload.undoActionLabel;
+  }
+  if (actionsEl) {
+    actionsEl.hidden = !(payload.productId > 0);
+  }
+
+  activityToastEl.hidden = false;
+  activityToastEl.classList.add("visible");
+  clearTimeout(toastTimer);
+  var dur = (window.voltboxAdvSettings && window.voltboxAdvSettings.toastDurationMs) ? Number(window.voltboxAdvSettings.toastDurationMs) : 3800;
+  toastTimer = setTimeout(function () {
+    dismissActivityToast();
+  }, dur);
 };
 
 
@@ -3184,6 +3274,8 @@ function applyFiltersAndSearch(explicitQuery) {
   } else {
     noResultsEl.style.display = "none";
   }
+
+  syncCompareAllVisibleButtonUI();
 }
 
 function resetAllCatalogFilters() {
@@ -4492,6 +4584,12 @@ function wireUpButtons() {
     viewListBtnEl.addEventListener("click", function () { setCatalogViewMode("list"); });
   }
 
+  // Compare All Visible button in catalog toolbar
+  var compareAllVisibleBtnEl = document.getElementById("compare-all-visible-btn");
+  if (compareAllVisibleBtnEl) {
+    compareAllVisibleBtnEl.addEventListener("click", compareAllVisibleProducts);
+  }
+
   // Rig Builder drawer
   if (rigBuilderBtnEl) {
     rigBuilderBtnEl.addEventListener("click", openRigDrawer);
@@ -5248,7 +5346,12 @@ function renderCheckoutItemsPreview(totals) {
   previewEl.innerHTML =
     '<div class="checkout-preview-head">' +
       '<span>Order Summary (' + totals.count + (totals.count === 1 ? ' item' : ' items') + ')</span>' +
-      '<strong class="checkout-preview-total">$' + totals.total.toFixed(2) + ' incl. tax</strong>' +
+      '<div class="checkout-preview-head-right">' +
+        '<button type="button" class="checkout-preview-print-link" id="checkout-preview-print-btn" onclick="openCheckoutPrintSummary()" title="Open printable order summary">' +
+          icon("printer", 12) + ' <span>Print Summary</span>' +
+        '</button>' +
+        '<strong class="checkout-preview-total">$' + totals.total.toFixed(2) + ' incl. tax</strong>' +
+      '</div>' +
     '</div>' +
     '<div class="checkout-preview-list">' + itemsHtml + '</div>';
 }
@@ -5786,6 +5889,9 @@ function openCheckoutModal() {
   stopUpiOverlayCountdown();
   var upiOverlayEl = document.getElementById("upi-qr-overlay");
   if (upiOverlayEl) upiOverlayEl.hidden = true;
+  var printSummaryViewEl = document.getElementById("checkout-print-summary-view");
+  if (printSummaryViewEl) printSummaryViewEl.hidden = true;
+  document.body.classList.remove("printing-checkout-summary");
   syncPaymentMethodUi();
 
   checkoutSuccessEl.hidden = true;
@@ -6173,12 +6279,114 @@ function updateCompareUI() {
   }
 
   populateCompareAddSelect();
+  syncCompareAllVisibleButtonUI();
 
   // 5. If modal is open, refresh comparative table
   var modalOverlay = document.getElementById("compare-overlay");
   if (modalOverlay && modalOverlay.classList.contains("open")) {
     renderComparisonTable();
   }
+}
+
+function getVisibleCatalogProductIds() {
+  var visibleIds = [];
+  if (!gridEl) return visibleIds;
+  var cards = gridEl.querySelectorAll(".card");
+  for (var i = 0; i < cards.length; i++) {
+    var card = cards[i];
+    if (card.style.display === "none" || card.hidden) continue;
+    var idStr = (card.id || "").replace(/^card-/, "");
+    var pid = Number(idStr);
+    if (pid > 0 && visibleIds.indexOf(pid) === -1) {
+      visibleIds.push(pid);
+    }
+  }
+  return visibleIds;
+}
+
+function syncCompareAllVisibleButtonUI() {
+  var btn = document.getElementById("compare-all-visible-btn");
+  var labelEl = document.getElementById("compare-all-visible-label");
+  var badgeEl = document.getElementById("compare-all-visible-badge");
+  if (!btn) return;
+
+  var visibleIds = getVisibleCatalogProductIds();
+  var state;
+  if (window.VoltboxQR && typeof window.VoltboxQR.getCompareAllVisibleButtonState === "function") {
+    state = window.VoltboxQR.getCompareAllVisibleButtonState(visibleIds, compareIds, 4);
+  } else {
+    var vCount = visibleIds.length;
+    var elig = Math.min(vCount, 4);
+    var slice = visibleIds.slice(0, 4);
+    var allIn = slice.length > 0 && slice.every(function (id) { return compareIds.indexOf(id) !== -1; });
+    state = {
+      visibleCount: vCount,
+      eligibleCount: elig,
+      maxLimit: 4,
+      disabled: vCount === 0,
+      isAllCompared: allIn,
+      labelText: allIn ? "Comparing Visible" : "Compare All Visible",
+      badgeText: vCount > 4 ? (elig + "/4") : String(elig),
+      ariaLabel: vCount === 0
+        ? "Compare all visible products (no visible products)"
+        : (allIn
+          ? ("All " + elig + " visible products are in comparison — click to view matrix")
+          : ("Compare all visible products (adds up to " + elig + " of " + vCount + " filtered components)"))
+    };
+  }
+
+  btn.disabled = state.disabled;
+  btn.classList.toggle("active", state.isAllCompared);
+  btn.setAttribute("aria-pressed", state.isAllCompared ? "true" : "false");
+  btn.setAttribute("aria-label", state.ariaLabel);
+  if (labelEl) labelEl.textContent = state.labelText;
+  if (badgeEl) badgeEl.textContent = state.badgeText;
+}
+
+function compareAllVisibleProducts() {
+  var visibleIds = getVisibleCatalogProductIds();
+  var res;
+  if (window.VoltboxQR && typeof window.VoltboxQR.selectVisibleProductsForComparison === "function") {
+    res = window.VoltboxQR.selectVisibleProductsForComparison(visibleIds, compareIds, 4);
+  } else {
+    var vCount = visibleIds.length;
+    var slice = visibleIds.slice(0, 4);
+    if (vCount === 0) {
+      showActivityToast("No visible components match current filters to compare.");
+      return;
+    }
+    var allIn = slice.length > 0 && slice.every(function (id) { return compareIds.indexOf(id) !== -1; });
+    if (allIn) {
+      openComparisonModal();
+      return;
+    }
+    var next = compareIds.length < 4 ? compareIds.slice() : [];
+    for (var i = 0; i < visibleIds.length; i++) {
+      if (next.length >= 4) break;
+      if (next.indexOf(visibleIds[i]) === -1) next.push(visibleIds[i]);
+    }
+    res = {
+      visibleCount: vCount,
+      nextCompareIds: next,
+      allVisibleAlreadyCompared: false,
+      toastMessage: "Added visible components to comparison (" + next.length + "/4 selected)."
+    };
+  }
+
+  if (res.visibleCount === 0) {
+    showActivityToast(res.toastMessage);
+    return;
+  }
+
+  if (res.allVisibleAlreadyCompared) {
+    openComparisonModal();
+    showActivityToast(res.toastMessage);
+    return;
+  }
+
+  compareIds = res.nextCompareIds.slice(0, 4);
+  updateCompareUI();
+  showActivityToast(res.toastMessage);
 }
 
 function parseComparePowerWatts(powerDraw) {
@@ -8529,9 +8737,489 @@ function initOrderTrackingWiring() {
 
 document.addEventListener("DOMContentLoaded", function() {
   initOrderTrackingWiring();
+  initCheckoutPrintSummaryAndAdvancedSettings();
 });
 
 window.openOrderTrackingDashboard = openOrderTrackingDashboard;
 window.closeOrderTrackingDashboard = closeOrderTrackingDashboard;
+
+// ─────────────────────────────────────────────────────────────────────────
+// Checkout Modal 'Print Summary' & Storefront Advanced Settings Controllers
+// ─────────────────────────────────────────────────────────────────────────
+
+var ADV_SETTINGS_STORAGE_KEY = "voltbox_advanced_settings_v1";
+window.voltboxAdvSettings = {
+  audioPingEnabled: true,
+  audioPingProfile: "subtle",
+  wishlistToastsEnabled: true,
+  toastDurationMs: 3800,
+  cardParallaxTiltEnabled: true,
+  backgroundAnimationEnabled: true,
+  gridDensity: "comfortable",
+  showDualCurrencyInr: false,
+  autoExpandCheckoutSummary: true
+};
+
+function buildCurrentCheckoutSummaryData() {
+  var totals = computeTotals();
+  var cartItems = [];
+  for (var i = 0; i < products.length; i++) {
+    var p = products[i];
+    var q = cart[p.id] || 0;
+    if (q <= 0) continue;
+    cartItems.push({
+      id: p.id,
+      sku: getSkuFor(p),
+      title: p.title,
+      category: p.category,
+      price: p.price,
+      quantity: q
+    });
+  }
+
+  var recipientName = (checkoutNameEl && checkoutNameEl.value.trim()) ? checkoutNameEl.value.trim() : (me ? me.name : "Harish");
+  var shippingAddress = (checkoutAddressEl && checkoutAddressEl.value.trim()) ? checkoutAddressEl.value.trim() : "42 Circuit Lane, Silicon Bay";
+  var paymentMethodSummary = getFormattedPaymentSummary();
+
+  if (window.VoltboxQR && typeof window.VoltboxQR.buildCheckoutPrintSummary === "function") {
+    return window.VoltboxQR.buildCheckoutPrintSummary(cartItems, {
+      recipientName: recipientName,
+      shippingAddress: shippingAddress,
+      paymentMethodSummary: paymentMethodSummary,
+      promoCode: activePromoCode || null,
+      promoDiscount: totals.promoDiscount || 0,
+      rigDiscount: totals.rigDiscount || 0,
+      taxRate: TAX_RATE
+    });
+  }
+
+  return {
+    summaryId: "VB-SUM-" + Math.floor(1000 + (Date.now() % 9000)),
+    generatedAt: new Date().toLocaleString(),
+    recipientName: recipientName,
+    shippingAddress: shippingAddress,
+    paymentMethodSummary: paymentMethodSummary,
+    promoCode: activePromoCode || null,
+    items: cartItems.map(function (it) {
+      return {
+        id: it.id,
+        sku: it.sku,
+        title: it.title,
+        category: it.category,
+        unitPrice: it.price,
+        quantity: it.quantity,
+        lineTotal: round(it.price * it.quantity)
+      };
+    }),
+    totalQuantity: totals.count,
+    subtotal: totals.subtotal,
+    rigDiscount: totals.rigDiscount || 0,
+    promoDiscount: totals.promoDiscount || 0,
+    taxRatePercent: 8,
+    tax: totals.tax,
+    shippingCost: 0,
+    totalUsd: totals.total,
+    totalInr: Math.round(totals.total * 83.5)
+  };
+}
+
+function renderCheckoutPrintSummarySheet() {
+  var sheetEl = document.getElementById("checkout-print-summary-sheet");
+  if (!sheetEl) return null;
+
+  var summary = buildCurrentCheckoutSummaryData();
+  var rowsHtml = "";
+  for (var i = 0; i < summary.items.length; i++) {
+    var item = summary.items[i];
+    rowsHtml +=
+      '<tr data-testid="print-summary-line">' +
+        '<td>' +
+          '<strong>' + esc(item.title) + '</strong>' +
+          '<span class="ps-sku-tag">SKU: ' + esc(item.sku) + '</span>' +
+        '</td>' +
+        '<td class="num">' + item.quantity + '</td>' +
+        '<td class="num">$' + item.unitPrice.toFixed(2) + '</td>' +
+        '<td class="num"><strong>$' + item.lineTotal.toFixed(2) + '</strong></td>' +
+      '</tr>';
+  }
+
+  var discountRowsHtml = "";
+  if (summary.rigDiscount > 0) {
+    discountRowsHtml +=
+      '<div class="ps-total-row discount">' +
+        '<span>Rig Builder 5% Bundle Discount</span>' +
+        '<span>-$' + summary.rigDiscount.toFixed(2) + '</span>' +
+      '</div>';
+  }
+  if (summary.promoDiscount > 0) {
+    discountRowsHtml +=
+      '<div class="ps-total-row discount">' +
+        '<span>Promo Discount (' + esc(summary.promoCode || "PROMO") + ')</span>' +
+        '<span>-$' + summary.promoDiscount.toFixed(2) + '</span>' +
+      '</div>';
+  }
+
+  sheetEl.innerHTML =
+    '<div class="ps-doc-head">' +
+      '<div>' +
+        '<div class="ps-brand-title">VOLTBOX ELECTRONICS</div>' +
+        '<span class="ps-brand-sub">Pre-Purchase Order Summary &amp; Proforma Hardware Estimate</span>' +
+      '</div>' +
+      '<div class="ps-doc-meta">' +
+        '<strong>Ref: ' + esc(summary.summaryId) + '</strong>' +
+        '<span>' + esc(summary.generatedAt) + '</span>' +
+      '</div>' +
+    '</div>' +
+    '<div class="ps-customer-grid">' +
+      '<div class="ps-customer-col">' +
+        '<span>Prepared For</span>' +
+        '<strong>' + esc(summary.recipientName) + '</strong>' +
+        '<div>' + esc(summary.shippingAddress) + '</div>' +
+      '</div>' +
+      '<div class="ps-customer-col">' +
+        '<span>Selected Payment &amp; Dispatch</span>' +
+        '<strong>' + esc(summary.paymentMethodSummary) + '</strong>' +
+        '<div>BlueDart Apex Air Cargo · Free Insured Shipping</div>' +
+      '</div>' +
+    '</div>' +
+    '<table class="ps-items-table" aria-label="Order Summary Items">' +
+      '<thead>' +
+        '<tr>' +
+          '<th>Component</th>' +
+          '<th class="num">Qty</th>' +
+          '<th class="num">Unit Price</th>' +
+          '<th class="num">Line Total</th>' +
+        '</tr>' +
+      '</thead>' +
+      '<tbody>' + rowsHtml + '</tbody>' +
+    '</table>' +
+    '<div class="ps-totals-box">' +
+      '<div class="ps-total-row">' +
+        '<span>Subtotal (' + summary.totalQuantity + (summary.totalQuantity === 1 ? ' unit' : ' units') + ')</span>' +
+        '<span>$' + summary.subtotal.toFixed(2) + '</span>' +
+      '</div>' +
+      discountRowsHtml +
+      '<div class="ps-total-row">' +
+        '<span>Estimated Tax (' + summary.taxRatePercent + '%)</span>' +
+        '<span>$' + summary.tax.toFixed(2) + '</span>' +
+      '</div>' +
+      '<div class="ps-total-row">' +
+        '<span>Insured Express Shipping</span>' +
+        '<span>$0.00 (Free)</span>' +
+      '</div>' +
+      '<div class="ps-total-row grand" data-testid="print-summary-grand-total">' +
+        '<span>Total Payable</span>' +
+        '<span>$' + summary.totalUsd.toFixed(2) + '</span>' +
+      '</div>' +
+      '<div class="ps-total-inr">≈ ₹' + summary.totalInr.toLocaleString("en-IN") + ' INR</div>' +
+    '</div>' +
+    '<div class="ps-doc-footer">' +
+      '<span>ESD Bench-Verified Components · 3-Year Manufacturer Warranty</span>' +
+      '<span>voltbox.dev/catalog</span>' +
+    '</div>';
+
+  return summary;
+}
+
+window.openCheckoutPrintSummary = function () {
+  var viewEl = document.getElementById("checkout-print-summary-view");
+  var upiEl = document.getElementById("upi-qr-overlay");
+  var msgEl = document.getElementById("checkout-print-summary-msg");
+  if (!viewEl) return;
+
+  renderCheckoutPrintSummarySheet();
+  if (upiEl) upiEl.hidden = true;
+  if (checkoutFormEl) checkoutFormEl.hidden = true;
+  if (checkoutSuccessEl) checkoutSuccessEl.hidden = true;
+  if (msgEl) msgEl.hidden = true;
+  viewEl.hidden = false;
+  document.body.classList.add("printing-checkout-summary");
+};
+
+window.closeCheckoutPrintSummary = function () {
+  var viewEl = document.getElementById("checkout-print-summary-view");
+  if (viewEl) viewEl.hidden = true;
+  if (checkoutFormEl) checkoutFormEl.hidden = false;
+  document.body.classList.remove("printing-checkout-summary");
+};
+
+function executeCheckoutPrintSummary() {
+  var summary = renderCheckoutPrintSummarySheet();
+  document.body.classList.add("printing-checkout-summary");
+  var msgEl = document.getElementById("checkout-print-summary-msg");
+  if (msgEl) {
+    msgEl.className = "modal-msg";
+    msgEl.textContent = "✓ Printable summary (" + (summary ? summary.summaryId : "VB-SUM") + ") prepared — select 'Save as PDF' or your printer in the print dialog.";
+    msgEl.hidden = false;
+  }
+  showActivityToast("Printable Order Summary (" + (summary ? summary.summaryId : "VB-SUM") + ") ready for PDF / Print");
+  try {
+    window.print();
+  } catch (e) {}
+}
+
+function downloadCheckoutSummaryDocument() {
+  var sheetEl = document.getElementById("checkout-print-summary-sheet");
+  var summary = renderCheckoutPrintSummarySheet();
+  if (!sheetEl || !summary) return;
+
+  var docHtml =
+    "<!DOCTYPE html><html><head><meta charset='UTF-8'><title>Voltbox Order Summary " + esc(summary.summaryId) + "</title>" +
+    "<style>body{font-family:sans-serif;padding:32px;color:#0f172a;max-width:760px;margin:0 auto;}" +
+    ".ps-doc-head{display:flex;justify-content:space-between;border-bottom:2px solid #0f172a;padding-bottom:12px;margin-bottom:16px;}" +
+    ".ps-brand-title{font-size:20px;font-weight:800;}.ps-customer-grid{display:grid;grid-template-columns:1fr 1fr;gap:16px;background:#f8fafc;padding:12px;border:1px solid #cbd5e1;border-radius:8px;margin-bottom:16px;}" +
+    "table{width:100%;border-collapse:collapse;margin-bottom:16px;}th,td{padding:8px;border-bottom:1px solid #cbd5e1;text-align:left;}th.num,td.num{text-align:right;}" +
+    ".ps-totals-box{margin-left:auto;max-width:300px;}.ps-total-row{display:flex;justify-content:space-between;padding:4px 0;}.ps-total-row.grand{border-top:2px solid #0f172a;font-weight:800;font-size:16px;margin-top:6px;padding-top:8px;}" +
+    ".ps-doc-footer{margin-top:20px;padding-top:10px;border-top:1px dashed #94a3b8;display:flex;justify-content:space-between;font-size:12px;color:#64748b;}</style>" +
+    "</head><body>" + sheetEl.innerHTML + "</body></html>";
+
+  var blob = new Blob([docHtml], { type: "text/html;charset=utf-8" });
+  var url = URL.createObjectURL(blob);
+  triggerDownload(url, "voltbox-order-summary-" + summary.summaryId.toLowerCase() + ".html");
+  setTimeout(function () { URL.revokeObjectURL(url); }, 2000);
+
+  var msgEl = document.getElementById("checkout-print-summary-msg");
+  if (msgEl) {
+    msgEl.className = "modal-msg";
+    msgEl.textContent = "✓ Downloaded printable order summary (" + summary.summaryId + ".html).";
+    msgEl.hidden = false;
+  }
+  showActivityToast("Downloaded Order Summary (" + summary.summaryId + ")");
+}
+
+// ── Advanced Settings Controller ──
+
+function loadAdvancedSettings() {
+  try {
+    var raw = localStorage.getItem(ADV_SETTINGS_STORAGE_KEY);
+    var parsed = raw ? JSON.parse(raw) : null;
+    if (window.VoltboxQR && typeof window.VoltboxQR.resolveAdvancedSettings === "function") {
+      window.voltboxAdvSettings = window.VoltboxQR.resolveAdvancedSettings(parsed);
+    } else if (parsed && typeof parsed === "object") {
+      window.voltboxAdvSettings = Object.assign({}, window.voltboxAdvSettings, parsed);
+    }
+  } catch (e) {}
+  applyAdvancedSettingsToDom();
+}
+
+function applyAdvancedSettingsToDom() {
+  var s = window.voltboxAdvSettings;
+  if (!s) return;
+
+  setQrAudioPingEnabled(Boolean(s.audioPingEnabled));
+  document.body.setAttribute("data-grid-density", s.gridDensity === "compact" ? "compact" : "comfortable");
+  document.body.setAttribute("data-bg-anim", s.backgroundAnimationEnabled === false ? "off" : "on");
+  document.body.setAttribute("data-dual-currency", s.showDualCurrencyInr ? "true" : "false");
+
+  var pingToggle = document.getElementById("adv-audio-ping-toggle");
+  var profileSelect = document.getElementById("adv-audio-profile-select");
+  var wishToastToggle = document.getElementById("adv-wishlist-toast-toggle");
+  var toastDurSelect = document.getElementById("adv-toast-duration-select");
+  var parallaxToggle = document.getElementById("adv-parallax-toggle");
+  var bgAnimToggle = document.getElementById("adv-bg-anim-toggle");
+  var densitySelect = document.getElementById("adv-grid-density-select");
+  var dualCurrToggle = document.getElementById("adv-dual-currency-toggle");
+
+  if (pingToggle) pingToggle.checked = Boolean(s.audioPingEnabled);
+  if (profileSelect) profileSelect.value = s.audioPingProfile || "subtle";
+  if (wishToastToggle) wishToastToggle.checked = Boolean(s.wishlistToastsEnabled);
+  if (toastDurSelect) toastDurSelect.value = String(s.toastDurationMs || 3800);
+  if (parallaxToggle) parallaxToggle.checked = Boolean(s.cardParallaxTiltEnabled);
+  if (bgAnimToggle) bgAnimToggle.checked = Boolean(s.backgroundAnimationEnabled);
+  if (densitySelect) densitySelect.value = s.gridDensity || "comfortable";
+  if (dualCurrToggle) dualCurrToggle.checked = Boolean(s.showDualCurrencyInr);
+}
+
+function readAdvancedSettingsFromForm() {
+  var pingToggle = document.getElementById("adv-audio-ping-toggle");
+  var profileSelect = document.getElementById("adv-audio-profile-select");
+  var wishToastToggle = document.getElementById("adv-wishlist-toast-toggle");
+  var toastDurSelect = document.getElementById("adv-toast-duration-select");
+  var parallaxToggle = document.getElementById("adv-parallax-toggle");
+  var bgAnimToggle = document.getElementById("adv-bg-anim-toggle");
+  var densitySelect = document.getElementById("adv-grid-density-select");
+  var dualCurrToggle = document.getElementById("adv-dual-currency-toggle");
+
+  var candidate = {
+    audioPingEnabled: pingToggle ? pingToggle.checked : true,
+    audioPingProfile: profileSelect ? profileSelect.value : "subtle",
+    wishlistToastsEnabled: wishToastToggle ? wishToastToggle.checked : true,
+    toastDurationMs: toastDurSelect ? Number(toastDurSelect.value) : 3800,
+    cardParallaxTiltEnabled: parallaxToggle ? parallaxToggle.checked : true,
+    backgroundAnimationEnabled: bgAnimToggle ? bgAnimToggle.checked : true,
+    gridDensity: densitySelect ? densitySelect.value : "comfortable",
+    showDualCurrencyInr: dualCurrToggle ? dualCurrToggle.checked : false,
+    autoExpandCheckoutSummary: true
+  };
+
+  if (window.VoltboxQR && typeof window.VoltboxQR.resolveAdvancedSettings === "function") {
+    window.voltboxAdvSettings = window.VoltboxQR.resolveAdvancedSettings(candidate);
+  } else {
+    window.voltboxAdvSettings = candidate;
+  }
+
+  try {
+    localStorage.setItem(ADV_SETTINGS_STORAGE_KEY, JSON.stringify(window.voltboxAdvSettings));
+  } catch (e) {}
+
+  applyAdvancedSettingsToDom();
+}
+
+function openAdvancedSettingsModal() {
+  var overlay = document.getElementById("advanced-settings-overlay");
+  if (!overlay) return;
+  closeAllSheets();
+  applyAdvancedSettingsToDom();
+  openModal(overlay);
+}
+
+function closeAdvancedSettingsModal() {
+  var overlay = document.getElementById("advanced-settings-overlay");
+  if (!overlay) return;
+  closeModal(overlay);
+}
+
+function initCheckoutPrintSummaryAndAdvancedSettings() {
+  loadAdvancedSettings();
+
+  // Toast inline buttons (Undo / View Wishlist / Dismiss)
+  var toastDismissBtn = document.getElementById("toast-dismiss-btn");
+  if (toastDismissBtn) {
+    toastDismissBtn.addEventListener("click", dismissActivityToast);
+  }
+
+  var toastUndoBtn = document.getElementById("toast-undo-btn");
+  if (toastUndoBtn) {
+    toastUndoBtn.addEventListener("click", function () {
+      var pid = lastWishlistToastProductId;
+      dismissActivityToast();
+      if (pid) {
+        toggleWishlist(null, pid);
+      }
+    });
+  }
+
+  var toastViewWishBtn = document.getElementById("toast-view-wishlist-btn");
+  if (toastViewWishBtn) {
+    toastViewWishBtn.addEventListener("click", function () {
+      dismissActivityToast();
+      var wishTab = document.querySelector('.filter-tab[data-filter="wishlist"]');
+      if (wishTab) {
+        wishTab.click();
+      }
+    });
+  }
+
+  // Checkout Print Summary buttons
+  var printSummaryBtn = document.getElementById("checkout-print-summary-btn");
+  if (printSummaryBtn) {
+    printSummaryBtn.addEventListener("click", window.openCheckoutPrintSummary);
+  }
+
+  var printSummaryBackBtn = document.getElementById("checkout-print-summary-back-btn");
+  if (printSummaryBackBtn) {
+    printSummaryBackBtn.addEventListener("click", window.closeCheckoutPrintSummary);
+  }
+
+  var printSummaryBackFooterBtn = document.getElementById("checkout-summary-back-footer-btn");
+  if (printSummaryBackFooterBtn) {
+    printSummaryBackFooterBtn.addEventListener("click", window.closeCheckoutPrintSummary);
+  }
+
+  var printSummaryExecBtn = document.getElementById("checkout-summary-print-exec-btn");
+  if (printSummaryExecBtn) {
+    printSummaryExecBtn.addEventListener("click", executeCheckoutPrintSummary);
+  }
+
+  var printSummaryDownloadBtn = document.getElementById("checkout-summary-download-btn");
+  if (printSummaryDownloadBtn) {
+    printSummaryDownloadBtn.addEventListener("click", downloadCheckoutSummaryDocument);
+  }
+
+  // Advanced Settings buttons
+  var topbarSettingsBtn = document.getElementById("topbar-settings-btn");
+  if (topbarSettingsBtn) {
+    topbarSettingsBtn.addEventListener("click", openAdvancedSettingsModal);
+  }
+
+  var profileSettingsBtn = document.getElementById("open-advanced-settings-btn");
+  if (profileSettingsBtn) {
+    profileSettingsBtn.addEventListener("click", openAdvancedSettingsModal);
+  }
+
+  var advCloseBtn = document.getElementById("advanced-settings-close");
+  if (advCloseBtn) {
+    advCloseBtn.addEventListener("click", closeAdvancedSettingsModal);
+  }
+
+  var advOverlay = document.getElementById("advanced-settings-overlay");
+  if (advOverlay) {
+    advOverlay.addEventListener("click", function (e) {
+      if (e.target === advOverlay) closeAdvancedSettingsModal();
+    });
+  }
+
+  var advDoneBtn = document.getElementById("adv-settings-done-btn");
+  if (advDoneBtn) {
+    advDoneBtn.addEventListener("click", function () {
+      readAdvancedSettingsFromForm();
+      closeAdvancedSettingsModal();
+      showActivityToast("Advanced storefront settings saved & applied!");
+    });
+  }
+
+  var advResetBtn = document.getElementById("adv-reset-defaults-btn");
+  if (advResetBtn) {
+    advResetBtn.addEventListener("click", function () {
+      window.voltboxAdvSettings = (window.VoltboxQR && window.VoltboxQR.DEFAULT_ADVANCED_SETTINGS)
+        ? Object.assign({}, window.VoltboxQR.DEFAULT_ADVANCED_SETTINGS)
+        : {
+            audioPingEnabled: true,
+            audioPingProfile: "subtle",
+            wishlistToastsEnabled: true,
+            toastDurationMs: 3800,
+            cardParallaxTiltEnabled: true,
+            backgroundAnimationEnabled: true,
+            gridDensity: "comfortable",
+            showDualCurrencyInr: false,
+            autoExpandCheckoutSummary: true
+          };
+      try {
+        localStorage.setItem(ADV_SETTINGS_STORAGE_KEY, JSON.stringify(window.voltboxAdvSettings));
+      } catch (e) {}
+      applyAdvancedSettingsToDom();
+      showActivityToast("Advanced settings restored to studio defaults.");
+    });
+  }
+
+  var advTestPingBtn = document.getElementById("adv-test-ping-btn");
+  if (advTestPingBtn) {
+    advTestPingBtn.addEventListener("click", function () {
+      readAdvancedSettingsFromForm();
+      initOrResumeQrAudioContext();
+      playScanSuccessChime(true);
+      showActivityToast("Previewed '" + (window.voltboxAdvSettings.audioPingProfile || "subtle") + "' acoustic ping!");
+    });
+  }
+
+  // Live change sync inside Advanced Settings modal
+  var advInputs = [
+    "adv-audio-ping-toggle",
+    "adv-audio-profile-select",
+    "adv-wishlist-toast-toggle",
+    "adv-toast-duration-select",
+    "adv-parallax-toggle",
+    "adv-bg-anim-toggle",
+    "adv-grid-density-select",
+    "adv-dual-currency-toggle"
+  ];
+  for (var k = 0; k < advInputs.length; k++) {
+    var el = document.getElementById(advInputs[k]);
+    if (el) {
+      el.addEventListener("change", readAdvancedSettingsFromForm);
+    }
+  }
+}
+
 
 

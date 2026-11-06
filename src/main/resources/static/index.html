@@ -148,6 +148,12 @@
           <span class="badge messenger-badge" id="messenger-badge" hidden>0</span>
         </button>
 
+        <!-- Advanced Storefront Settings Button -->
+        <button class="icon-btn settings-trigger-btn" id="topbar-settings-btn" type="button"
+                aria-label="Advanced Settings" title="Storefront Advanced Settings">
+          <span data-icon="sliders"></span>
+        </button>
+
         <!-- ── the admin / community panel — what's inside depends on your
              role (member, contributor, or moderator). built by community.js ── -->
         <div class="drop" id="admin-drop" hidden>
@@ -313,6 +319,13 @@
                 <span>Track Active Order</span>
               </button>
 
+              <!-- Advanced Storefront Settings Button -->
+              <button class="sheet-btn ghost wide" id="open-advanced-settings-btn" type="button"
+                      aria-label="Advanced Settings" style="display:flex;align-items:center;justify-content:center;gap:8px;margin-bottom:8px;">
+                <span data-icon="sliders" data-icon-size="14"></span>
+                <span>Advanced Settings</span>
+              </button>
+
               <!-- Switch User / Admin Login Link -->
               <a href="login.html?switch=1" class="sheet-btn ghost wide" id="topbar-role-badge"
                  title="User Login / Admin Login" style="display:flex;align-items:center;justify-content:center;gap:8px;text-decoration:none;margin-bottom:8px;">
@@ -463,6 +476,12 @@
             </button>
           </div>
 
+          <button type="button" class="compare-all-visible-btn" id="compare-all-visible-btn" data-testid="compare-all-visible-btn" aria-label="Compare all visible products" title="Add all currently filtered products (up to 4) to the comparison tool">
+            <span data-icon="sliders" data-icon-size="14"></span>
+            <span class="compare-all-visible-label" id="compare-all-visible-label">Compare All Visible</span>
+            <span class="compare-all-visible-badge" id="compare-all-visible-badge">4/4</span>
+          </button>
+
           <button class="rig-trigger-btn" id="rig-builder-btn" aria-label="Open Rig Builder">
             <span data-icon="cpu" data-icon-size="15"></span>
             <span>Build a Rig</span>
@@ -612,10 +631,21 @@
     </button>
   </nav>
 
-  <!-- Live Restock & Contributor Activity Feed Toast -->
-  <div class="activity-toast" id="live-activity-toast" role="status" aria-live="polite" hidden>
-    <span class="activity-toast-icon" data-icon="refresh" data-icon-size="14"></span>
-    <span id="live-activity-text">Live catalog update</span>
+  <!-- Live Restock, Wishlist & Contributor Activity Feed Toast -->
+  <div class="activity-toast" id="live-activity-toast" data-testid="live-activity-toast" role="status" aria-live="polite" hidden>
+    <span class="activity-toast-icon" id="live-activity-icon" data-icon="refresh" data-icon-size="15"></span>
+    <div class="activity-toast-content">
+      <div class="activity-toast-top-row" id="live-activity-badge-row" hidden>
+        <span class="activity-toast-badge" id="live-activity-badge">Saved to Wishlist</span>
+      </div>
+      <span class="activity-toast-headline" id="live-activity-text">Live catalog update</span>
+      <span class="activity-toast-subline" id="live-activity-subtext" hidden></span>
+    </div>
+    <div class="activity-toast-actions" id="live-activity-actions" hidden>
+      <button type="button" class="toast-inline-btn" id="toast-undo-btn" aria-label="Undo wishlist change">Undo</button>
+      <button type="button" class="toast-inline-btn ghost" id="toast-view-wishlist-btn" aria-label="Filter by wishlist">View</button>
+    </div>
+    <button type="button" class="toast-dismiss-btn" id="toast-dismiss-btn" aria-label="Dismiss notification">&times;</button>
   </div>
 
   <!-- PC Build / Compatibility Bundle Mode ("Rig Builder") Drawer -->
@@ -996,11 +1026,49 @@
 
         <p class="modal-msg" id="checkout-msg" hidden></p>
         <div class="checkout-primary-actions">
+          <button type="button" class="modal-btn ghost checkout-print-summary-btn" id="checkout-print-summary-btn" data-testid="checkout-print-summary-btn" aria-label="Print Summary">
+            <span data-icon="printer" data-icon-size="16"></span>
+            <span>Print Summary</span>
+          </button>
           <button type="button" class="modal-btn upi-cta-secondary" id="checkout-pay-via-upi-btn" aria-label="Pay via UPI QR">
             <span data-icon="qr-code" data-icon-size="16"></span>
             <span>Pay via UPI</span>
           </button>
           <button class="modal-btn solid" id="checkout-pay">Pay Now</button>
+        </div>
+      </div>
+
+      <!-- Printable Pre-Purchase Order Summary View (PDF & Print Ready) -->
+      <div class="checkout-print-summary-view" id="checkout-print-summary-view" data-testid="checkout-print-summary-view" role="region" aria-label="Printable Order Summary" hidden>
+        <div class="print-summary-toolbar no-print">
+          <div class="print-summary-toolbar-left">
+            <span class="checkout-kicker">PRINTABLE PROFORMA ESTIMATE</span>
+            <h3 class="print-summary-heading">Order Summary &amp; Cost Breakdown</h3>
+          </div>
+          <button type="button" class="upi-overlay-close-btn" id="checkout-print-summary-back-btn" aria-label="Back to Checkout">
+            <span data-icon="x" data-icon-size="15"></span>
+            <span>Back to Checkout</span>
+          </button>
+        </div>
+
+        <div class="print-summary-sheet" id="checkout-print-summary-sheet" data-testid="checkout-print-summary-sheet">
+          <!-- Populated dynamically by renderCheckoutPrintSummarySheet() in app.js -->
+        </div>
+
+        <p class="modal-msg no-print" id="checkout-print-summary-msg" hidden></p>
+
+        <div class="print-summary-actions no-print">
+          <button type="button" class="modal-btn ghost" id="checkout-summary-back-footer-btn">
+            <span>&larr; Edit Order</span>
+          </button>
+          <button type="button" class="modal-btn ghost" id="checkout-summary-download-btn" data-testid="checkout-summary-download-btn" aria-label="Download Printable Summary HTML">
+            <span data-icon="download" data-icon-size="15"></span>
+            <span>Download Summary</span>
+          </button>
+          <button type="button" class="modal-btn solid" id="checkout-summary-print-exec-btn" data-testid="checkout-summary-print-exec-btn" aria-label="Print or Save Summary as PDF">
+            <span data-icon="printer" data-icon-size="16"></span>
+            <span>Print / Save as PDF</span>
+          </button>
         </div>
       </div>
 
@@ -1846,6 +1914,154 @@
         </div>
         <div class="price-alert-email-subject" id="price-alert-email-subject">Subject: Price Drop Alert</div>
         <pre class="price-alert-email-body" id="price-alert-email-body"></pre>
+      </div>
+    </div>
+  </div>
+
+  <!-- Storefront Advanced Settings Modal -->
+  <div class="modal-overlay" id="advanced-settings-overlay" aria-hidden="true">
+    <div class="modal-card adv-settings-modal" id="advanced-settings-modal" role="dialog" aria-modal="true" aria-label="Advanced Storefront Settings">
+      <button class="modal-close" id="advanced-settings-close" aria-label="Close Advanced Settings">
+        <span data-icon="x" data-icon-size="18"></span>
+      </button>
+
+      <div class="adv-settings-head">
+        <span class="checkout-kicker">VOLTBOX STUDIO CONFIGURATION</span>
+        <h2 class="modal-title">Advanced Settings</h2>
+        <p class="modal-text">Customize acoustic feedback, toast notifications, visual telemetry, and catalog ergonomics.</p>
+      </div>
+
+      <div class="adv-settings-body">
+        <!-- Section 1: Acoustic & Haptic Feedback -->
+        <div class="adv-settings-group">
+          <div class="adv-group-title">
+            <span data-icon="volume-2" data-icon-size="14"></span>
+            <span>Acoustic &amp; Scanner Feedback</span>
+          </div>
+
+          <div class="adv-setting-row">
+            <div class="adv-setting-info">
+              <strong>QR Scanner &amp; Action Audio Ping</strong>
+              <span>Play a subtle harmonic chime when a product QR code is detected</span>
+            </div>
+            <label class="adv-switch">
+              <input type="checkbox" id="adv-audio-ping-toggle" checked aria-label="Enable QR Scanner Audio Ping" />
+              <span class="adv-slider"></span>
+            </label>
+          </div>
+
+          <div class="adv-setting-row">
+            <div class="adv-setting-info">
+              <strong>Acoustic Chime Profile</strong>
+              <span>Choose the harmonic frequency profile for scan confirmation</span>
+            </div>
+            <div class="adv-inline-controls">
+              <select id="adv-audio-profile-select" class="adv-select" aria-label="Acoustic Chime Profile">
+                <option value="subtle">Subtle Studio (C6 / G6)</option>
+                <option value="crystal">Crystal Harmonic (E6 / C7)</option>
+                <option value="classic">Classic Hardware (A5 / E6)</option>
+              </select>
+              <button type="button" class="adv-mini-btn" id="adv-test-ping-btn" title="Preview selected chime">
+                <span data-icon="zap" data-icon-size="12"></span>
+                <span>Preview</span>
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <!-- Section 2: Toast Notifications -->
+        <div class="adv-settings-group">
+          <div class="adv-group-title">
+            <span data-icon="heart" data-icon-size="14"></span>
+            <span>Wishlist &amp; Activity Notifications</span>
+          </div>
+
+          <div class="adv-setting-row">
+            <div class="adv-setting-info">
+              <strong>Subtle Wishlist Confirmation Toasts</strong>
+              <span>Show immediate non-modal confirmation when saving or removing wishlist parts</span>
+            </div>
+            <label class="adv-switch">
+              <input type="checkbox" id="adv-wishlist-toast-toggle" checked aria-label="Enable Wishlist Toast Notifications" />
+              <span class="adv-slider"></span>
+            </label>
+          </div>
+
+          <div class="adv-setting-row">
+            <div class="adv-setting-info">
+              <strong>Notification Display Duration</strong>
+              <span>How long subtle toast confirmations stay visible on screen</span>
+            </div>
+            <select id="adv-toast-duration-select" class="adv-select" aria-label="Toast Notification Display Duration">
+              <option value="2500">Fast (2.5 seconds)</option>
+              <option value="3800" selected>Standard (3.8 seconds)</option>
+              <option value="5500">Extended (5.5 seconds)</option>
+            </select>
+          </div>
+        </div>
+
+        <!-- Section 3: Visual & Catalog Ergonomics -->
+        <div class="adv-settings-group">
+          <div class="adv-group-title">
+            <span data-icon="cpu" data-icon-size="14"></span>
+            <span>Visual &amp; Catalog Ergonomics</span>
+          </div>
+
+          <div class="adv-setting-row">
+            <div class="adv-setting-info">
+              <strong>3D Card Parallax Tilt</strong>
+              <span>Interactive perspective tilt on desktop product cards</span>
+            </div>
+            <label class="adv-switch">
+              <input type="checkbox" id="adv-parallax-toggle" checked aria-label="Enable 3D Card Parallax Tilt" />
+              <span class="adv-slider"></span>
+            </label>
+          </div>
+
+          <div class="adv-setting-row">
+            <div class="adv-setting-info">
+              <strong>Quantum Silicon Background Traces</strong>
+              <span>Animate ambient PCB signal pulses and wafer grid</span>
+            </div>
+            <label class="adv-switch">
+              <input type="checkbox" id="adv-bg-anim-toggle" checked aria-label="Enable Background Circuit Animation" />
+              <span class="adv-slider"></span>
+            </label>
+          </div>
+
+          <div class="adv-setting-row">
+            <div class="adv-setting-info">
+              <strong>Catalog Grid Density</strong>
+              <span>Adjust spacing and card compactness across the catalog grid</span>
+            </div>
+            <select id="adv-grid-density-select" class="adv-select" aria-label="Catalog Grid Density">
+              <option value="comfortable" selected>Comfortable (Default)</option>
+              <option value="compact">Compact Bench View</option>
+            </select>
+          </div>
+
+          <div class="adv-setting-row">
+            <div class="adv-setting-info">
+              <strong>Dual Currency Display (USD + ₹ INR)</strong>
+              <span>Show approximate INR conversion alongside USD component prices</span>
+            </div>
+            <label class="adv-switch">
+              <input type="checkbox" id="adv-dual-currency-toggle" aria-label="Show Dual Currency USD and INR" />
+              <span class="adv-slider"></span>
+            </label>
+          </div>
+        </div>
+      </div>
+
+      <div class="adv-settings-footer">
+        <button type="button" class="modal-btn ghost" id="adv-reset-defaults-btn">
+          <span data-icon="refresh" data-icon-size="14"></span>
+          <span>Reset Defaults</span>
+        </button>
+        <button type="button" class="modal-btn solid" id="adv-settings-done-btn">
+          <span data-icon="check" data-icon-size="15"></span>
+          <span>Save &amp; Apply</span>
+        </button>
       </div>
     </div>
   </div>
