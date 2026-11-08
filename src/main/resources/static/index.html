@@ -36,6 +36,20 @@
 </head>
 <body data-ui-theme="obsidian" data-bg-mode="quantum">
 
+  <!-- Google Maps Platform Demo Quota Notification Banner (Tier 1 & Tier 2 Listener Target) -->
+  <div class="gmp-quota-banner" id="gmp-quota-banner" data-testid="gmp-quota-banner" role="alert" hidden>
+    <span>
+      Google Maps Platform quota reached. If you are the app owner, visit
+      <a
+        href="https://developers.google.com/maps/ai/ai-studio?utm_campaign=gmp_mcp_codeassist_v1_aistudio#quota_exceeded_errors"
+        target="_blank"
+        rel="noopener noreferrer"
+        class="gmp-quota-link"
+      >maps developer site</a>
+      for instructions to update your account.
+    </span>
+  </div>
+
   <!-- Offline Connectivity Indicator Banner -->
   <div class="offline-banner" id="offline-banner" role="status" aria-live="polite" hidden>
     <span class="led-dot amber"></span>
@@ -139,6 +153,22 @@
           <span data-icon="sliders" data-icon-size="14"></span>
           <span class="compare-btn-text">Compare</span>
           <span class="compare-badge" id="compare-badge" hidden>0</span>
+        </button>
+
+        <!-- Full Order History Page Trigger Button -->
+        <button class="topbar-pill-btn orders-pill-btn" id="topbar-orders-btn" data-testid="topbar-orders-btn" type="button"
+                aria-label="Order History & Receipts" title="View Full Order History Page, Receipts & Item Breakdowns">
+          <span data-icon="clipboard-check" data-icon-size="14"></span>
+          <span class="orders-btn-text">Orders</span>
+          <span class="orders-badge" id="topbar-orders-badge" data-testid="topbar-orders-badge">0</span>
+        </button>
+
+        <!-- Google Maps Platform Store & Pickup Hub Locator Button -->
+        <button class="topbar-pill-btn maps-pill-btn" id="topbar-maps-btn" data-testid="topbar-maps-btn" type="button"
+                onclick="openVoltboxMapsModal()"
+                aria-label="Store & Pickup Hub Locator Map" title="Open Google Maps Store & Pickup Hub Locator">
+          <span data-icon="globe" data-icon-size="14"></span>
+          <span class="maps-btn-text">Store Map</span>
         </button>
 
         <!-- Real-Time Bench Messenger Button -->
@@ -312,6 +342,13 @@
             <div class="sheet-divider"></div>
 
             <div class="profile-actions-stack">
+              <!-- Full Order History Page Button -->
+              <button class="sheet-btn solid wide" id="open-order-history-page-btn" data-testid="open-order-history-page-btn" type="button"
+                      aria-label="Open Full Order History Page" style="display:flex;align-items:center;justify-content:center;gap:8px;margin-bottom:8px;">
+                <span data-icon="clipboard-check" data-icon-size="14"></span>
+                <span>Full Order History Page</span>
+              </button>
+
               <!-- Live Order Tracking Button -->
               <button class="sheet-btn ghost wide" id="open-tracking-btn" type="button"
                       aria-label="Track Active Order" style="display:flex;align-items:center;justify-content:center;gap:8px;margin-bottom:8px;color:#38bdf8;border-color:#0284c7;">
@@ -424,7 +461,7 @@
     </section>
 
     <!-- Category Filter Bar, Sort Controls, View Mode Toggle & Quick Budget Strip -->
-    <section class="catalog-toolbar" aria-label="Catalog filters and tools">
+    <section class="catalog-toolbar" id="catalog-toolbar-section" aria-label="Catalog filters and tools">
       <div class="catalog-toolbar-top">
         <div class="filter-bar" id="category-filters" role="tablist" aria-label="Filter by category">
           <button class="filter-tab active" data-filter="all" role="tab" aria-selected="true">All</button>
@@ -440,73 +477,81 @@
           </button>
         </div>
 
-        <div class="toolbar-actions">
-          <label class="sort-wrap" for="sort-select">
-            <span class="sort-label" data-icon="sliders" data-icon-size="14"></span>
-            <select id="sort-select" aria-label="Sort products">
-              <option value="featured">Sort: Featured</option>
-              <option value="best-deal">Discount: Best Deals (6M Drop)</option>
-              <option value="price-asc">Price: Low → High</option>
-              <option value="price-desc">Price: High → Low</option>
-              <option value="rating-desc">Rating: Highest First</option>
-              <option value="stock-asc">Stock: Lowest First</option>
-            </select>
-          </label>
-
-          <div class="view-toggle-group" role="group" aria-label="Catalog layout view">
-            <button type="button" class="view-toggle-btn active" id="view-grid-btn" data-view-mode="grid" aria-pressed="true" title="Grid card view" aria-label="Grid card view">
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-                <rect x="3" y="3" width="7" height="7" rx="1.5"></rect>
-                <rect x="14" y="3" width="7" height="7" rx="1.5"></rect>
-                <rect x="14" y="14" width="7" height="7" rx="1.5"></rect>
-                <rect x="3" y="14" width="7" height="7" rx="1.5"></rect>
-              </svg>
-              <span>Grid</span>
-            </button>
-            <button type="button" class="view-toggle-btn" id="view-list-btn" data-view-mode="list" aria-pressed="false" title="Compact spec list view" aria-label="Compact spec list view">
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-                <line x1="8" y1="6" x2="21" y2="6"></line>
-                <line x1="8" y1="12" x2="21" y2="12"></line>
-                <line x1="8" y1="18" x2="21" y2="18"></line>
-                <line x1="3" y1="6" x2="3.01" y2="6"></line>
-                <line x1="3" y1="12" x2="3.01" y2="12"></line>
-                <line x1="3" y1="18" x2="3.01" y2="18"></line>
-              </svg>
-              <span>List</span>
-            </button>
+        <div class="catalog-control-bar">
+          <div class="catalog-results-meta" id="catalog-results-meta" data-testid="catalog-results-meta">
+            <span class="results-dot"></span>
+            <span>Showing <strong id="catalog-visible-count">0</strong> of <strong id="catalog-total-count">0</strong> components</span>
+            <div class="catalog-keyboard-hint" id="catalog-keyboard-hint" title="Use Arrow keys to navigate cards, Enter/Space to view specs, +/- for cart, C to compare">
+              <span class="kbd-label">Keys:</span>
+              <kbd class="kbd-key">&larr;&rarr;&uarr;&darr;</kbd>
+              <span class="kbd-action">Move</span>
+              <span class="kbd-sep">&middot;</span>
+              <kbd class="kbd-key">Enter</kbd>
+              <span class="kbd-action">Select</span>
+              <span class="kbd-sep">&middot;</span>
+              <kbd class="kbd-key">&plus;</kbd>
+              <span class="kbd-action">Cart</span>
+            </div>
           </div>
 
-          <button type="button" class="compare-all-visible-btn" id="compare-all-visible-btn" data-testid="compare-all-visible-btn" aria-label="Compare all visible products" title="Add all currently filtered products (up to 4) to the comparison tool">
-            <span data-icon="sliders" data-icon-size="14"></span>
-            <span class="compare-all-visible-label" id="compare-all-visible-label">Compare All Visible</span>
-            <span class="compare-all-visible-badge" id="compare-all-visible-badge">4/4</span>
-          </button>
+          <div class="toolbar-actions">
+            <label class="sort-wrap" for="sort-select">
+              <span class="sort-label" data-icon="sliders" data-icon-size="14"></span>
+              <select id="sort-select" aria-label="Sort products">
+                <option value="featured">Sort: Featured</option>
+                <option value="best-deal">Discount: Best Deals (6M Drop)</option>
+                <option value="price-asc">Price: Low → High</option>
+                <option value="price-desc">Price: High → Low</option>
+                <option value="rating-desc">Rating: Highest First</option>
+                <option value="stock-asc">Stock: Lowest First</option>
+              </select>
+            </label>
 
-          <button class="rig-trigger-btn" id="rig-builder-btn" aria-label="Open Rig Builder">
-            <span data-icon="cpu" data-icon-size="15"></span>
-            <span>Build a Rig</span>
-            <span class="rig-progress-text" id="rig-builder-count">0/4</span>
-          </button>
+            <div class="view-toggle-group" role="group" aria-label="Catalog layout view">
+              <button type="button" class="view-toggle-btn active" id="view-grid-btn" data-view-mode="grid" aria-pressed="true" title="Grid card view" aria-label="Grid card view">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                  <rect x="3" y="3" width="7" height="7" rx="1.5"></rect>
+                  <rect x="14" y="3" width="7" height="7" rx="1.5"></rect>
+                  <rect x="14" y="14" width="7" height="7" rx="1.5"></rect>
+                  <rect x="3" y="14" width="7" height="7" rx="1.5"></rect>
+                </svg>
+                <span>Grid</span>
+              </button>
+              <button type="button" class="view-toggle-btn" id="view-list-btn" data-view-mode="list" aria-pressed="false" title="Compact spec list view" aria-label="Compact spec list view">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                  <line x1="8" y1="6" x2="21" y2="6"></line>
+                  <line x1="8" y1="12" x2="21" y2="12"></line>
+                  <line x1="8" y1="18" x2="21" y2="18"></line>
+                  <line x1="3" y1="6" x2="3.01" y2="6"></line>
+                  <line x1="3" y1="12" x2="3.01" y2="12"></line>
+                  <line x1="3" y1="18" x2="3.01" y2="18"></line>
+                </svg>
+                <span>List</span>
+              </button>
+            </div>
+
+            <button type="button" class="compare-all-visible-btn" id="compare-all-visible-btn" data-testid="compare-all-visible-btn" aria-label="Compare all visible products" title="Add all currently filtered products (up to 4) to the comparison tool">
+              <span data-icon="sliders" data-icon-size="14"></span>
+              <span class="compare-all-visible-label" id="compare-all-visible-label">Compare All Visible</span>
+              <span class="compare-all-visible-badge" id="compare-all-visible-badge">4/4</span>
+            </button>
+
+            <button type="button" class="catalog-batch-edit-btn" id="catalog-batch-edit-btn" data-testid="catalog-batch-edit-btn" aria-pressed="false" aria-label="Toggle Admin Batch Edit Mode" title="Select multiple products in the catalog grid and apply bulk price updates or stock adjustments in a single transaction">
+              <span data-icon="check" data-icon-size="14"></span>
+              <span class="batch-edit-btn-label">Batch Edit</span>
+              <span class="batch-edit-btn-count" id="catalog-batch-edit-count">0</span>
+            </button>
+
+            <button class="rig-trigger-btn" id="rig-builder-btn" aria-label="Open Rig Builder">
+              <span data-icon="cpu" data-icon-size="15"></span>
+              <span>Build a Rig</span>
+              <span class="rig-progress-text" id="rig-builder-count">0/4</span>
+            </button>
+          </div>
         </div>
       </div>
 
       <div class="catalog-subbar" id="catalog-subbar" aria-label="Quick stock, budget filters and result count">
-        <div class="catalog-results-meta" id="catalog-results-meta" data-testid="catalog-results-meta">
-          <span class="results-dot"></span>
-          <span>Showing <strong id="catalog-visible-count">0</strong> of <strong id="catalog-total-count">0</strong> components</span>
-          <div class="catalog-keyboard-hint" id="catalog-keyboard-hint" title="Use Arrow keys to navigate cards, Enter/Space to view specs, +/- for cart, C to compare">
-            <span class="kbd-label">Keys:</span>
-            <kbd class="kbd-key">&larr;&rarr;&uarr;&darr;</kbd>
-            <span class="kbd-action">Move</span>
-            <span class="kbd-sep">&middot;</span>
-            <kbd class="kbd-key">Enter</kbd>
-            <span class="kbd-action">Select</span>
-            <span class="kbd-sep">&middot;</span>
-            <kbd class="kbd-key">&plus;</kbd>
-            <span class="kbd-action">Cart</span>
-          </div>
-        </div>
-
         <div class="catalog-quick-filters-wrap">
           <button type="button" class="catalog-best-deal-pill" id="catalog-best-deal-pill" data-testid="catalog-best-deal-pill" aria-pressed="false" title="Sort components by highest percentage drop relative to 6-month historical average">
             <span class="deal-fire-icon" aria-hidden="true">🔥</span>
@@ -548,12 +593,209 @@
 
     <!-- product cards get dumped in here by app.js -->
     <main>
+      <!-- ── Admin Catalog Batch Edit Mode Console (Multi-Select Price & Stock Single-Transaction Editor) ── -->
+      <section class="catalog-batch-edit-panel" id="catalog-batch-edit-panel" data-testid="catalog-batch-edit-panel" aria-label="Admin Batch Edit Console" hidden>
+        <div class="cbe-header">
+          <div class="cbe-header-left">
+            <span class="cbe-kicker">ADMIN BATCH EDIT MODE · SINGLE-TRANSACTION BULK MUTATION</span>
+            <div class="cbe-title-row">
+              <h2 class="cbe-title">Catalog Bulk Price &amp; Stock Editor</h2>
+              <span class="cbe-sel-counter" id="catalog-batch-sel-summary">
+                <strong id="catalog-batch-selected-count" data-testid="catalog-batch-selected-count">0</strong>
+                <span>products selected in grid</span>
+              </span>
+            </div>
+          </div>
+
+          <div class="cbe-header-actions">
+            <button type="button" class="cbe-quick-btn" id="catalog-batch-select-all-btn" data-testid="catalog-batch-select-all-btn">Select All Visible</button>
+            <button type="button" class="cbe-quick-btn" id="catalog-batch-select-low-btn" data-testid="catalog-batch-select-low-btn">Select Low Stock (&lt; 5)</button>
+            <button type="button" class="cbe-quick-btn" id="catalog-batch-clear-btn" data-testid="catalog-batch-clear-btn">Clear Selection</button>
+            <button type="button" class="cbe-quick-btn close" id="catalog-batch-close-btn" data-testid="catalog-batch-close-btn" aria-label="Exit Batch Edit Mode">Exit Batch Mode ✕</button>
+          </div>
+        </div>
+
+        <form class="cbe-form-grid" id="catalog-batch-form" data-testid="catalog-batch-form" onsubmit="submitCatalogBatchEditTransaction(event)" novalidate>
+          <!-- 1. Bulk Price Operation -->
+          <div class="cbe-control-block">
+            <label for="catalog-batch-price-mode" class="cbe-field-label">Bulk Price Operation</label>
+            <div class="cbe-input-pair">
+              <select id="catalog-batch-price-mode" data-testid="catalog-batch-price-mode" class="cbe-select">
+                <option value="none">No Price Change</option>
+                <option value="percent">Percentage Change (+/− %)</option>
+                <option value="delta">Fixed Dollar Offset (+/− $)</option>
+                <option value="set">Set Exact Unit Price ($)</option>
+              </select>
+              <input type="number" id="catalog-batch-price-value" data-testid="catalog-batch-price-value" class="cbe-number-input" step="0.01" placeholder="Unchanged" aria-label="Bulk price value" disabled />
+            </div>
+            <div class="cbe-presets-row">
+              <button type="button" class="cbe-preset-btn" onclick="applyCatalogBatchPricePreset('percent', -10)">−10% Sale</button>
+              <button type="button" class="cbe-preset-btn" onclick="applyCatalogBatchPricePreset('percent', -5)">−5% Drop</button>
+              <button type="button" class="cbe-preset-btn" onclick="applyCatalogBatchPricePreset('percent', 5)">+5% Markup</button>
+              <button type="button" class="cbe-preset-btn" onclick="applyCatalogBatchPricePreset('delta', -15)">−$15.00</button>
+            </div>
+          </div>
+
+          <!-- 2. Bulk Stock Operation -->
+          <div class="cbe-control-block">
+            <label for="catalog-batch-stock-mode" class="cbe-field-label">Bulk Stock Adjustment</label>
+            <div class="cbe-input-pair">
+              <select id="catalog-batch-stock-mode" data-testid="catalog-batch-stock-mode" class="cbe-select">
+                <option value="none">No Stock Change</option>
+                <option value="delta">Adjust Stock Delta (+/− units)</option>
+                <option value="set">Set Exact Stock Quantity</option>
+              </select>
+              <input type="number" id="catalog-batch-stock-value" data-testid="catalog-batch-stock-value" class="cbe-number-input" step="1" placeholder="Unchanged" aria-label="Bulk stock value" disabled />
+            </div>
+            <div class="cbe-presets-row">
+              <button type="button" class="cbe-preset-btn" onclick="applyCatalogBatchStockPreset('delta', 5)">+5 Units</button>
+              <button type="button" class="cbe-preset-btn" onclick="applyCatalogBatchStockPreset('delta', 10)">+10 Units</button>
+              <button type="button" class="cbe-preset-btn" onclick="applyCatalogBatchStockPreset('delta', -2)">−2 Units</button>
+              <button type="button" class="cbe-preset-btn" onclick="applyCatalogBatchStockPreset('set', 15)">Set to 15</button>
+            </div>
+          </div>
+
+          <!-- 3. Audit Note & Single-Transaction Commit -->
+          <div class="cbe-control-block cbe-commit-block">
+            <label for="catalog-batch-reason" class="cbe-field-label">Transaction Audit Reason</label>
+            <div class="cbe-commit-row">
+              <input type="text" id="catalog-batch-reason" data-testid="catalog-batch-reason" class="cbe-text-input" placeholder="e.g. Q4 Flash Sale &amp; Warehouse Replenishment" />
+              <button type="submit" class="cbe-submit-btn" id="catalog-batch-submit-btn" data-testid="catalog-batch-submit-btn">
+                <span>Apply Batch Transaction</span>
+              </button>
+            </div>
+            <div class="cbe-preview-strip" id="catalog-batch-preview-strip" data-testid="catalog-batch-preview-strip">
+              Click any product cards in the catalog grid below (or use <strong>Select All Visible</strong>) to select items for bulk editing.
+            </div>
+          </div>
+        </form>
+
+        <p class="cbe-status-msg" id="catalog-batch-status-msg" data-testid="catalog-batch-status-msg" role="status" hidden></p>
+      </section>
+
       <div class="grid" id="product-grid" role="region" aria-label="Component Catalog Grid" tabindex="-1">
         <div class="loading" id="loading">
           <div class="spinner"></div>
           <p>loading products…</p>
         </div>
       </div>
+
+      <!-- ── Dedicated Full Order History Page (Past Purchases, Receipt Details, Order Status & Item Breakdowns) ── -->
+      <section class="order-history-page" id="order-history-page" data-testid="order-history-page" aria-label="Full Order History &amp; Receipts" hidden>
+        <!-- Page Top Header -->
+        <div class="oh-page-header">
+          <div class="oh-page-header-left">
+            <button type="button" class="oh-back-btn" id="order-history-back-btn" data-testid="order-history-back-btn" aria-label="Back to Component Catalog">
+              <span aria-hidden="true">&larr;</span>
+              <span>Back to Catalog</span>
+            </button>
+            <div class="oh-title-block">
+              <div class="oh-kicker-row">
+                <span class="oh-kicker">PURCHASE LEDGER &amp; FULFILLMENT ARCHIVE</span>
+                <span class="oh-live-pill">
+                  <span class="oh-live-dot"></span>
+                  <span>BACKEND SYNCED</span>
+                </span>
+              </div>
+              <h2 class="oh-page-title">Order History &amp; Verified Receipts</h2>
+              <p class="oh-page-subtitle">Inspect past purchases, itemized SKU cost breakdowns, scannable thermal receipts, and real-time 4-stage shipment statuses.</p>
+            </div>
+          </div>
+          <div class="oh-page-header-actions">
+            <button type="button" class="oh-action-btn ghost" id="oh-refresh-btn" data-testid="oh-refresh-btn" title="Refresh orders from backend">
+              <span data-icon="refresh" data-icon-size="14"></span>
+              <span>Refresh</span>
+            </button>
+            <button type="button" class="oh-action-btn primary" id="oh-track-latest-btn" data-testid="oh-track-latest-btn" title="Open live tracking dashboard for most recent order">
+              <span data-icon="truck" data-icon-size="14"></span>
+              <span>Track Latest Order</span>
+            </button>
+          </div>
+        </div>
+
+        <!-- Summary Analytics Ribbon -->
+        <div class="oh-metrics-grid" id="oh-metrics-grid" data-testid="oh-metrics-grid" role="region" aria-label="Order History Summary Metrics">
+          <div class="oh-metric-card">
+            <span class="oh-metric-kicker">TOTAL PURCHASES</span>
+            <strong class="oh-metric-val" id="oh-metric-orders" data-testid="oh-metric-orders">0 Orders</strong>
+            <span class="oh-metric-sub" id="oh-metric-orders-sub">Verified tax invoices</span>
+          </div>
+          <div class="oh-metric-card">
+            <span class="oh-metric-kicker">LIFETIME HARDWARE SPEND</span>
+            <strong class="oh-metric-val accent-gold" id="oh-metric-spend" data-testid="oh-metric-spend">$0.00</strong>
+            <span class="oh-metric-sub" id="oh-metric-spend-sub">Includes 8.25% ESD &amp; GST tax</span>
+          </div>
+          <div class="oh-metric-card">
+            <span class="oh-metric-kicker">COMPONENTS ACQUIRED</span>
+            <strong class="oh-metric-val accent-cyan" id="oh-metric-items" data-testid="oh-metric-items">0 Units</strong>
+            <span class="oh-metric-sub" id="oh-metric-items-sub">Across verified hardware SKUs</span>
+          </div>
+          <div class="oh-metric-card">
+            <span class="oh-metric-kicker">AVERAGE ORDER &amp; SAVINGS</span>
+            <strong class="oh-metric-val accent-emerald" id="oh-metric-avg" data-testid="oh-metric-avg">$0.00 avg</strong>
+            <span class="oh-metric-sub" id="oh-metric-saved">Bundle &amp; promo discounts applied</span>
+          </div>
+        </div>
+
+        <!-- Search, Status Stage Filter & Sort Controls -->
+        <div class="oh-controls-bar" role="region" aria-label="Filter and search order history">
+          <div class="oh-search-box">
+            <span class="oh-search-icon" data-icon="search" data-icon-size="15"></span>
+            <input type="search" id="oh-search-input" data-testid="oh-search-input"
+                   placeholder="Search Order ID (#VB-C31B), SKU, component, or payment…"
+                   aria-label="Search past orders" autocomplete="off" spellcheck="false" />
+            <button type="button" class="oh-search-clear" id="oh-search-clear-btn" aria-label="Clear order search" hidden>&times;</button>
+          </div>
+
+          <div class="oh-status-tabs" id="oh-status-tabs" role="tablist" aria-label="Filter orders by fulfillment status">
+            <button type="button" class="oh-status-tab active" role="tab" aria-selected="true" data-oh-status="all">
+              <span>All Orders</span>
+              <span class="oh-tab-badge" id="oh-count-all">0</span>
+            </button>
+            <button type="button" class="oh-status-tab" role="tab" aria-selected="false" data-oh-status="placed">
+              <span>Order Placed</span>
+              <span class="oh-tab-badge" id="oh-count-placed">0</span>
+            </button>
+            <button type="button" class="oh-status-tab" role="tab" aria-selected="false" data-oh-status="processing">
+              <span>Processing</span>
+              <span class="oh-tab-badge" id="oh-count-processing">0</span>
+            </button>
+            <button type="button" class="oh-status-tab" role="tab" aria-selected="false" data-oh-status="shipped">
+              <span>Shipped</span>
+              <span class="oh-tab-badge" id="oh-count-shipped">0</span>
+            </button>
+            <button type="button" class="oh-status-tab" role="tab" aria-selected="false" data-oh-status="delivered">
+              <span>Delivered</span>
+              <span class="oh-tab-badge" id="oh-count-delivered">0</span>
+            </button>
+          </div>
+
+          <div class="oh-sort-wrap">
+            <label for="oh-sort-select" class="sr-only">Sort orders</label>
+            <select id="oh-sort-select" data-testid="oh-sort-select" class="oh-sort-select" aria-label="Sort past orders">
+              <option value="newest">Sort: Newest First</option>
+              <option value="oldest">Sort: Oldest First</option>
+              <option value="total-desc">Total: High → Low</option>
+              <option value="total-asc">Total: Low → High</option>
+              <option value="items-desc">Items: Most First</option>
+            </select>
+          </div>
+        </div>
+
+        <!-- Master-Detail Workspace: Orders Feed (Left) + Receipt & Item Breakdown Inspector (Right) -->
+        <div class="oh-workspace-grid">
+          <div class="oh-orders-column">
+            <div class="oh-results-meta" id="oh-results-meta">Showing 0 orders</div>
+            <div class="oh-orders-list" id="oh-orders-list" data-testid="oh-orders-list" role="region" aria-label="Past Purchases List">
+              <!-- Populated dynamically by app.js from /api/orders -->
+            </div>
+          </div>
+
+          <aside class="oh-inspector-column" id="oh-receipt-inspector" data-testid="oh-receipt-inspector" aria-label="Selected Order Receipt and Item Breakdown">
+            <!-- Populated dynamically by app.js with full receipt details, status timeline, and item cost breakdown -->
+          </aside>
+        </div>
+      </section>
     </main>
 
     <!-- the bar stuck to the bottom — promo code + subtotal / discounts / tax / total + checkout button -->
@@ -698,6 +940,24 @@
       </div>
 
       <div class="spec-drawer-body momentum-scroll-body" id="spec-drawer-body" data-momentum-scroll="true">
+        <!-- Sticky Quick Section Navigation Bar -->
+        <nav class="spec-drawer-section-nav" id="spec-drawer-section-nav" data-testid="spec-drawer-section-nav" aria-label="Product Spec Drawer Sections">
+          <button type="button" class="spec-sec-nav-btn active" data-spec-nav="overview" data-testid="spec-nav-overview" onclick="scrollSpecDrawerToSection('overview')">
+            <span>Overview</span>
+          </button>
+          <button type="button" class="spec-sec-nav-btn" data-spec-nav="d3-volatility" data-testid="spec-nav-d3-volatility" onclick="scrollSpecDrawerToSection('d3-volatility')">
+            <span>D3 Volatility</span>
+            <span class="spec-sec-nav-badge" id="spec-nav-vol-badge" hidden>--</span>
+          </button>
+          <button type="button" class="spec-sec-nav-btn" data-spec-nav="tech-specs" data-testid="spec-nav-tech-specs" onclick="scrollSpecDrawerToSection('tech-specs')">
+            <span>Tech Specs</span>
+          </button>
+          <button type="button" class="spec-sec-nav-btn" data-spec-nav="reviews" data-testid="spec-nav-reviews" onclick="scrollSpecDrawerToSection('reviews')">
+            <span>Reviews</span>
+            <span class="spec-sec-nav-badge" id="spec-nav-rev-badge">0</span>
+          </button>
+        </nav>
+
         <!-- Product Social Share (Twitter, WhatsApp, Facebook) & QR Code Card -->
         <div class="spec-share-card" id="spec-share-card" data-testid="spec-share-card" hidden>
           <div class="spec-share-head">
@@ -823,13 +1083,14 @@
             <div class="spec-category-line" id="spec-drawer-group">Hardware Component</div>
             <div class="spec-price-line" id="spec-drawer-price">$0.00</div>
             <div class="spec-stock-line" id="spec-drawer-stock">In stock</div>
+            <div class="spec-rating-summary-line" id="spec-drawer-rating-summary" data-testid="spec-drawer-rating-summary"></div>
           </div>
         </div>
 
         <p class="spec-desc" id="spec-drawer-desc"></p>
 
         <!-- Recharts 6-Month Component Price History Chart -->
-        <div class="spec-section">
+        <div class="spec-section" id="spec-overview-section">
           <div class="spec-section-head">
             <span class="spec-section-title">6-Month Price History (USD)</span>
             <span class="spec-section-note" id="spec-price-delta">6M Trend</span>
@@ -838,8 +1099,153 @@
           <div class="drawer-chart-box" id="drawer-chart-container" data-testid="drawer-price-chart"></div>
         </div>
 
+        <!-- D3.js Advanced Price Trends & 6-Month Volatility Index -->
+        <div class="spec-section spec-advanced-trends-section" id="spec-advanced-price-trends" data-testid="spec-advanced-price-trends" role="region" aria-label="Advanced Price Trends and 6-Month Volatility Index">
+          <div class="spec-section-head spec-adv-trends-head">
+            <div class="spec-adv-title-wrap">
+              <span class="spec-section-title">Advanced Price Trends</span>
+              <span class="spec-adv-engine-tag" title="Powered by D3.js v7 SVG statistical telemetry">D3.JS VOLATILITY ENGINE</span>
+            </div>
+            <span class="spec-volatility-regime-badge" id="spec-volatility-regime-badge" data-testid="spec-volatility-regime-badge">STABLE REGIME</span>
+          </div>
+
+          <!-- 4-Cell Volatility Telemetry Strip -->
+          <div class="spec-volatility-kpi-grid" id="spec-volatility-kpi-grid" data-testid="spec-volatility-kpi-grid"></div>
+
+          <!-- Mode Switcher & Signal Legend Toolbar -->
+          <div class="spec-d3-toolbar" id="spec-d3-toolbar" data-testid="spec-d3-toolbar">
+            <div class="spec-d3-mode-tabs" id="spec-d3-mode-tabs" role="tablist" aria-label="D3 Volatility View Mode">
+              <button type="button" class="spec-d3-mode-btn active" data-mode="composite" data-testid="spec-d3-mode-composite" onclick="setSpecD3TrendMode('composite')">Composite + Volatility</button>
+              <button type="button" class="spec-d3-mode-btn" data-mode="volatility-bars" data-testid="spec-d3-mode-volatility-bars" onclick="setSpecD3TrendMode('volatility-bars')">6M Volatility Index</button>
+              <button type="button" class="spec-d3-mode-btn" data-mode="zscore" data-testid="spec-d3-mode-zscore" onclick="setSpecD3TrendMode('zscore')">Z-Score (σ)</button>
+            </div>
+            <div class="spec-d3-legend-bar" id="spec-d3-legend-bar" data-testid="spec-d3-legend-bar">
+              <div class="spec-d3-legend-row" id="spec-d3-legend-row" data-testid="spec-d3-legend-row" data-legend-visible="true">
+                <span class="spec-d3-legend-item"><i class="spec-d3-swatch is-band"></i>±1σ Envelope</span>
+                <span class="spec-d3-legend-item"><i class="spec-d3-swatch is-price"></i>Spot Price</span>
+                <span class="spec-d3-legend-item"><i class="spec-d3-swatch is-vol"></i>Volatility Index</span>
+                <span class="spec-d3-legend-item"><i class="spec-d3-swatch is-peak-marker"></i>Peak Event</span>
+                <span class="spec-d3-legend-item"><i class="spec-d3-swatch is-threshold-marker"></i>≥2σ Threshold</span>
+              </div>
+              <span class="spec-d3-legend-collapsed-note" id="spec-d3-legend-collapsed-note" data-testid="spec-d3-legend-collapsed-note" hidden>Signal legend hidden · Clean chart view</span>
+              <button
+                type="button"
+                class="spec-d3-legend-toggle-btn"
+                id="spec-d3-legend-toggle-btn"
+                data-testid="spec-d3-legend-toggle-btn"
+                aria-pressed="false"
+                aria-expanded="true"
+                aria-controls="spec-d3-legend-row"
+                data-legend-visible="true"
+                onclick="toggleSpecD3LegendVisibility()"
+                title="Toggle signal legend visibility for a cleaner chart view"
+              >Hide Legend</button>
+            </div>
+          </div>
+
+          <!-- High Volatility Threshold Configuration Option (Toggle + Standard Deviation Presets) -->
+          <div class="spec-d3-threshold-config" id="spec-d3-threshold-config" data-testid="spec-d3-threshold-config" role="group" aria-label="High Volatility Threshold Configuration">
+            <div class="spec-d3-th-row-top">
+              <button
+                type="button"
+                class="spec-d3-threshold-toggle is-active"
+                id="spec-d3-threshold-toggle"
+                data-testid="spec-d3-threshold-toggle"
+                role="switch"
+                aria-checked="true"
+                onclick="toggleSpecHighVolatilityThreshold()"
+                title="Toggle High Volatility Threshold markers on the 6-month D3 visualization"
+              >
+                <span class="spec-d3-th-dot" aria-hidden="true"></span>
+                <span class="spec-d3-th-label">High Volatility Threshold</span>
+                <span class="spec-d3-th-state" id="spec-d3-threshold-state">ON · 2.0σ</span>
+              </button>
+
+              <div class="spec-d3-sigma-presets" id="spec-d3-sigma-presets" data-testid="spec-d3-sigma-presets" role="group" aria-label="Standard Deviation Cutoff Level">
+                <button type="button" class="spec-d3-sigma-btn" data-sigma="1" data-testid="spec-d3-sigma-btn-1" onclick="setSpecHighVolatilitySigma(1)">1.0σ</button>
+                <button type="button" class="spec-d3-sigma-btn" data-sigma="1.5" data-testid="spec-d3-sigma-btn-1.5" onclick="setSpecHighVolatilitySigma(1.5)">1.5σ</button>
+                <button type="button" class="spec-d3-sigma-btn active" data-sigma="2" data-testid="spec-d3-sigma-btn-2" onclick="setSpecHighVolatilitySigma(2)">2.0σ</button>
+              </div>
+            </div>
+            <div class="spec-d3-threshold-summary" id="spec-d3-threshold-summary" data-testid="spec-d3-threshold-summary">
+              Cutoff ≥75v (2.0σ) · Highlighting high-volatility periods
+            </div>
+          </div>
+
+          <!-- Auto-Flagged Peak Volatility Event Markers Strip -->
+          <div class="spec-d3-event-chips" id="spec-d3-event-chips" data-testid="spec-d3-event-chips" aria-label="Flagged 6-Month Peak Volatility Events"></div>
+
+          <!-- Mouse-Wheel Zoom & Drag-to-Pan Telemetry Bar -->
+          <div class="spec-d3-zoom-bar" id="spec-d3-zoom-bar" data-testid="spec-d3-zoom-bar" role="group" aria-label="D3 Volatility Chart Zoom and Pan Controls">
+            <div class="spec-d3-zoom-status" id="spec-d3-zoom-status">
+              <span class="spec-d3-zoom-scale" id="spec-d3-zoom-scale" data-testid="spec-d3-zoom-scale">1.0×</span>
+              <span class="spec-d3-zoom-sep" aria-hidden="true">·</span>
+              <span class="spec-d3-zoom-window" id="spec-d3-zoom-window" data-testid="spec-d3-zoom-window">May – Oct (All 6M)</span>
+              <span class="spec-d3-zoom-sep" aria-hidden="true">·</span>
+              <span class="spec-d3-zoom-hint" id="spec-d3-zoom-hint">Wheel to zoom · Drag to pan</span>
+            </div>
+            <div class="spec-d3-zoom-controls">
+              <button
+                type="button"
+                class="spec-d3-zoom-btn"
+                id="spec-d3-pan-left-btn"
+                data-testid="spec-d3-pan-left-btn"
+                aria-label="Pan volatility chart earlier"
+                title="Pan left (earlier months)"
+                onclick="panSpecD3VolatilityChart(64)"
+                disabled
+              >◀</button>
+              <button
+                type="button"
+                class="spec-d3-zoom-btn"
+                id="spec-d3-zoom-out-btn"
+                data-testid="spec-d3-zoom-out-btn"
+                aria-label="Zoom out volatility chart"
+                title="Zoom out (mouse wheel down)"
+                onclick="zoomSpecD3VolatilityChart(0.74)"
+                disabled
+              >−</button>
+              <button
+                type="button"
+                class="spec-d3-zoom-btn"
+                id="spec-d3-zoom-in-btn"
+                data-testid="spec-d3-zoom-in-btn"
+                aria-label="Zoom in volatility chart"
+                title="Zoom in (mouse wheel up)"
+                onclick="zoomSpecD3VolatilityChart(1.35)"
+              >+</button>
+              <button
+                type="button"
+                class="spec-d3-zoom-btn"
+                id="spec-d3-pan-right-btn"
+                data-testid="spec-d3-pan-right-btn"
+                aria-label="Pan volatility chart later"
+                title="Pan right (later months)"
+                onclick="panSpecD3VolatilityChart(-64)"
+                disabled
+              >▶</button>
+              <button
+                type="button"
+                class="spec-d3-zoom-btn is-reset"
+                id="spec-d3-zoom-reset-btn"
+                data-testid="spec-d3-zoom-reset-btn"
+                aria-label="Reset volatility chart zoom to 1x"
+                title="Reset zoom and pan to full 6-month view"
+                onclick="resetSpecD3VolatilityZoom()"
+                disabled
+              >Reset 1×</button>
+            </div>
+          </div>
+
+          <!-- D3.js SVG Host Container + Interactive Event Tooltip -->
+          <div class="spec-d3-chart-box" id="spec-d3-volatility-chart" data-testid="spec-d3-volatility-chart"></div>
+
+          <!-- Interactive Monthly Telemetry Hover Readout -->
+          <div class="spec-d3-hover-readout" id="spec-d3-hover-readout" data-testid="spec-d3-hover-readout"></div>
+        </div>
+
         <!-- Technical Specifications Table -->
-        <div class="spec-section">
+        <div class="spec-section" id="spec-technical-section">
           <div class="spec-section-head">
             <span class="spec-section-title">Technical Specifications</span>
             <span class="spec-section-note" id="spec-contributor-note">Verified</span>
@@ -854,6 +1260,44 @@
             <span class="spec-section-note" id="spec-bench-status-note">QA Passed</span>
           </div>
           <div class="spec-table" id="spec-bench-rows"></div>
+        </div>
+
+        <!-- Verified Buyer Reviews & Ratings Section -->
+        <div class="spec-section spec-reviews-section" id="spec-reviews-section" data-testid="spec-reviews-section" role="region" aria-label="Verified Buyer Reviews and Ratings">
+          <div class="spec-section-head">
+            <span class="spec-section-title">Verified Buyer Reviews &amp; Ratings</span>
+            <span class="spec-section-note" id="spec-reviews-count-note">0 Verified Reviews</span>
+          </div>
+
+          <!-- Aggregate Rating Score & 5-Star Distribution Breakdown -->
+          <div class="spec-reviews-summary-card" id="spec-reviews-summary-card" data-testid="spec-reviews-summary-card"></div>
+
+          <!-- Purchase Verification Status & Review Submission Form -->
+          <div class="spec-review-composer-container" id="spec-review-composer-container" data-testid="spec-review-composer-container"></div>
+
+          <!-- Filter by Star Rating & Sort Controls -->
+          <div class="spec-reviews-toolbar" id="spec-reviews-toolbar">
+            <div class="spec-reviews-star-tabs" id="spec-reviews-star-tabs" role="tablist" aria-label="Filter reviews by star rating">
+              <button type="button" class="spec-rev-star-tab active" role="tab" aria-selected="true" data-rev-star="all">All</button>
+              <button type="button" class="spec-rev-star-tab" role="tab" aria-selected="false" data-rev-star="5">5★</button>
+              <button type="button" class="spec-rev-star-tab" role="tab" aria-selected="false" data-rev-star="4">4★</button>
+              <button type="button" class="spec-rev-star-tab" role="tab" aria-selected="false" data-rev-star="3">3★</button>
+              <button type="button" class="spec-rev-star-tab" role="tab" aria-selected="false" data-rev-star="2">2★</button>
+              <button type="button" class="spec-rev-star-tab" role="tab" aria-selected="false" data-rev-star="1">1★</button>
+            </div>
+            <div class="spec-reviews-sort-wrap">
+              <label for="spec-reviews-sort-select" class="sr-only">Sort reviews</label>
+              <select id="spec-reviews-sort-select" class="spec-reviews-sort-select" data-testid="spec-reviews-sort-select" aria-label="Sort product reviews">
+                <option value="newest">Newest First</option>
+                <option value="helpful">Most Helpful</option>
+                <option value="highest">Highest Rating</option>
+                <option value="lowest">Lowest Rating</option>
+              </select>
+            </div>
+          </div>
+
+          <!-- Submitted Reviews Feed -->
+          <div class="spec-reviews-list" id="spec-reviews-list" data-testid="spec-reviews-list"></div>
         </div>
 
         <!-- Contiguous Purchase & Live Restock Actions -->
@@ -2062,6 +2506,84 @@
           <span data-icon="check" data-icon-size="15"></span>
           <span>Save &amp; Apply</span>
         </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Google Maps Platform Store & Pickup Hub Locator Modal -->
+  <div class="modal-overlay" id="voltbox-maps-overlay" data-testid="voltbox-maps-overlay" aria-hidden="true">
+    <div class="modal-card voltbox-maps-modal" id="voltbox-maps-modal" data-testid="voltbox-maps-modal" role="dialog" aria-modal="true" aria-label="Voltbox Store and Pickup Hub Locator">
+      <button class="modal-close" id="voltbox-maps-close" data-testid="voltbox-maps-close" type="button" onclick="closeVoltboxMapsModal()" aria-label="Close Store Locator Map">
+        <span data-icon="x" data-icon-size="18"></span>
+      </button>
+
+      <div class="voltbox-maps-head">
+        <div class="voltbox-maps-head-left">
+          <span class="checkout-kicker">GOOGLE MAPS PLATFORM · PLACES API (NEW) &amp; ADVANCED MARKERS</span>
+          <h2 class="modal-title">Hardware Store &amp; Pickup Hub Locator</h2>
+          <p class="modal-text">Discover live computer hardware retailers, authorised service benches, and pickup hubs using Google Maps JavaScript API &amp; Places API (New).</p>
+        </div>
+        <div class="voltbox-maps-head-actions">
+          <button type="button" class="voltbox-gmp-loc-btn" id="voltbox-gmp-locate-btn" data-testid="voltbox-gmp-locate-btn" onclick="panVoltboxMapToUserLocation()">
+            <span data-icon="globe" data-icon-size="13"></span>
+            <span>Near My Location</span>
+          </button>
+        </div>
+      </div>
+
+      <!-- Search & PlaceAutocompleteElement Toolbar -->
+      <div class="voltbox-maps-toolbar">
+        <div class="voltbox-gmp-search-group">
+          <input
+            type="search"
+            id="voltbox-gmp-query-input"
+            data-testid="voltbox-gmp-query-input"
+            class="voltbox-gmp-query-input"
+            placeholder="Search hardware stores, PC repair, or electronics hubs…"
+            value="computer hardware electronics store in Bengaluru"
+            aria-label="Search hardware stores with Places API (New)"
+          />
+          <button
+            type="button"
+            id="voltbox-gmp-search-btn"
+            data-testid="voltbox-gmp-search-btn"
+            class="voltbox-gmp-search-btn"
+            onclick="submitVoltboxGmpSearch()"
+          >
+            Search Places
+          </button>
+        </div>
+        <div class="voltbox-gmp-autocomplete-wrap" id="voltbox-gmp-autocomplete-slot" data-testid="voltbox-gmp-autocomplete-slot" aria-label="Google Maps Place Autocomplete"></div>
+      </div>
+
+      <!-- Quick Region & Category Presets -->
+      <div class="voltbox-gmp-presets" role="group" aria-label="Quick Hardware Hub Searches">
+        <span class="voltbox-gmp-presets-label">Quick Hubs:</span>
+        <button type="button" class="voltbox-gmp-preset-chip active" data-gmp-query="computer hardware electronics store in Bengaluru" onclick="runVoltboxGmpPreset(this, 'computer hardware electronics store in Bengaluru')">Bengaluru Tech Hubs</button>
+        <button type="button" class="voltbox-gmp-preset-chip" data-gmp-query="computer hardware store in Mumbai" onclick="runVoltboxGmpPreset(this, 'computer hardware store in Mumbai')">Mumbai Lamington Rd</button>
+        <button type="button" class="voltbox-gmp-preset-chip" data-gmp-query="computer hardware store in Nehru Place New Delhi" onclick="runVoltboxGmpPreset(this, 'computer hardware store in Nehru Place New Delhi')">Delhi Nehru Place</button>
+        <button type="button" class="voltbox-gmp-preset-chip" data-gmp-query="computer hardware electronics store in San Francisco Bay Area" onclick="runVoltboxGmpPreset(this, 'computer hardware electronics store in San Francisco Bay Area')">Silicon Valley Hubs</button>
+      </div>
+
+      <!-- Two-Column Map + Live Places API (New) Results Grid -->
+      <div class="voltbox-maps-workbench">
+        <div class="voltbox-gmp-sidebar">
+          <div class="voltbox-gmp-sidebar-head">
+            <span class="voltbox-gmp-sidebar-title">LIVE PLACES API (NEW) RESULTS</span>
+            <span class="voltbox-gmp-result-count" id="voltbox-gmp-result-count" data-testid="voltbox-gmp-result-count">Loading…</span>
+          </div>
+          <div class="voltbox-gmp-places-list" id="voltbox-gmp-places-list" data-testid="voltbox-gmp-places-list" role="region" aria-live="polite" aria-label="Live Places Search Results">
+            <div class="voltbox-gmp-empty-state">Initializing Google Maps Platform &amp; querying live Places API (New)…</div>
+          </div>
+        </div>
+
+        <div class="voltbox-gmp-map-column">
+          <div class="voltbox-gmp-map-canvas" id="voltbox-gmp-map" data-testid="voltbox-gmp-map" role="application" aria-label="Interactive Google Map of Hardware Stores and Pickup Hubs"></div>
+          <div class="voltbox-gmp-map-footer">
+            <span id="voltbox-gmp-status-text" data-testid="voltbox-gmp-status-text">Vector Map (DEMO_MAP_ID) · Click any pin or card to inspect live place details</span>
+            <a href="https://cloud.google.com/maps-platform/terms?utm_campaign=gmp_mcp_codeassist_v1_aistudio" target="_blank" rel="noopener noreferrer" class="voltbox-gmp-tos-link">Google Maps Platform Terms</a>
+          </div>
+        </div>
       </div>
     </div>
   </div>

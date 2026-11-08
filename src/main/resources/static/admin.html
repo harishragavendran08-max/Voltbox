@@ -144,19 +144,111 @@
               </select>
             </div>
 
-            <div class="segmented-filter" id="admin-stock-filter" role="tablist" aria-label="Filter by stock state">
-              <button type="button" class="seg-btn active" data-stock-filter="all">All</button>
-              <button type="button" class="seg-btn" data-stock-filter="nominal">In Stock</button>
-              <button type="button" class="seg-btn" data-stock-filter="low">Low Stock</button>
-              <button type="button" class="seg-btn" data-stock-filter="critical">Critical</button>
-              <button type="button" class="seg-btn" data-stock-filter="archived">Archived</button>
+            <div class="toolbar-right">
+              <div class="segmented-filter" id="admin-stock-filter" role="tablist" aria-label="Filter by stock state">
+                <button type="button" class="seg-btn active" data-stock-filter="all">All</button>
+                <button type="button" class="seg-btn" data-stock-filter="nominal">In Stock</button>
+                <button type="button" class="seg-btn" data-stock-filter="low">Low Stock</button>
+                <button type="button" class="seg-btn" data-stock-filter="critical">Critical</button>
+                <button type="button" class="seg-btn" data-stock-filter="archived">Archived</button>
+              </div>
+
+              <div class="segmented-filter" id="admin-layout-toggle" role="group" aria-label="Catalog display layout">
+                <button type="button" class="seg-btn active" data-layout="table" id="admin-layout-table-btn">Table</button>
+                <button type="button" class="seg-btn" data-layout="grid" id="admin-layout-grid-btn">Catalog Grid</button>
+              </div>
+
+              <button type="button" class="btn-batch-toggle" id="admin-batch-mode-toggle" data-testid="admin-batch-mode-toggle" aria-pressed="false">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><polyline points="9 11 12 14 22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>
+                <span>Batch Edit</span>
+                <span class="batch-count-indicator mono" id="admin-batch-toggle-count">0</span>
+              </button>
             </div>
           </div>
 
-          <div class="table-scroll">
+          <!-- Batch Edit Mode Console & Single-Transaction Bulk Action Panel -->
+          <section class="batch-edit-panel" id="admin-batch-edit-panel" data-testid="admin-batch-edit-panel" aria-label="Batch Edit Bulk Price and Stock Controls" hidden>
+            <div class="batch-panel-head">
+              <div class="batch-selection-info">
+                <span class="batch-kicker">BATCH EDIT TRANSACTION MODE</span>
+                <span class="batch-sel-summary">
+                  <strong class="mono" id="admin-batch-selected-count" data-testid="admin-batch-selected-count">0</strong>
+                  <span id="admin-batch-selected-label">products selected for bulk transaction</span>
+                </span>
+              </div>
+              <div class="batch-quick-select-actions">
+                <button type="button" class="step-btn" id="admin-batch-select-all-btn" data-testid="admin-batch-select-all-btn">Select All Visible</button>
+                <button type="button" class="step-btn" id="admin-batch-select-low-btn" data-testid="admin-batch-select-low-btn">Select Low Stock (&lt; 5)</button>
+                <button type="button" class="step-btn" id="admin-batch-clear-btn" data-testid="admin-batch-clear-btn">Clear Selection</button>
+              </div>
+            </div>
+
+            <form class="batch-controls-grid" id="admin-batch-form" data-testid="admin-batch-form" novalidate>
+              <!-- Bulk Price Update Group -->
+              <div class="batch-field-group">
+                <label for="admin-batch-price-mode" class="batch-field-label">Bulk Price Operation</label>
+                <div class="batch-dual-inputs">
+                  <select id="admin-batch-price-mode" data-testid="admin-batch-price-mode" class="select-control">
+                    <option value="none">No Price Change</option>
+                    <option value="percent">Percentage Change (+/− %)</option>
+                    <option value="delta">Fixed Dollar Offset (+/− $)</option>
+                    <option value="set">Set Exact Unit Price ($)</option>
+                  </select>
+                  <input type="number" id="admin-batch-price-value" data-testid="admin-batch-price-value" class="input-control compact mono" step="0.01" placeholder="e.g. -10" aria-label="Bulk price value" disabled />
+                </div>
+                <div class="batch-preset-row">
+                  <button type="button" class="step-btn" onclick="applyAdminBatchPricePreset('percent', -10)">−10% Sale</button>
+                  <button type="button" class="step-btn" onclick="applyAdminBatchPricePreset('percent', -5)">−5% Drop</button>
+                  <button type="button" class="step-btn" onclick="applyAdminBatchPricePreset('percent', 5)">+5% Markup</button>
+                  <button type="button" class="step-btn" onclick="applyAdminBatchPricePreset('delta', -15)">−$15.00</button>
+                </div>
+              </div>
+
+              <!-- Bulk Stock Adjustment Group -->
+              <div class="batch-field-group">
+                <label for="admin-batch-stock-mode" class="batch-field-label">Bulk Stock Operation</label>
+                <div class="batch-dual-inputs">
+                  <select id="admin-batch-stock-mode" data-testid="admin-batch-stock-mode" class="select-control">
+                    <option value="none">No Stock Change</option>
+                    <option value="delta">Adjust Stock Delta (+/− units)</option>
+                    <option value="set">Set Exact Stock Quantity</option>
+                  </select>
+                  <input type="number" id="admin-batch-stock-value" data-testid="admin-batch-stock-value" class="input-control compact mono" step="1" placeholder="e.g. +5" aria-label="Bulk stock value" disabled />
+                </div>
+                <div class="batch-preset-row">
+                  <button type="button" class="step-btn" onclick="applyAdminBatchStockPreset('delta', 5)">+5 Units</button>
+                  <button type="button" class="step-btn" onclick="applyAdminBatchStockPreset('delta', 10)">+10 Units</button>
+                  <button type="button" class="step-btn" onclick="applyAdminBatchStockPreset('delta', -2)">−2 Units</button>
+                  <button type="button" class="step-btn" onclick="applyAdminBatchStockPreset('set', 15)">Set to 15</button>
+                </div>
+              </div>
+
+              <!-- Transaction Audit Reason & Commit CTA -->
+              <div class="batch-field-group batch-commit-col">
+                <label for="admin-batch-reason" class="batch-field-label">Audit Ledger Reason</label>
+                <div class="batch-commit-row">
+                  <input type="text" id="admin-batch-reason" data-testid="admin-batch-reason" class="input-control" placeholder="e.g. Q4 Flash Sale &amp; Warehouse Restock" />
+                  <button type="submit" class="btn-primary batch-submit-btn" id="admin-batch-submit-btn" data-testid="admin-batch-submit-btn">
+                    <span>Apply Batch Transaction</span>
+                  </button>
+                </div>
+                <div class="batch-live-preview" id="admin-batch-preview-strip" data-testid="admin-batch-preview-strip">
+                  Select products in the catalog below and choose a price or stock operation to preview the transaction.
+                </div>
+              </div>
+            </form>
+
+            <p class="batch-status-msg" id="admin-batch-status-msg" data-testid="admin-batch-status-msg" role="status" hidden></p>
+          </section>
+
+          <!-- Catalog Table View -->
+          <div class="table-scroll" id="admin-table-container">
             <table class="data-table" id="admin-products-table">
               <thead>
                 <tr>
+                  <th class="select-col">
+                    <input type="checkbox" id="admin-table-select-all" data-testid="admin-table-select-all" aria-label="Select all visible products in table" />
+                  </th>
                   <th>Hardware Component</th>
                   <th>Part SKU</th>
                   <th>Group / Category</th>
@@ -169,11 +261,14 @@
               </thead>
               <tbody id="admin-products-tbody">
                 <tr>
-                  <td colspan="8" class="empty-cell">Loading product entities from Spring Boot `/api/admin/products`…</td>
+                  <td colspan="9" class="empty-cell">Loading product entities from Spring Boot `/api/admin/products`…</td>
                 </tr>
               </tbody>
             </table>
           </div>
+
+          <!-- Catalog Grid View (Selectable Cards in Batch Edit Mode) -->
+          <div class="admin-catalog-grid" id="admin-catalog-grid" data-testid="admin-catalog-grid" hidden></div>
         </div>
       </main>
 
@@ -432,6 +527,7 @@
     </div>
   </div>
 
+  <script src="/qr-bundle.js"></script>
   <script src="/admin.js"></script>
 </body>
 </html>

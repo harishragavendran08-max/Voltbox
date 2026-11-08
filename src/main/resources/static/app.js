@@ -346,6 +346,11 @@ function paintProfile() {
     adminConsoleLinkEl.hidden = !isAdmin;
   }
 
+  var catalogBatchEditBtnEl = document.getElementById("catalog-batch-edit-btn");
+  if (catalogBatchEditBtnEl) {
+    catalogBatchEditBtnEl.hidden = !isAdmin;
+  }
+
   var adminDropEl = document.getElementById("admin-drop");
   if (adminDropEl) {
     adminDropEl.hidden = !canCurrentUserRestock();
@@ -388,7 +393,15 @@ function paintProfile() {
 }
 
 function paintHistoryCount(n) {
-  historyCountEl.textContent = n + (n === 1 ? " bill" : " bills");
+  var countNum = Number(n) || 0;
+  if (historyCountEl) {
+    historyCountEl.textContent = countNum + (countNum === 1 ? " bill" : " bills");
+  }
+  var topbarOrdersBadge = document.getElementById("topbar-orders-badge");
+  if (topbarOrdersBadge) {
+    topbarOrdersBadge.textContent = String(countNum);
+    topbarOrdersBadge.hidden = false;
+  }
 }
 
 function isProductInWishlist(productId) {
@@ -1715,13 +1728,30 @@ function renderAllCards() {
 
     var hasRealPhoto = p.image && (p.image.indexOf("http") === 0 || p.image.indexOf("/") === 0);
     var directImgSrc = hasRealPhoto ? p.image : tileFor(p.category);
+    var isBatchSel = isProductInCatalogBatchSelection(p.id);
+    if (isBatchSel) {
+      card.classList.add("is-batch-selected");
+    }
+    var batchSelectBtn =
+      '<button type="button" class="card-batch-select-btn' + (isBatchSel ? ' is-checked' : '') + '"' +
+      '        id="card-batch-select-' + p.id + '"' +
+      '        data-testid="card-batch-select-' + p.id + '"' +
+      '        onclick="event.stopPropagation(); toggleCatalogBatchProductSelection(' + p.id + ')"' +
+      '        aria-pressed="' + (isBatchSel ? 'true' : 'false') + '"' +
+      '        aria-label="Select ' + esc(p.title) + ' for batch edit"' +
+      '        title="Select for Batch Edit">' +
+        '<span class="card-batch-check-box">' + (isBatchSel ? '✓' : '') + '</span>' +
+        '<span class="card-batch-check-label">' + (isBatchSel ? 'Selected' : 'Batch Select') + '</span>' +
+      '</button>';
+
     card.innerHTML =
-      '<div class="card-img-wrap" onclick="openSpecDrawer(' + p.id + ')">' +
+      '<div class="card-img-wrap" onclick="handleCardImageAreaClick(event, ' + p.id + ')">' +
         '<img class="card-img"' +
         '     src="' + esc(directImgSrc) + '"' +
         '     alt="' + esc(p.title) + '"' +
         '     loading="lazy"' +
         '     onerror="this.onerror=null;this.src=\'' + tileFor(p.category) + '\'" />' +
+        batchSelectBtn +
         lowStockBadge +
         dealBadge +
         notifyBtn +
@@ -1732,14 +1762,15 @@ function renderAllCards() {
         tag +
         '<div class="card-meta-right">' +
           stockNote +
+          '<span class="card-batch-stock-preview" id="card-batch-stock-preview-' + p.id + '" hidden></span>' +
           '<button class="card-specs-link" type="button" onclick="openSpecDrawer(' + p.id + ')" aria-label="Specs for ' + esc(p.title) + '">Specs &rarr;</button>' +
         '</div>' +
       '</div>' +
-      '<h3 class="card-title"><button type="button" class="card-title-btn" onclick="openSpecDrawer(' + p.id + ')">' + esc(p.title) + '</button></h3>' +
+      '<h3 class="card-title"><button type="button" class="card-title-btn" onclick="handleCardTitleAreaClick(event, ' + p.id + ')">' + esc(p.title) + '</button></h3>' +
       (p.description ? '<p class="card-desc">' + esc(p.description) + '</p>' : '') +
       ratingRow +
       '<div class="card-price-row">' +
-        '<p class="card-price">$' + p.price.toFixed(2) + '<span class="card-price-inr-sub">≈ ₹' + Math.round(p.price * 83.5).toLocaleString("en-IN") + '</span></p>' +
+        '<p class="card-price" id="card-price-text-' + p.id + '">$' + p.price.toFixed(2) + '<span class="card-price-inr-sub">≈ ₹' + Math.round(p.price * 83.5).toLocaleString("en-IN") + '</span><span class="card-batch-price-preview" id="card-batch-price-preview-' + p.id + '" hidden></span></p>' +
         '<button type="button" class="chart-toggle-btn' + (isChartOpen ? ' active' : '') + '" ' +
                 'id="chart-toggle-' + p.id + '" ' +
                 'aria-expanded="' + (isChartOpen ? 'true' : 'false') + '" ' +
@@ -1852,6 +1883,7 @@ function renderAllCards() {
   upgradeCardPhotos();
   applyFiltersAndSearch();
   populateMessengerProductSelect();
+  updateCatalogBatchEditUI();
 }
 
 function mountCardRecharts(p) {
@@ -1905,7 +1937,9 @@ function openSpecDrawer(productId) {
     }, 60);
   }
 
-  // Fetch individual product details by ID from Spring Boot ProductController (GET /api/products/{id})
+  // Fetch individual product details, inventory, and verified buyer reviews in parallel
+  fetchAndRenderProductReviews(productId);
+
   Promise.all([
     fetch("/api/products/" + productId).then(function (r) { return r.ok ? r.json() : null; }),
     fetch("/api/products/" + productId + "/inventory").then(function (r) { return r.ok ? r.json() : null; })
@@ -1966,6 +2000,30 @@ function populateSpecDrawer(p) {
   var stockEl = document.getElementById("spec-drawer-stock");
   stockEl.textContent = lowStock ? ("Low Stock · " + stockQty + " left in stock") : (stockQty + " units available");
   stockEl.className = lowStock ? "spec-stock-line low" : "spec-stock-line";
+
+  var ratingSummaryEl = document.getElementById("spec-drawer-rating-summary");
+  if (ratingSummaryEl) {
+    var cachedRev = productReviewsCache[p.id];
+    var rateVal = (cachedRev && cachedRev.summary && cachedRev.summary.averageRating > 0)
+      ? cachedRev.summary.averageRating
+      : (Number(p.ratingRate) > 0 ? Number(p.ratingRate) : 4.8);
+    var revCount = (cachedRev && cachedRev.summary && typeof cachedRev.summary.reviewCount === "number")
+      ? cachedRev.summary.reviewCount
+      : (typeof p.verifiedReviewCount === "number" ? p.verifiedReviewCount : (Number(p.ratingCount) || 0));
+    ratingSummaryEl.innerHTML =
+      '<span class="spec-hero-stars" aria-hidden="true">' + renderStaticStarsText(rateVal) + '</span>' +
+      '<strong class="spec-hero-rate-num">' + Number(rateVal).toFixed(1) + '</strong>' +
+      '<span class="spec-hero-rate-sep">·</span>' +
+      '<button type="button" class="spec-hero-reviews-jump" onclick="scrollSpecDrawerToReviews()">' +
+        revCount + (revCount === 1 ? ' Verified Review' : ' Verified Reviews') + ' · Rate / Read &darr;' +
+      '</button>';
+  }
+
+  if (productReviewsCache[p.id]) {
+    renderProductReviewsSection(p.id, productReviewsCache[p.id]);
+  } else {
+    renderProductReviewsLoading(p);
+  }
 
   var imgEl = document.getElementById("spec-drawer-img");
   imgEl.src = (p.image && (p.image.indexOf("http") === 0 || p.image.indexOf("/") === 0)) ? p.image : tileFor(p.category);
@@ -2067,10 +2125,567 @@ function populateSpecDrawer(p) {
     });
   }
 
+  activeSpecD3ZoomTransform = { k: 1, x: 0 };
+  renderSpecAdvancedPriceTrends(p, history);
+  updateSpecDrawerSectionNavUI("overview", {
+    volatilityIndex: activeSpecAnalyticsCache ? activeSpecAnalyticsCache.sixMonthVolatilityIndex : undefined,
+    reviewCount: (productReviewsCache[p.id] && productReviewsCache[p.id].summary)
+      ? productReviewsCache[p.id].summary.reviewCount
+      : (typeof p.verifiedReviewCount === "number" ? p.verifiedReviewCount : (Number(p.ratingCount) || 0))
+  });
+
   if (window.momentumDrawers && window.momentumDrawers.spec) {
     window.momentumDrawers.spec.refreshMetrics();
   }
 }
+
+// ── D3.js Advanced Price Trends & 6-Month Volatility Index ──
+var activeSpecD3TrendMode = "composite"; // 'composite' | 'volatility-bars' | 'zscore'
+var activeSpecPriceHistoryCache = [];
+var activeSpecAnalyticsCache = null;
+var activeSpecSelectedEventMonth = null;
+var activeSpecHighVolThresholdEnabled = true;
+var activeSpecHighVolSigma = 2.0;
+var activeSpecD3LegendVisible = true;
+var activeSpecD3ZoomTransform = { k: 1, x: 0 };
+
+function getSpecThresholdLegendHtml() {
+  var sigLbl = Number(activeSpecHighVolSigma || 2).toFixed(1).replace(/\.0$/, "") + "σ";
+  return activeSpecHighVolThresholdEnabled
+    ? '<span class="spec-d3-legend-item"><i class="spec-d3-swatch is-threshold-marker"></i>≥' + sigLbl + ' Threshold</span>'
+    : '';
+}
+
+function updateSpecD3LegendRow(mode) {
+  var legendEl = document.getElementById("spec-d3-legend-row");
+  if (!legendEl) return;
+  var thHtml = getSpecThresholdLegendHtml();
+  if (mode === "composite") {
+    legendEl.innerHTML =
+      '<span class="spec-d3-legend-item"><i class="spec-d3-swatch is-band"></i>±1σ Envelope</span>' +
+      '<span class="spec-d3-legend-item"><i class="spec-d3-swatch is-price"></i>Spot Price</span>' +
+      '<span class="spec-d3-legend-item"><i class="spec-d3-swatch is-vol"></i>Volatility Index</span>' +
+      '<span class="spec-d3-legend-item"><i class="spec-d3-swatch is-peak-marker"></i>Peak Event</span>' +
+      thHtml;
+  } else if (mode === "volatility-bars") {
+    legendEl.innerHTML =
+      '<span class="spec-d3-legend-item"><i class="spec-d3-swatch is-stable"></i>Low (&lt;25)</span>' +
+      '<span class="spec-d3-legend-item"><i class="spec-d3-swatch is-mod"></i>Mod (25–54)</span>' +
+      '<span class="spec-d3-legend-item"><i class="spec-d3-swatch is-elev"></i>High (55+)</span>' +
+      '<span class="spec-d3-legend-item"><i class="spec-d3-swatch is-peak-marker"></i>Peak Event</span>' +
+      thHtml;
+  } else {
+    legendEl.innerHTML =
+      '<span class="spec-d3-legend-item"><i class="spec-d3-swatch is-zneg"></i>Below Mean (-σ Buy Zone)</span>' +
+      '<span class="spec-d3-legend-item"><i class="spec-d3-swatch is-zpos"></i>Above Mean (+σ Premium)</span>' +
+      '<span class="spec-d3-legend-item"><i class="spec-d3-swatch is-peak-marker"></i>Peak Event</span>' +
+      thHtml;
+  }
+  updateSpecD3LegendVisibilityUI(false);
+}
+
+function updateSpecD3LegendVisibilityUI(animate) {
+  var stateObj =
+    window.VoltboxQR && typeof window.VoltboxQR.resolveD3LegendToggleState === "function"
+      ? window.VoltboxQR.resolveD3LegendToggleState(activeSpecD3LegendVisible)
+      : {
+          legendVisible: Boolean(activeSpecD3LegendVisible),
+          isHidden: !activeSpecD3LegendVisible,
+          buttonLabel: activeSpecD3LegendVisible ? "Hide Legend" : "Show Legend",
+          ariaPressed: activeSpecD3LegendVisible ? "false" : "true",
+          ariaExpanded: activeSpecD3LegendVisible ? "true" : "false",
+          statusNote: activeSpecD3LegendVisible ? "Signal legend visible" : "Signal legend hidden for cleaner chart view"
+        };
+
+  var legendEl = document.getElementById("spec-d3-legend-row");
+  var toggleBtn = document.getElementById("spec-d3-legend-toggle-btn");
+  var collapsedNote = document.getElementById("spec-d3-legend-collapsed-note");
+  var d3Container = document.getElementById("spec-d3-volatility-chart");
+  var isVisible = stateObj.legendVisible;
+
+  if (legendEl) {
+    legendEl.classList.toggle("is-hidden", !isVisible);
+    legendEl.setAttribute("data-legend-visible", isVisible ? "true" : "false");
+    legendEl.setAttribute("aria-hidden", isVisible ? "false" : "true");
+    if (isVisible) {
+      legendEl.removeAttribute("hidden");
+    } else {
+      legendEl.setAttribute("hidden", "hidden");
+    }
+  }
+
+  if (collapsedNote) {
+    if (isVisible) {
+      collapsedNote.setAttribute("hidden", "hidden");
+    } else {
+      collapsedNote.removeAttribute("hidden");
+    }
+  }
+
+  if (toggleBtn) {
+    toggleBtn.textContent = stateObj.buttonLabel;
+    toggleBtn.classList.toggle("is-hidden-state", !isVisible);
+    toggleBtn.setAttribute("aria-pressed", String(stateObj.ariaPressed));
+    toggleBtn.setAttribute("aria-expanded", String(stateObj.ariaExpanded));
+    toggleBtn.setAttribute("data-legend-visible", isVisible ? "true" : "false");
+  }
+
+  if (d3Container) {
+    d3Container.setAttribute("data-legend-visible", isVisible ? "true" : "false");
+    d3Container.classList.toggle("is-clean-view", !isVisible);
+    var svgEl = d3Container.querySelector('svg[data-testid="d3-volatility-svg"]');
+    if (svgEl) {
+      svgEl.setAttribute("data-legend-visible", isVisible ? "true" : "false");
+    }
+  }
+
+  var isReducedMotion = Boolean(
+    typeof userAdvancedSettings === "object" &&
+    userAdvancedSettings &&
+    userAdvancedSettings.reducedMotion
+  );
+  if (animate && window.gsap && !isReducedMotion) {
+    if (isVisible && legendEl) {
+      var items = legendEl.querySelectorAll(".spec-d3-legend-item");
+      if (items.length > 0) {
+        window.gsap.fromTo(
+          items,
+          { opacity: 0, y: 3 },
+          { opacity: 1, y: 0, duration: 0.22, stagger: 0.025, ease: "power2.out", overwrite: "auto" }
+        );
+      }
+    } else if (!isVisible && collapsedNote) {
+      window.gsap.fromTo(
+        collapsedNote,
+        { opacity: 0, x: -4 },
+        { opacity: 1, x: 0, duration: 0.2, ease: "power2.out", overwrite: "auto" }
+      );
+    }
+  }
+}
+
+function toggleSpecD3LegendVisibility(forceVisible) {
+  if (typeof forceVisible === "boolean") {
+    activeSpecD3LegendVisible = forceVisible;
+  } else {
+    activeSpecD3LegendVisible = !activeSpecD3LegendVisible;
+  }
+  updateSpecD3LegendVisibilityUI(true);
+}
+window.toggleSpecD3LegendVisibility = toggleSpecD3LegendVisibility;
+
+function toggleSpecHighVolatilityThreshold(forceEnabled) {
+  if (typeof forceEnabled === "boolean") {
+    activeSpecHighVolThresholdEnabled = forceEnabled;
+  } else {
+    activeSpecHighVolThresholdEnabled = !activeSpecHighVolThresholdEnabled;
+  }
+  updateSpecD3LegendRow(activeSpecD3TrendMode);
+  var p = products.find(function(item) { return Number(item.id) === Number(activeSpecProductId); });
+  if (p) {
+    renderSpecAdvancedPriceTrends(p, activeSpecPriceHistoryCache, {
+      previousMode: activeSpecD3TrendMode,
+      animateTransition: true,
+      selectedEventMonth: activeSpecSelectedEventMonth
+    });
+  }
+}
+window.toggleSpecHighVolatilityThreshold = toggleSpecHighVolatilityThreshold;
+
+function setSpecHighVolatilitySigma(sigma) {
+  var num = Number(sigma);
+  if (!Number.isFinite(num) || num <= 0) num = 2.0;
+  activeSpecHighVolSigma = Math.max(0.5, Math.min(3.5, Math.round(num * 100) / 100));
+  activeSpecHighVolThresholdEnabled = true;
+  updateSpecD3LegendRow(activeSpecD3TrendMode);
+  var p = products.find(function(item) { return Number(item.id) === Number(activeSpecProductId); });
+  if (p) {
+    renderSpecAdvancedPriceTrends(p, activeSpecPriceHistoryCache, {
+      previousMode: activeSpecD3TrendMode,
+      animateTransition: true,
+      selectedEventMonth: activeSpecSelectedEventMonth
+    });
+  }
+}
+window.setSpecHighVolatilitySigma = setSpecHighVolatilitySigma;
+
+function updateSpecHighVolatilityThresholdUI(analytics) {
+  var toggleBtn = document.getElementById("spec-d3-threshold-toggle");
+  var stateEl = document.getElementById("spec-d3-threshold-state");
+  var presetsGroup = document.getElementById("spec-d3-sigma-presets");
+  var summaryEl = document.getElementById("spec-d3-threshold-summary");
+
+  var evalObj = analytics && analytics.highVolatilityThreshold ? analytics.highVolatilityThreshold : null;
+  var enabled = Boolean(activeSpecHighVolThresholdEnabled);
+  var sigmaVal = Number(evalObj ? evalObj.sigmaThreshold : activeSpecHighVolSigma);
+  var sigmaLabel = sigmaVal.toFixed(1) + "σ";
+
+  if (toggleBtn) {
+    toggleBtn.classList.toggle("is-active", enabled);
+    toggleBtn.setAttribute("aria-checked", enabled ? "true" : "false");
+  }
+  if (stateEl) {
+    stateEl.textContent = enabled ? ("ON · " + sigmaLabel) : "OFF";
+  }
+  if (presetsGroup) {
+    var btns = presetsGroup.querySelectorAll(".spec-d3-sigma-btn");
+    for (var i = 0; i < btns.length; i++) {
+      var btnSig = Number(btns[i].getAttribute("data-sigma"));
+      var isAct = Math.abs(btnSig - sigmaVal) < 0.05;
+      btns[i].classList.toggle("active", isAct);
+      btns[i].setAttribute("aria-pressed", isAct ? "true" : "false");
+    }
+  }
+  if (summaryEl && evalObj) {
+    summaryEl.textContent = evalObj.statusSummary;
+    summaryEl.classList.toggle("is-muted", !enabled);
+  }
+}
+
+function setSpecD3TrendMode(mode) {
+  if (mode !== "composite" && mode !== "volatility-bars" && mode !== "zscore") {
+    mode = "composite";
+  }
+  var prevMode = activeSpecD3TrendMode;
+  activeSpecD3TrendMode = mode;
+  var isReducedMotion = Boolean(
+    typeof userAdvancedSettings === "object" &&
+    userAdvancedSettings &&
+    userAdvancedSettings.reducedMotion
+  );
+
+  var tabsEl = document.getElementById("spec-d3-mode-tabs");
+  var activeBtnEl = null;
+  if (tabsEl) {
+    var btns = tabsEl.querySelectorAll(".spec-d3-mode-btn");
+    for (var i = 0; i < btns.length; i++) {
+      var btnMode = btns[i].getAttribute("data-mode");
+      var isAct = btnMode === mode;
+      btns[i].classList.toggle("active", isAct);
+      btns[i].setAttribute("aria-selected", isAct ? "true" : "false");
+      if (isAct) activeBtnEl = btns[i];
+    }
+  }
+
+  updateSpecD3LegendRow(mode);
+  var legendEl = document.getElementById("spec-d3-legend-row");
+
+  var p = products.find(function(item) { return Number(item.id) === Number(activeSpecProductId); });
+  if (p) {
+    renderSpecAdvancedPriceTrends(p, activeSpecPriceHistoryCache, {
+      previousMode: prevMode,
+      animateTransition: true,
+      reducedMotion: isReducedMotion,
+      selectedEventMonth: activeSpecSelectedEventMonth
+    });
+  }
+
+  // Subtle GSAP micro-transition on active tab button, legend chips, and hover readout strip
+  if (window.gsap && !isReducedMotion && prevMode !== mode) {
+    if (activeBtnEl) {
+      window.gsap.fromTo(
+        activeBtnEl,
+        { scale: 0.94, opacity: 0.75 },
+        { scale: 1, opacity: 1, duration: 0.24, ease: "power2.out", overwrite: "auto" }
+      );
+    }
+    if (legendEl && activeSpecD3LegendVisible) {
+      var legendItems = legendEl.querySelectorAll(".spec-d3-legend-item");
+      if (legendItems.length > 0) {
+        window.gsap.fromTo(
+          legendItems,
+          { opacity: 0, y: 4 },
+          { opacity: 1, y: 0, duration: 0.26, stagger: 0.035, ease: "power2.out", overwrite: "auto" }
+        );
+      }
+    }
+    var readoutEl = document.getElementById("spec-d3-hover-readout");
+    if (readoutEl) {
+      window.gsap.fromTo(
+        readoutEl,
+        { opacity: 0.6, y: 3 },
+        { opacity: 1, y: 0, duration: 0.28, ease: "power2.out", overwrite: "auto" }
+      );
+    }
+  }
+}
+
+function selectSpecPeakVolatilityEvent(month) {
+  if (!month) return;
+  activeSpecSelectedEventMonth = String(month);
+  var p = products.find(function(item) { return Number(item.id) === Number(activeSpecProductId); });
+  if (p) {
+    renderSpecAdvancedPriceTrends(p, activeSpecPriceHistoryCache, {
+      previousMode: activeSpecD3TrendMode,
+      animateTransition: false,
+      selectedEventMonth: activeSpecSelectedEventMonth
+    });
+  }
+  if (activeSpecAnalyticsCache && Array.isArray(activeSpecAnalyticsCache.points)) {
+    var pt = activeSpecAnalyticsCache.points.find(function(d) { return d.month === month; });
+    if (pt) {
+      updateSpecD3HoverReadout(pt, activeSpecAnalyticsCache);
+    }
+  }
+}
+
+function updateSpecD3HoverReadout(point, analytics) {
+  var readoutEl = document.getElementById("spec-d3-hover-readout");
+  if (!readoutEl || !point) return;
+
+  var momDelta = Number(point.monthlyChangePct !== undefined ? point.monthlyChangePct : (point.momDeltaPct || 0));
+  var momStr = (momDelta > 0 ? "+" : "") + momDelta.toFixed(2) + "% MoM";
+  var momClass = momDelta < 0 ? "is-drop" : (momDelta > 0 ? "is-rise" : "is-flat");
+  var zStr = (point.zScore > 0 ? "+" : "") + Number(point.zScore || 0).toFixed(2) + "σ";
+  var envStr = "$" + Number(point.lowerBand || 0).toFixed(2) + " – $" + Number(point.upperBand || 0).toFixed(2);
+  var ptVol = Number(point.volatilityIndex !== undefined ? point.volatilityIndex : (point.pointVolatilityIndex || 0));
+  var buyRec = analytics && analytics.buySignalLabel ? analytics.buySignalLabel : "Fair Value Band";
+
+  readoutEl.innerHTML =
+    '<div class="spec-d3-readout-cell">' +
+      '<span class="spec-d3-ro-k">Selected Month</span>' +
+      '<strong class="spec-d3-ro-v">' + esc(point.month) + ' · $' + Number(point.price).toFixed(2) + ' (Avg $' + Number(point.marketAvg || point.rollingMean || point.price).toFixed(2) + ')</strong>' +
+    '</div>' +
+    '<div class="spec-d3-readout-cell">' +
+      '<span class="spec-d3-ro-k">Monthly Volatility</span>' +
+      '<strong class="spec-d3-ro-v is-accent">' + ptVol.toFixed(1) + ' / 100 <em class="' + momClass + '">(' + momStr + ')</em></strong>' +
+    '</div>' +
+    '<div class="spec-d3-readout-cell">' +
+      '<span class="spec-d3-ro-k">±1σ Rolling Band</span>' +
+      '<strong class="spec-d3-ro-v">' + envStr + ' (' + zStr + ')</strong>' +
+    '</div>' +
+    '<div class="spec-d3-readout-cell">' +
+      '<span class="spec-d3-ro-k">Entry Signal</span>' +
+      '<strong class="spec-d3-ro-v is-signal">' + esc(buyRec) + '</strong>' +
+    '</div>';
+}
+
+function renderSpecPeakEventChips(analytics, selectedMonth) {
+  var chipsBox = document.getElementById("spec-d3-event-chips");
+  if (!chipsBox) return;
+  var peakEvents = analytics && Array.isArray(analytics.peakEvents) ? analytics.peakEvents : [];
+  if (peakEvents.length === 0) {
+    chipsBox.innerHTML = "";
+    chipsBox.style.display = "none";
+    return;
+  }
+  chipsBox.style.display = "flex";
+  var activeMonth =
+    selectedMonth ||
+    (peakEvents.find(function(e) { return e.isPrimaryPeak; }) || peakEvents[0]).month;
+
+  var html = '<span class="spec-d3-events-prefix">Flagged Events:</span>';
+  for (var i = 0; i < peakEvents.length; i++) {
+    var ev = peakEvents[i];
+    var isAct = ev.month === activeMonth;
+    var chipClass =
+      "spec-d3-event-chip" +
+      (ev.isPrimaryPeak ? " is-primary" : " is-secondary") +
+      (isAct ? " is-active" : "");
+    html +=
+      '<button type="button" class="' + chipClass + '" data-testid="spec-d3-event-chip-' + esc(ev.month) + '" data-month="' + esc(ev.month) + '" onclick="selectSpecPeakVolatilityEvent(\'' + esc(ev.month) + '\')" title="' + esc(ev.headline + " — " + ev.summary) + '">' +
+        '<span>' + esc(ev.badgeLabel) + '</span>' +
+      '</button>';
+  }
+  chipsBox.innerHTML = html;
+}
+
+function renderSpecAdvancedPriceTrends(p, history, transitionOpts) {
+  if (!p) return;
+  var series = Array.isArray(history) && history.length > 0 ? history : getProductPriceHistory(p);
+  activeSpecPriceHistoryCache = series;
+
+  var d3Container = document.getElementById("spec-d3-volatility-chart");
+  var kpiGrid = document.getElementById("spec-volatility-kpi-grid");
+  var regimeBadge = document.getElementById("spec-volatility-regime-badge");
+  var isReducedMotion = Boolean(
+    (transitionOpts && transitionOpts.reducedMotion) ||
+    (typeof userAdvancedSettings === "object" && userAdvancedSettings && userAdvancedSettings.reducedMotion)
+  );
+  var selMonth =
+    transitionOpts && transitionOpts.selectedEventMonth !== undefined
+      ? transitionOpts.selectedEventMonth
+      : activeSpecSelectedEventMonth;
+
+  var thresholdConfig = {
+    enabled: Boolean(activeSpecHighVolThresholdEnabled),
+    sigmaThreshold: Number(activeSpecHighVolSigma || 2.0)
+  };
+
+  var analytics = null;
+  if (typeof window.renderVoltboxD3AdvancedPriceTrends === "function" && d3Container) {
+    analytics = window.renderVoltboxD3AdvancedPriceTrends(d3Container, series, {
+      mode: activeSpecD3TrendMode,
+      previousMode: transitionOpts && transitionOpts.previousMode !== undefined ? transitionOpts.previousMode : undefined,
+      animateTransition: transitionOpts && transitionOpts.animateTransition !== undefined ? transitionOpts.animateTransition : true,
+      reducedMotion: isReducedMotion,
+      selectedEventMonth: selMonth,
+      thresholdConfig: thresholdConfig,
+      legendVisible: activeSpecD3LegendVisible,
+      zoomTransform: activeSpecD3ZoomTransform,
+      height: 196,
+      accentColor: "#2dd4bf",
+      secondaryColor: "#f59e0b",
+      onPointHover: function(pt, computed) {
+        updateSpecD3HoverReadout(pt, computed);
+      },
+      onPeakEventSelect: function(ev, pt, computed) {
+        activeSpecSelectedEventMonth = ev.month;
+        renderSpecPeakEventChips(computed, ev.month);
+        updateSpecD3HoverReadout(pt, computed);
+      },
+      onZoomPanChange: function(zoomState) {
+        activeSpecD3ZoomTransform = { k: zoomState.k, x: zoomState.x };
+        updateSpecD3ZoomPanUI(zoomState);
+      }
+    });
+  } else if (window.VoltboxQR && typeof window.VoltboxQR.computeAdvancedPriceTrends === "function") {
+    analytics = window.VoltboxQR.computeAdvancedPriceTrends(series, thresholdConfig);
+  }
+
+  activeSpecAnalyticsCache = analytics;
+  if (!analytics) return;
+
+  updateSpecHighVolatilityThresholdUI(analytics);
+  updateSpecD3LegendVisibilityUI(false);
+  renderSpecPeakEventChips(analytics, selMonth);
+  if (d3Container && d3Container.__voltboxD3ZoomController) {
+    updateSpecD3ZoomPanUI(d3Container.__voltboxD3ZoomController.getState());
+  }
+
+  var volIndex = Number(analytics.sixMonthVolatilityIndex !== undefined ? analytics.sixMonthVolatilityIndex : (analytics.volatilityIndex || 0));
+  var regLabel = analytics.volatilityRegimeLabel || analytics.regimeLabel || "Low Volatility";
+  var regTier = String(analytics.volatilityRegime || analytics.regime || "low").toLowerCase();
+  var stdDevUsd = Number(analytics.standardDeviationUsd !== undefined ? analytics.standardDeviationUsd : (analytics.stdDevUsd || 0));
+  var spreadUsd = Number(analytics.priceRangeSpreadUsd !== undefined ? analytics.priceRangeSpreadUsd : (analytics.priceSwingUsd || 0));
+  var peakVol = Number(analytics.peakMonthlyVolatilityIndex || volIndex);
+  var peakMonth = analytics.peakVolatilityMonth || "Sep";
+
+  if (regimeBadge) {
+    regimeBadge.textContent = regLabel + " (" + volIndex.toFixed(1) + "/100)";
+    regimeBadge.className = "spec-volatility-regime-badge regime-" + regTier;
+  }
+  var volNavBadge = document.getElementById("spec-nav-vol-badge");
+  if (volNavBadge && Number.isFinite(volIndex) && volIndex > 0) {
+    volNavBadge.textContent = Math.round(volIndex) + "v";
+    volNavBadge.hidden = false;
+  }
+
+  if (kpiGrid) {
+    var zVal = Number(analytics.currentZScore || 0);
+    var zText = (zVal > 0 ? "+" : "") + zVal.toFixed(2) + "σ";
+    var zTone = zVal <= -0.35 ? "is-favorable" : (zVal >= 0.75 ? "is-elevated" : "is-neutral");
+    kpiGrid.innerHTML =
+      '<div class="spec-vol-kpi-card" data-testid="spec-kpi-volatility-index">' +
+        '<span class="spec-vol-kpi-label">6M Volatility Index</span>' +
+        '<strong class="spec-vol-kpi-val is-amber">' + volIndex.toFixed(1) + '<small>/100</small></strong>' +
+        '<span class="spec-vol-kpi-sub">' + esc(regLabel) + ' · Peak ' + esc(peakMonth) + ' (' + peakVol.toFixed(0) + ')</span>' +
+      '</div>' +
+      '<div class="spec-vol-kpi-card" data-testid="spec-kpi-stddev">' +
+        '<span class="spec-vol-kpi-label">Std Dev &amp; CoV (σ)</span>' +
+        '<strong class="spec-vol-kpi-val">±$' + stdDevUsd.toFixed(2) + '</strong>' +
+        '<span class="spec-vol-kpi-sub">CoV ' + Number(analytics.coefficientOfVariationPct || 0).toFixed(2) + '% · Range $' + spreadUsd.toFixed(2) + '</span>' +
+      '</div>' +
+      '<div class="spec-vol-kpi-card" data-testid="spec-kpi-drawdown">' +
+        '<span class="spec-vol-kpi-label">Max 6M Drawdown</span>' +
+        '<strong class="spec-vol-kpi-val is-teal">-' + Number(analytics.maxDrawdownPct || 0).toFixed(2) + '%</strong>' +
+        '<span class="spec-vol-kpi-sub">6M Low $' + Number(analytics.sixMonthLow || 0).toFixed(2) + ' / High $' + Number(analytics.sixMonthHigh || 0).toFixed(2) + '</span>' +
+      '</div>' +
+      '<div class="spec-vol-kpi-card" data-testid="spec-kpi-zscore">' +
+        '<span class="spec-vol-kpi-label">Z-Score &amp; Timing</span>' +
+        '<strong class="spec-vol-kpi-val ' + zTone + '">' + zText + '</strong>' +
+        '<span class="spec-vol-kpi-sub">' + esc(analytics.buySignalLabel || "Fair Value Band") + ' (Mean $' + Number(analytics.sixMonthMean || 0).toFixed(2) + ')</span>' +
+      '</div>';
+  }
+
+  if (analytics.points && analytics.points.length > 0) {
+    updateSpecD3HoverReadout(analytics.points[analytics.points.length - 1], analytics);
+  }
+}
+
+function updateSpecD3ZoomPanUI(zoomState) {
+  if (!zoomState) return;
+  var zoomBar = document.getElementById("spec-d3-zoom-bar");
+  var scaleEl = document.getElementById("spec-d3-zoom-scale");
+  var windowEl = document.getElementById("spec-d3-zoom-window");
+  var hintEl = document.getElementById("spec-d3-zoom-hint");
+  var panLeftBtn = document.getElementById("spec-d3-pan-left-btn");
+  var panRightBtn = document.getElementById("spec-d3-pan-right-btn");
+  var zoomOutBtn = document.getElementById("spec-d3-zoom-out-btn");
+  var zoomInBtn = document.getElementById("spec-d3-zoom-in-btn");
+  var resetBtn = document.getElementById("spec-d3-zoom-reset-btn");
+
+  var isZoomed = Boolean(zoomState.isZoomed);
+  if (zoomBar) {
+    zoomBar.classList.toggle("is-zoomed", isZoomed);
+    zoomBar.setAttribute("data-zoom-k", String(zoomState.k));
+    zoomBar.setAttribute("data-zoom-x", String(zoomState.x));
+    zoomBar.setAttribute("data-is-zoomed", isZoomed ? "true" : "false");
+  }
+  if (scaleEl) {
+    scaleEl.textContent = zoomState.scaleLabel || (Number(zoomState.k || 1).toFixed(1) + "×");
+    scaleEl.classList.toggle("is-active", isZoomed);
+  }
+  if (windowEl) {
+    windowEl.textContent = zoomState.windowLabel || "May – Oct (All 6M)";
+  }
+  if (hintEl) {
+    hintEl.textContent = isZoomed ? "Drag to pan" : "Wheel / drag";
+  }
+  if (zoomOutBtn) {
+    zoomOutBtn.disabled = !isZoomed;
+  }
+  if (zoomInBtn) {
+    zoomInBtn.disabled = Number(zoomState.k || 1) >= 3.98;
+  }
+  if (panLeftBtn) {
+    panLeftBtn.disabled = !isZoomed || Boolean(zoomState.isAtLeftEdge);
+  }
+  if (panRightBtn) {
+    panRightBtn.disabled = !isZoomed || Boolean(zoomState.isAtRightEdge);
+  }
+  if (resetBtn) {
+    resetBtn.disabled = !isZoomed;
+    resetBtn.classList.toggle("is-active", isZoomed);
+  }
+}
+
+function zoomSpecD3VolatilityChart(factor, anchorRatio) {
+  var d3Container = document.getElementById("spec-d3-volatility-chart");
+  if (d3Container && d3Container.__voltboxD3ZoomController) {
+    return d3Container.__voltboxD3ZoomController.zoomBy(factor, anchorRatio);
+  }
+  return null;
+}
+window.zoomSpecD3VolatilityChart = zoomSpecD3VolatilityChart;
+
+function panSpecD3VolatilityChart(deltaX) {
+  var d3Container = document.getElementById("spec-d3-volatility-chart");
+  if (d3Container && d3Container.__voltboxD3ZoomController) {
+    return d3Container.__voltboxD3ZoomController.panBy(deltaX);
+  }
+  return null;
+}
+window.panSpecD3VolatilityChart = panSpecD3VolatilityChart;
+
+function resetSpecD3VolatilityZoom() {
+  activeSpecD3ZoomTransform = { k: 1, x: 0 };
+  var d3Container = document.getElementById("spec-d3-volatility-chart");
+  if (d3Container && d3Container.__voltboxD3ZoomController) {
+    return d3Container.__voltboxD3ZoomController.resetZoom();
+  }
+  return null;
+}
+window.resetSpecD3VolatilityZoom = resetSpecD3VolatilityZoom;
+
+function setSpecD3VolatilityZoomTransform(transformInput) {
+  var d3Container = document.getElementById("spec-d3-volatility-chart");
+  if (d3Container && d3Container.__voltboxD3ZoomController) {
+    return d3Container.__voltboxD3ZoomController.applyTransform(transformInput, "direct");
+  }
+  return null;
+}
+window.setSpecD3VolatilityZoomTransform = setSpecD3VolatilityZoomTransform;
 
 // ── Product URL, Social Share & QR Code Generator ──
 var activeQrTheme = "gold"; // Voltbox Signature Electric Gold
@@ -3944,6 +4559,15 @@ function refreshCard(id) {
       } else if (!lowStock && !isBackorder && badge) {
         badge.remove();
       }
+      var priceTextEl = document.getElementById("card-price-text-" + id);
+      if (priceTextEl) {
+        var existingPreviewEl = document.getElementById("card-batch-price-preview-" + id);
+        var previewHtml = existingPreviewEl ? existingPreviewEl.outerHTML : ('<span class="card-batch-price-preview" id="card-batch-price-preview-' + id + '" hidden></span>');
+        priceTextEl.innerHTML =
+          '$' + Number(p.price || 0).toFixed(2) +
+          '<span class="card-price-inr-sub">≈ ₹' + Math.round(Number(p.price || 0) * 83.5).toLocaleString("en-IN") + '</span>' +
+          previewHtml;
+      }
     }
   }
 }
@@ -4433,7 +5057,10 @@ function loadHistory() {
         return;
       }
 
-      var html = "";
+      var html =
+        '<button type="button" class="sheet-btn solid wide" style="margin-bottom:8px;display:flex;align-items:center;justify-content:center;gap:6px;" onclick="closeAllSheets();openOrderHistoryPage();">' +
+          icon("clipboard-check", 13) + ' <span>Open Full Order History Page (' + orders.length + ')</span>' +
+        '</button>';
       for (var i = 0; i < orders.length; i++) {
         var o = orders[i];
         var d = new Date(o.placedAt);
@@ -4452,7 +5079,7 @@ function loadHistory() {
             '<span class="history-item-main">' +
               '<span class="history-item-id">' + esc(o.id) + '</span>' +
               '<span class="history-item-when">' + formatDate(d) + ' · ' +
-              o.count + (o.count === 1 ? " item" : " items") + ' · ' + esc(o.paymentMethod || o.status || 'Paid') + '</span>' +
+              o.count + (o.count === 1 ? " item" : " items") + ' · ' + esc(o.status || o.paymentMethod || 'Paid') + '</span>' +
             '</span>' +
             '<span class="history-item-total">$' + o.total.toFixed(2) + '</span>' +
           '</button>' +
@@ -9219,7 +9846,2621 @@ function initCheckoutPrintSummaryAndAdvancedSettings() {
       el.addEventListener("change", readAdvancedSettingsFromForm);
     }
   }
+
+  // Wire up Full Order History Page controls
+  initOrderHistoryPageControls();
+  // Wire up Verified Buyer Review & Rating controls inside #spec-drawer
+  initProductReviewsControls();
+  // Wire up Admin Catalog Grid Batch Edit Mode controls
+  initCatalogBatchEditControls();
 }
 
+// ============================================================================
+// FULL ORDER HISTORY PAGE (PAST PURCHASES, RECEIPTS, STATUS & ITEM BREAKDOWNS)
+// ============================================================================
 
+var orderHistoryAllOrders = [];
+var orderHistoryFilteredOrders = [];
+var orderHistorySummary = null;
+var orderHistorySelectedOrderId = null;
+var orderHistoryActiveStatus = "all";
+var orderHistorySearchQuery = "";
+var orderHistorySortBy = "newest";
+var isOrderHistoryPageOpen = false;
 
+function normalizeClientOrderForHistory(rawOrder) {
+  if (window.VoltboxQR && typeof window.VoltboxQR.enrichOrderForHistory === "function") {
+    return window.VoltboxQR.enrichOrderForHistory(rawOrder, products || [], Date.now());
+  }
+  return rawOrder;
+}
+
+function computeClientOrderSummary(ordersList) {
+  if (window.VoltboxQR && typeof window.VoltboxQR.computeOrderHistorySummary === "function") {
+    return window.VoltboxQR.computeOrderHistorySummary(ordersList);
+  }
+  var totalSpent = 0;
+  var totalItems = 0;
+  var totalSavings = 0;
+  var counts = { all: ordersList.length, placed: 0, processing: 0, shipped: 0, delivered: 0 };
+  for (var i = 0; i < ordersList.length; i++) {
+    var o = ordersList[i];
+    totalSpent += Number(o.total || 0);
+    totalItems += Number(o.count || 0);
+    totalSavings += Number(o.discountTotal || 0);
+    var sk = o.stageKey || "placed";
+    if (sk === "delivered") counts.delivered++;
+    else if (sk === "shipped") counts.shipped++;
+    else if (sk === "processing") counts.processing++;
+    else counts.placed++;
+  }
+  return {
+    totalOrders: ordersList.length,
+    totalSpent: Math.round(totalSpent * 100) / 100,
+    totalItemsPurchased: totalItems,
+    totalSavings: Math.round(totalSavings * 100) / 100,
+    averageOrderValue: ordersList.length > 0 ? Math.round((totalSpent / ordersList.length) * 100) / 100 : 0,
+    statusCounts: counts
+  };
+}
+
+function filterClientOrders(ordersList) {
+  if (window.VoltboxQR && typeof window.VoltboxQR.filterAndSortOrderHistory === "function") {
+    return window.VoltboxQR.filterAndSortOrderHistory(ordersList, {
+      statusFilter: orderHistoryActiveStatus,
+      searchQuery: orderHistorySearchQuery,
+      sortBy: orderHistorySortBy
+    });
+  }
+  return ordersList;
+}
+
+window.openOrderHistoryPage = function (focusOrderId) {
+  closeAllSheets();
+  isOrderHistoryPageOpen = true;
+
+  var pageEl = document.getElementById("order-history-page");
+  var studioStripEl = document.getElementById("studio-command-strip");
+  var toolbarSectionEl = document.getElementById("catalog-toolbar-section");
+  var gridEl = document.getElementById("product-grid");
+  var orderBarEl = document.getElementById("order-bar");
+  var compareDockEl = document.getElementById("compare-dock");
+  var topbarOrdersBtn = document.getElementById("topbar-orders-btn");
+
+  if (studioStripEl) studioStripEl.hidden = true;
+  if (toolbarSectionEl) toolbarSectionEl.hidden = true;
+  if (gridEl) gridEl.hidden = true;
+  if (orderBarEl) orderBarEl.hidden = true;
+  if (compareDockEl) compareDockEl.classList.remove("open");
+
+  if (pageEl) {
+    pageEl.hidden = false;
+  }
+  if (topbarOrdersBtn) {
+    topbarOrdersBtn.classList.add("active");
+    topbarOrdersBtn.setAttribute("aria-pressed", "true");
+  }
+
+  if (focusOrderId) {
+    orderHistorySelectedOrderId = String(focusOrderId);
+  }
+
+  try {
+    if (window.location.pathname !== "/orders" && window.location.pathname !== "/order-history") {
+      window.history.replaceState({ view: "orders" }, "", "/?view=orders");
+    }
+  } catch (e) {}
+
+  window.scrollTo({ top: 0, behavior: "smooth" });
+  fetchAndRenderOrderHistoryPage(focusOrderId);
+};
+
+window.closeOrderHistoryPage = function () {
+  isOrderHistoryPageOpen = false;
+
+  var pageEl = document.getElementById("order-history-page");
+  var studioStripEl = document.getElementById("studio-command-strip");
+  var toolbarSectionEl = document.getElementById("catalog-toolbar-section");
+  var gridEl = document.getElementById("product-grid");
+  var orderBarEl = document.getElementById("order-bar");
+  var topbarOrdersBtn = document.getElementById("topbar-orders-btn");
+
+  if (pageEl) pageEl.hidden = true;
+  if (studioStripEl) studioStripEl.hidden = false;
+  if (toolbarSectionEl) toolbarSectionEl.hidden = false;
+  if (gridEl) gridEl.hidden = false;
+  if (orderBarEl) orderBarEl.hidden = false;
+
+  if (topbarOrdersBtn) {
+    topbarOrdersBtn.classList.remove("active");
+    topbarOrdersBtn.setAttribute("aria-pressed", "false");
+  }
+
+  if (typeof updateCompareUI === "function") {
+    updateCompareUI();
+  }
+
+  try {
+    if (window.location.pathname === "/orders" || window.location.pathname === "/order-history" || window.location.search.indexOf("view=orders") !== -1) {
+      window.history.replaceState({ view: "catalog" }, "", "/");
+    }
+  } catch (e) {}
+};
+
+function fetchAndRenderOrderHistoryPage(preferredOrderId) {
+  var listEl = document.getElementById("oh-orders-list");
+  if (listEl && orderHistoryAllOrders.length === 0) {
+    listEl.innerHTML =
+      '<div class="oh-loading-state">' +
+        '<div class="spinner"></div>' +
+        '<p>Loading purchase ledger &amp; verified receipts from backend…</p>' +
+      '</div>';
+  }
+
+  api("/api/orders/history")
+    .then(function (res) {
+      if (!res.ok) throw new Error("Fallback to /api/orders");
+      return res.json();
+    })
+    .then(function (payload) {
+      var rawList = (payload && Array.isArray(payload.allOrders))
+        ? payload.allOrders
+        : (Array.isArray(payload) ? payload : []);
+      orderHistoryAllOrders = rawList.map(normalizeClientOrderForHistory);
+      orderHistorySummary = (payload && payload.summary) ? payload.summary : computeClientOrderSummary(orderHistoryAllOrders);
+      paintHistoryCount(orderHistoryAllOrders.length);
+      if (preferredOrderId) {
+        orderHistorySelectedOrderId = String(preferredOrderId);
+      }
+      refreshOrderHistoryView();
+    })
+    .catch(function () {
+      api("/api/orders")
+        .then(function (r) { return r.json(); })
+        .then(function (orders) {
+          var arr = Array.isArray(orders) ? orders : [];
+          orderHistoryAllOrders = arr.map(normalizeClientOrderForHistory);
+          orderHistorySummary = computeClientOrderSummary(orderHistoryAllOrders);
+          paintHistoryCount(orderHistoryAllOrders.length);
+          if (preferredOrderId) {
+            orderHistorySelectedOrderId = String(preferredOrderId);
+          }
+          refreshOrderHistoryView();
+        })
+        .catch(function () {
+          if (listEl) {
+            listEl.innerHTML = '<div class="oh-empty-state"><p>Could not load order history from backend.</p></div>';
+          }
+        });
+    });
+}
+
+function refreshOrderHistoryView() {
+  var summary = computeClientOrderSummary(orderHistoryAllOrders);
+  orderHistorySummary = summary;
+
+  // 1. Update Metrics Ribbon
+  var ordersEl = document.getElementById("oh-metric-orders");
+  var ordersSubEl = document.getElementById("oh-metric-orders-sub");
+  var spendEl = document.getElementById("oh-metric-spend");
+  var spendSubEl = document.getElementById("oh-metric-spend-sub");
+  var itemsEl = document.getElementById("oh-metric-items");
+  var itemsSubEl = document.getElementById("oh-metric-items-sub");
+  var avgEl = document.getElementById("oh-metric-avg");
+  var savedEl = document.getElementById("oh-metric-saved");
+
+  if (ordersEl) ordersEl.textContent = summary.totalOrders + (summary.totalOrders === 1 ? " Order" : " Orders");
+  if (ordersSubEl) {
+    ordersSubEl.textContent = summary.statusCounts.delivered + " delivered · " +
+      (summary.statusCounts.shipped + summary.statusCounts.processing + summary.statusCounts.placed) + " active";
+  }
+  if (spendEl) spendEl.textContent = "$" + summary.totalSpent.toFixed(2);
+  if (spendSubEl) {
+    var inrTotal = Math.round(summary.totalSpent * 83.5).toLocaleString("en-IN");
+    spendSubEl.textContent = "≈ ₹" + inrTotal + " INR · Verified tax invoices";
+  }
+  if (itemsEl) itemsEl.textContent = summary.totalItemsPurchased + (summary.totalItemsPurchased === 1 ? " Unit" : " Units");
+  if (itemsSubEl) {
+    itemsSubEl.textContent = "Across " + summary.totalOrders + " verified studio shipments";
+  }
+  if (avgEl) avgEl.textContent = "$" + summary.averageOrderValue.toFixed(2) + " avg";
+  if (savedEl) {
+    savedEl.textContent = summary.totalSavings > 0
+      ? ("$" + summary.totalSavings.toFixed(2) + " saved via Rig & Promo discounts")
+      : "5% Rig & VOLT10 bundle eligible";
+  }
+
+  // 2. Update Status Tab Badges
+  var countAllEl = document.getElementById("oh-count-all");
+  var countPlacedEl = document.getElementById("oh-count-placed");
+  var countProcEl = document.getElementById("oh-count-processing");
+  var countShipEl = document.getElementById("oh-count-shipped");
+  var countDelivEl = document.getElementById("oh-count-delivered");
+
+  if (countAllEl) countAllEl.textContent = String(summary.statusCounts.all);
+  if (countPlacedEl) countPlacedEl.textContent = String(summary.statusCounts.placed);
+  if (countProcEl) countProcEl.textContent = String(summary.statusCounts.processing);
+  if (countShipEl) countShipEl.textContent = String(summary.statusCounts.shipped);
+  if (countDelivEl) countDelivEl.textContent = String(summary.statusCounts.delivered);
+
+  // 3. Filter and Sort Orders
+  orderHistoryFilteredOrders = filterClientOrders(orderHistoryAllOrders);
+
+  // Ensure a valid selected order for the Receipt Inspector
+  var selectedOrder = null;
+  if (orderHistorySelectedOrderId) {
+    for (var i = 0; i < orderHistoryFilteredOrders.length; i++) {
+      if (orderHistoryFilteredOrders[i].id === orderHistorySelectedOrderId) {
+        selectedOrder = orderHistoryFilteredOrders[i];
+        break;
+      }
+    }
+  }
+  if (!selectedOrder && orderHistoryFilteredOrders.length > 0) {
+    selectedOrder = orderHistoryFilteredOrders[0];
+    orderHistorySelectedOrderId = selectedOrder.id;
+  }
+
+  var metaEl = document.getElementById("oh-results-meta");
+  if (metaEl) {
+    metaEl.innerHTML =
+      'Showing <strong>' + orderHistoryFilteredOrders.length + '</strong> of <strong>' +
+      orderHistoryAllOrders.length + '</strong> past purchase' + (orderHistoryAllOrders.length === 1 ? '' : 's') +
+      (orderHistoryActiveStatus !== "all" ? ' · Status: <span class="oh-meta-pill">' + esc(orderHistoryActiveStatus.toUpperCase()) + '</span>' : '') +
+      (orderHistorySearchQuery ? ' · Search: <span class="oh-meta-pill">"' + esc(orderHistorySearchQuery) + '"</span>' : '');
+  }
+
+  renderOrderHistoryCards(orderHistoryFilteredOrders, selectedOrder ? selectedOrder.id : null);
+  renderOrderHistoryInspector(selectedOrder);
+}
+
+function getOrderStatusBadgeClass(stageKey) {
+  if (stageKey === "delivered") return "oh-status-pill status-delivered";
+  if (stageKey === "shipped") return "oh-status-pill status-shipped";
+  if (stageKey === "processing") return "oh-status-pill status-processing";
+  return "oh-status-pill status-placed";
+}
+
+function renderOrderHistoryCards(ordersList, activeId) {
+  var listEl = document.getElementById("oh-orders-list");
+  if (!listEl) return;
+
+  if (!Array.isArray(ordersList) || ordersList.length === 0) {
+    listEl.innerHTML =
+      '<div class="oh-empty-state" data-testid="oh-empty-state">' +
+        '<div class="oh-empty-icon">' + icon("clipboard-check", 28) + '</div>' +
+        '<h3>No matching orders found</h3>' +
+        '<p>' + (orderHistoryAllOrders.length === 0
+          ? 'You haven\'t completed a hardware checkout yet. Add components to your cart and complete checkout to generate your first receipt.'
+          : 'No past purchases match your current status filter or search query.') + '</p>' +
+        (orderHistoryAllOrders.length > 0
+          ? '<button type="button" class="oh-action-btn primary" onclick="resetOrderHistoryFilters()">Reset Order Filters</button>'
+          : '<button type="button" class="oh-action-btn primary" onclick="closeOrderHistoryPage()">Browse Hardware Catalog</button>') +
+      '</div>';
+    return;
+  }
+
+  var html = "";
+  for (var i = 0; i < ordersList.length; i++) {
+    var ord = ordersList[i];
+    var isSelected = ord.id === activeId;
+    var lines = Array.isArray(ord.lines) ? ord.lines : [];
+    var stageKey = ord.stageKey || "placed";
+    var stages = (ord.timeline && Array.isArray(ord.timeline.stages)) ? ord.timeline.stages : [];
+
+    // Mini 4-step progress strip
+    var stepsHtml = '<div class="oh-mini-steps">';
+    var stageLabels = ["Order Placed", "Processing", "Shipped", "Delivered"];
+    for (var s = 0; s < 4; s++) {
+      var stState = s < ord.stageIndex ? "done" : (s === ord.stageIndex ? "current" : "upcoming");
+      var stLabel = stages[s] ? stages[s].label : stageLabels[s];
+      stepsHtml +=
+        '<div class="oh-mini-step ' + stState + '">' +
+          '<span class="oh-mini-dot"></span>' +
+          '<span class="oh-mini-label">' + esc(stLabel) + '</span>' +
+        '</div>';
+    }
+    stepsHtml += '</div>';
+
+    // Itemized breakdown rows
+    var itemsRowsHtml = "";
+    for (var l = 0; l < lines.length; l++) {
+      var ln = lines[l];
+      var lnImg = getProductImageUrl(ln);
+      var lnSku = ln.sku || ("VB-PRT-" + String(ln.productId || 1).padStart(3, "0"));
+      var lnSub = typeof ln.lineSubtotal === "number" ? ln.lineSubtotal : (Number(ln.price || 0) * Number(ln.qty || 1));
+      itemsRowsHtml +=
+        '<div class="oh-line-item" data-testid="oh-line-item">' +
+          '<div class="oh-line-left">' +
+            '<img class="oh-line-thumb" src="' + esc(lnImg) + '" alt="' + esc(ln.title || "Component") + '" onerror="this.onerror=null;this.src=NO_IMAGE" />' +
+            '<div class="oh-line-meta">' +
+              '<div class="oh-line-title-row">' +
+                '<span class="oh-line-title">' + esc(ln.title || "Hardware Component") + '</span>' +
+                '<span class="oh-line-sku">' + esc(lnSku) + '</span>' +
+              '</div>' +
+              '<div class="oh-line-sub">' +
+                '<span>Qty: <strong>' + (ln.qty || 1) + '</strong> &times; $' + Number(ln.price || 0).toFixed(2) + '</span>' +
+                '<span class="oh-dot-sep">·</span>' +
+                '<span>' + (ln.sharePercent || 100) + '% of order subtotal</span>' +
+              '</div>' +
+            '</div>' +
+          '</div>' +
+          '<div class="oh-line-right">' +
+            '<strong class="oh-line-total">$' + lnSub.toFixed(2) + '</strong>' +
+            '<div class="oh-line-btn-group">' +
+              '<button type="button" class="oh-review-part-chip" data-testid="oh-review-part-' + Number(ln.productId || 0) + '" onclick="event.stopPropagation();openSpecDrawerToReviews(' + Number(ln.productId || 0) + ')" title="Rate and review ' + esc(ln.title || "this component") + '">' +
+                '<span>&#9733; Review Part</span>' +
+              '</button>' +
+              '<button type="button" class="oh-buy-again-chip" onclick="event.stopPropagation();buyAgainSingleItem(' + Number(ln.productId || 0) + ')" title="Add ' + esc(ln.title || "item") + ' to cart">' +
+                icon("cart", 11) + ' <span>Buy Again</span>' +
+              '</button>' +
+            '</div>' +
+          '</div>' +
+        '</div>';
+    }
+
+    html +=
+      '<article class="oh-order-card' + (isSelected ? ' selected' : '') + '" data-order-id="' + esc(ord.id) + '" data-testid="oh-order-card-' + esc(ord.id) + '" onclick="selectOrderInHistory(\'' + esc(ord.id) + '\')">' +
+        '<div class="oh-card-head">' +
+          '<div class="oh-card-head-left">' +
+            '<div class="oh-order-id-row">' +
+              '<span class="oh-order-id" data-testid="oh-card-order-id">#' + esc(ord.id) + '</span>' +
+              '<span class="oh-receipt-code" title="Official Receipt Verification Code">' + esc(ord.receiptCode || ("RCPT-" + ord.id)) + '</span>' +
+              '<span class="' + getOrderStatusBadgeClass(stageKey) + '" data-testid="oh-card-status">' +
+                '<span class="oh-status-dot"></span>' +
+                '<span>' + esc(ord.status || "Order Placed") + '</span>' +
+              '</span>' +
+            '</div>' +
+            '<div class="oh-order-meta-row">' +
+              '<span>Placed ' + esc(ord.formattedDate || formatDate(new Date(ord.placedAt))) + '</span>' +
+              '<span class="oh-dot-sep">·</span>' +
+              '<span>' + ord.count + (ord.count === 1 ? ' component' : ' components') + ' (' + lines.length + (lines.length === 1 ? ' SKU' : ' SKUs') + ')</span>' +
+              '<span class="oh-dot-sep">·</span>' +
+              '<span class="oh-pay-method-tag">' + esc(ord.paymentMethod || "Verified Payment") + '</span>' +
+            '</div>' +
+          '</div>' +
+          '<div class="oh-card-head-right">' +
+            '<span class="oh-card-total-label">TOTAL PAID</span>' +
+            '<strong class="oh-card-total-val" data-testid="oh-card-total">$' + Number(ord.total || 0).toFixed(2) + '</strong>' +
+          '</div>' +
+        '</div>' +
+
+        '<div class="oh-card-fulfillment-strip">' +
+          '<div class="oh-fulfillment-top">' +
+            '<span class="oh-carrier-info">' +
+              icon("truck", 13) +
+              ' <strong>' + esc(ord.carrierName || "BlueDart Express") + '</strong> · AWB: <code>' + esc(ord.trackingNumber || "VB-TRK-882194") + '</code>' +
+            '</span>' +
+            '<span class="oh-dest-info">Ship to: <strong>' + esc(ord.shippingName || "Valued Builder") + '</strong> (' + esc(ord.shippingAddress || "Verified Address") + ')</span>' +
+          '</div>' +
+          stepsHtml +
+        '</div>' +
+
+        '<div class="oh-card-items-section">' +
+          '<div class="oh-section-kicker">ITEMIZED COMPONENT BREAKDOWN</div>' +
+          '<div class="oh-line-items-list">' +
+            itemsRowsHtml +
+          '</div>' +
+        '</div>' +
+
+        '<div class="oh-card-footer">' +
+          '<div class="oh-financial-pills">' +
+            '<span class="oh-fin-pill">Subtotal: <strong>$' + Number(ord.subtotal || 0).toFixed(2) + '</strong></span>' +
+            (ord.discountTotal > 0
+              ? '<span class="oh-fin-pill discount">Saved: <strong>−$' + Number(ord.discountTotal).toFixed(2) + '</strong></span>'
+              : '') +
+            '<span class="oh-fin-pill">Tax (8.25%): <strong>$' + Number(ord.tax || 0).toFixed(2) + '</strong></span>' +
+            '<span class="oh-fin-pill total">Receipt Total: <strong>$' + Number(ord.total || 0).toFixed(2) + '</strong></span>' +
+          '</div>' +
+          '<div class="oh-card-actions">' +
+            '<button type="button" class="oh-card-btn inspect' + (isSelected ? ' active' : '') + '" onclick="event.stopPropagation();selectOrderInHistory(\'' + esc(ord.id) + '\')">' +
+              icon("clipboard-check", 13) + ' <span>Receipt Details</span>' +
+            '</button>' +
+            '<button type="button" class="oh-card-btn thermal" data-testid="oh-thermal-btn-' + esc(ord.id) + '" onclick="event.stopPropagation();openHistoryOrderThermalBill(\'' + esc(ord.id) + '\')">' +
+              icon("printer", 13) + ' <span>Thermal Bill</span>' +
+            '</button>' +
+            '<button type="button" class="oh-card-btn track" data-testid="oh-track-btn-' + esc(ord.id) + '" onclick="event.stopPropagation();openOrderTrackingDashboard(\'' + esc(ord.id) + '\')">' +
+              icon("truck", 13) + ' <span>Live Track</span>' +
+            '</button>' +
+            '<button type="button" class="oh-card-btn reorder" data-testid="oh-reorder-btn-' + esc(ord.id) + '" onclick="event.stopPropagation();reorderEntirePastOrder(\'' + esc(ord.id) + '\')">' +
+              icon("cart", 13) + ' <span>Reorder All</span>' +
+            '</button>' +
+          '</div>' +
+        '</div>' +
+      '</article>';
+  }
+
+  listEl.innerHTML = html;
+}
+
+function renderOrderHistoryInspector(ord) {
+  var inspectorEl = document.getElementById("oh-receipt-inspector");
+  if (!inspectorEl) return;
+
+  if (!ord) {
+    inspectorEl.innerHTML =
+      '<div class="oh-inspector-card empty">' +
+        '<p class="oh-inspector-empty-msg">Select any order on the left to inspect its official tax receipt, itemized SKU breakdown, and live fulfillment timeline.</p>' +
+      '</div>';
+    return;
+  }
+
+  var lines = Array.isArray(ord.lines) ? ord.lines : [];
+  var stages = (ord.timeline && Array.isArray(ord.timeline.stages)) ? ord.timeline.stages : [];
+  var stageKey = ord.stageKey || "placed";
+  var canAdvance = ord.stageIndex < 3;
+
+  var timelineRowsHtml = "";
+  for (var s = 0; s < stages.length; s++) {
+    var st = stages[s];
+    timelineRowsHtml +=
+      '<div class="oh-insp-stage ' + esc(st.state) + '">' +
+        '<div class="oh-insp-stage-marker">' +
+          (st.state === "completed" ? icon("check", 11) : (s + 1)) +
+        '</div>' +
+        '<div class="oh-insp-stage-body">' +
+          '<div class="oh-insp-stage-top">' +
+            '<strong>' + esc(st.label) + '</strong>' +
+            '<span>' + esc(st.timestamp) + '</span>' +
+          '</div>' +
+          '<div class="oh-insp-stage-sub">' + esc(st.subtitle) + '</div>' +
+        '</div>' +
+      '</div>';
+  }
+
+  var breakdownRowsHtml = "";
+  for (var i = 0; i < lines.length; i++) {
+    var ln = lines[i];
+    var lnSub = typeof ln.lineSubtotal === "number" ? ln.lineSubtotal : (Number(ln.price || 0) * Number(ln.qty || 1));
+    breakdownRowsHtml +=
+      '<tr>' +
+        '<td>' +
+          '<div class="oh-insp-item-name">' + esc(ln.title || "Component") + '</div>' +
+          '<div class="oh-insp-item-sku">' + esc(ln.sku || ("VB-PRT-" + ln.productId)) + '</div>' +
+        '</td>' +
+        '<td class="num">' + (ln.qty || 1) + ' &times; $' + Number(ln.price || 0).toFixed(2) + '</td>' +
+        '<td class="num strong">$' + lnSub.toFixed(2) + '</td>' +
+      '</tr>';
+  }
+
+  var qrSvgHtml = typeof receiptQrSvg === "function" ? receiptQrSvg(ord.id) : "";
+  var barcodeHtml = typeof receiptBarcodeSvg === "function" ? receiptBarcodeSvg(ord.id) : "";
+
+  inspectorEl.innerHTML =
+    '<div class="oh-inspector-card" data-testid="oh-inspector-card" data-inspected-order="' + esc(ord.id) + '">' +
+      '<div class="oh-insp-header">' +
+        '<div class="oh-insp-header-top">' +
+          '<span class="oh-insp-kicker">OFFICIAL TAX INVOICE &amp; RECEIPT</span>' +
+          '<span class="' + getOrderStatusBadgeClass(stageKey) + '" id="oh-inspector-status-badge">' +
+            '<span class="oh-status-dot"></span>' +
+            '<span>' + esc(ord.status || "Order Placed") + '</span>' +
+          '</span>' +
+        '</div>' +
+        '<h3 class="oh-insp-title" id="oh-inspector-order-id">Order #' + esc(ord.id) + '</h3>' +
+        '<div class="oh-insp-submeta">' +
+          '<span>Receipt <code>' + esc(ord.receiptCode || ("RCPT-" + ord.id)) + '</code></span>' +
+          '<span>·</span>' +
+          '<span>' + esc(ord.formattedDate || formatDate(new Date(ord.placedAt))) + '</span>' +
+        '</div>' +
+      '</div>' +
+
+      '<div class="oh-insp-section">' +
+        '<div class="oh-insp-section-head">' +
+          '<span>FULFILLMENT STATUS (' + (ord.progressPercent || 0) + '%)</span>' +
+          '<button type="button" class="oh-insp-advance-btn" id="oh-inspector-advance-btn" data-testid="oh-inspector-advance-btn" onclick="advanceHistoryOrderStage(\'' + esc(ord.id) + '\')">' +
+            icon("bolt", 11) + ' <span>' + (canAdvance ? ("Advance → " + esc(ord.timeline.nextStage || "Next Stage")) : "Reset to Order Placed") + '</span>' +
+          '</button>' +
+        '</div>' +
+        '<div class="oh-insp-timeline">' +
+          timelineRowsHtml +
+        '</div>' +
+      '</div>' +
+
+      '<div class="oh-insp-section">' +
+        '<div class="oh-insp-section-head">' +
+          '<span>RECEIPT &amp; DELIVERY DETAILS</span>' +
+        '</div>' +
+        '<div class="oh-insp-kv-grid">' +
+          '<div class="oh-insp-kv">' +
+            '<span class="k">Recipient</span>' +
+            '<strong class="v">' + esc(ord.shippingName || "Valued Builder") + '</strong>' +
+          '</div>' +
+          '<div class="oh-insp-kv">' +
+            '<span class="k">Payment Method</span>' +
+            '<strong class="v">' + esc(ord.paymentMethod || "Verified Digital Payment") + '</strong>' +
+          '</div>' +
+          '<div class="oh-insp-kv full">' +
+            '<span class="k">Shipping Destination</span>' +
+            '<strong class="v">' + esc(ord.shippingAddress || "42 Circuit Lane, Silicon Bay") + '</strong>' +
+          '</div>' +
+          '<div class="oh-insp-kv">' +
+            '<span class="k">Carrier &amp; AWB</span>' +
+            '<strong class="v">' + esc(ord.carrierName || "BlueDart Express") + ' (' + esc(ord.trackingNumber || "VB-TRK") + ')</strong>' +
+          '</div>' +
+          '<div class="oh-insp-kv">' +
+            '<span class="k">Est. Delivery</span>' +
+            '<strong class="v">' + esc(ord.estimatedDelivery || "Scheduled") + '</strong>' +
+          '</div>' +
+        '</div>' +
+      '</div>' +
+
+      '<div class="oh-insp-section">' +
+        '<div class="oh-insp-section-head">' +
+          '<span>ITEMIZED COST BREAKDOWN (' + ord.count + (ord.count === 1 ? ' ITEM' : ' ITEMS') + ')</span>' +
+        '</div>' +
+        '<table class="oh-insp-table" data-testid="oh-inspector-breakdown-table">' +
+          '<thead>' +
+            '<tr>' +
+              '<th>Component / SKU</th>' +
+              '<th class="num">Qty &times; Unit</th>' +
+              '<th class="num">Total</th>' +
+            '</tr>' +
+          '</thead>' +
+          '<tbody>' +
+            breakdownRowsHtml +
+          '</tbody>' +
+        '</table>' +
+
+        '<div class="oh-insp-ledger">' +
+          '<div class="oh-insp-ledger-row">' +
+            '<span>Subtotal (' + ord.count + (ord.count === 1 ? ' unit' : ' units') + ')</span>' +
+            '<span>$' + Number(ord.subtotal || 0).toFixed(2) + '</span>' +
+          '</div>' +
+          (ord.rigDiscount > 0
+            ? '<div class="oh-insp-ledger-row discount"><span>Rig Bundle Discount (5%)</span><span>−$' + Number(ord.rigDiscount).toFixed(2) + '</span></div>'
+            : '') +
+          (ord.promoDiscount > 0
+            ? '<div class="oh-insp-ledger-row discount"><span>Promo Code (' + esc(ord.promoCode || "PROMO") + ')</span><span>−$' + Number(ord.promoDiscount).toFixed(2) + '</span></div>'
+            : '') +
+          '<div class="oh-insp-ledger-row">' +
+            '<span>ESD Packaging &amp; Air Shipping</span>' +
+            '<span class="free-tag">FREE</span>' +
+          '</div>' +
+          '<div class="oh-insp-ledger-row">' +
+            '<span>Estimated Tax (8.25%)</span>' +
+            '<span>$' + Number(ord.tax || 0).toFixed(2) + '</span>' +
+          '</div>' +
+          '<div class="oh-insp-ledger-row grand-total">' +
+            '<span>Total Paid</span>' +
+            '<strong id="oh-inspector-grand-total">$' + Number(ord.total || 0).toFixed(2) + '</strong>' +
+          '</div>' +
+        '</div>' +
+      '</div>' +
+
+      '<div class="oh-insp-verification">' +
+        '<div class="oh-insp-qr-wrap">' + qrSvgHtml + '</div>' +
+        '<div class="oh-insp-barcode-wrap">' +
+          barcodeHtml +
+          '<span class="oh-insp-barcode-caption">VERIFIED RECEIPT · ' + esc(ord.id) + '</span>' +
+        '</div>' +
+      '</div>' +
+
+      '<div class="oh-insp-actions">' +
+        '<button type="button" class="oh-action-btn primary wide" onclick="openHistoryOrderThermalBill(\'' + esc(ord.id) + '\')">' +
+          icon("printer", 14) + ' <span>Open Thermal Receipt &amp; Print</span>' +
+        '</button>' +
+        '<div class="oh-insp-actions-row">' +
+          '<button type="button" class="oh-action-btn ghost" onclick="openOrderTrackingDashboard(\'' + esc(ord.id) + '\')">' +
+            icon("truck", 13) + ' <span>Live Tracker</span>' +
+          '</button>' +
+          '<button type="button" class="oh-action-btn ghost" onclick="emailHistoryOrderReceipt(\'' + esc(ord.id) + '\')">' +
+            icon("mail", 13) + ' <span>Email Receipt</span>' +
+          '</button>' +
+          '<button type="button" class="oh-action-btn ghost" onclick="reorderEntirePastOrder(\'' + esc(ord.id) + '\')">' +
+            icon("cart", 13) + ' <span>Reorder All</span>' +
+          '</button>' +
+        '</div>' +
+      '</div>' +
+    '</div>';
+}
+
+window.selectOrderInHistory = function (orderId) {
+  orderHistorySelectedOrderId = String(orderId || "");
+  refreshOrderHistoryView();
+};
+
+window.resetOrderHistoryFilters = function () {
+  orderHistoryActiveStatus = "all";
+  orderHistorySearchQuery = "";
+  orderHistorySortBy = "newest";
+
+  var searchInput = document.getElementById("oh-search-input");
+  var clearBtn = document.getElementById("oh-search-clear-btn");
+  var sortSelect = document.getElementById("oh-sort-select");
+  if (searchInput) searchInput.value = "";
+  if (clearBtn) clearBtn.hidden = true;
+  if (sortSelect) sortSelect.value = "newest";
+
+  var tabs = document.querySelectorAll("#oh-status-tabs .oh-status-tab");
+  for (var i = 0; i < tabs.length; i++) {
+    var isAll = tabs[i].getAttribute("data-oh-status") === "all";
+    tabs[i].classList.toggle("active", isAll);
+    tabs[i].setAttribute("aria-selected", isAll ? "true" : "false");
+  }
+
+  refreshOrderHistoryView();
+};
+
+window.openHistoryOrderThermalBill = function (orderId) {
+  for (var i = 0; i < orderHistoryAllOrders.length; i++) {
+    if (orderHistoryAllOrders[i].id === orderId) {
+      showReceipt(orderHistoryAllOrders[i]);
+      return;
+    }
+  }
+  openOrderFromHistory(orderId);
+};
+
+window.emailHistoryOrderReceipt = function (orderId) {
+  if (!orderId) return;
+  api("/api/orders/" + encodeURIComponent(orderId) + "/email", { method: "POST" })
+    .then(function (r) { return r.json().then(function (d) { return { ok: r.ok, data: d }; }); })
+    .then(function (res) {
+      if (res.ok) {
+        showActivityToast("Receipt for Order #" + orderId + " emailed to " + (res.data.sentTo || "your inbox") + "!");
+      } else {
+        showActivityToast((res.data && res.data.message) || "Could not email receipt.");
+      }
+    })
+    .catch(function () {
+      showActivityToast("Unable to reach server to email receipt.");
+    });
+};
+
+window.advanceHistoryOrderStage = function (orderId) {
+  if (!orderId) return;
+  var target = null;
+  for (var i = 0; i < orderHistoryAllOrders.length; i++) {
+    if (orderHistoryAllOrders[i].id === orderId) {
+      target = orderHistoryAllOrders[i];
+      break;
+    }
+  }
+  var isReset = target && target.stageIndex >= 3;
+  var url = isReset
+    ? ("/api/orders/" + encodeURIComponent(orderId) + "/status")
+    : ("/api/orders/" + encodeURIComponent(orderId) + "/advance");
+  var fetchOpts = isReset
+    ? { method: "PUT", body: JSON.stringify({ status: "Order Placed" }) }
+    : { method: "POST" };
+
+  api(url, fetchOpts)
+    .then(function (r) { return r.json(); })
+    .then(function (data) {
+      if (data && data.order) {
+        var updatedEnriched = normalizeClientOrderForHistory(data.order);
+        for (var j = 0; j < orderHistoryAllOrders.length; j++) {
+          if (orderHistoryAllOrders[j].id === orderId) {
+            orderHistoryAllOrders[j] = updatedEnriched;
+            break;
+          }
+        }
+        orderHistorySelectedOrderId = orderId;
+        refreshOrderHistoryView();
+        showActivityToast("Order #" + orderId + " status updated to: " + updatedEnriched.status);
+      }
+    })
+    .catch(function () {
+      showActivityToast("Could not update order status.");
+    });
+};
+
+window.reorderEntirePastOrder = function (orderId) {
+  var target = null;
+  for (var i = 0; i < orderHistoryAllOrders.length; i++) {
+    if (orderHistoryAllOrders[i].id === orderId) {
+      target = orderHistoryAllOrders[i];
+      break;
+    }
+  }
+  if (!target || !Array.isArray(target.lines) || target.lines.length === 0) return;
+
+  var addedUnits = 0;
+  for (var l = 0; l < target.lines.length; l++) {
+    var ln = target.lines[l];
+    var pid = Number(ln.productId);
+    var qty = Math.max(1, Number(ln.qty) || 1);
+    if (pid > 0) {
+      cart[pid] = (cart[pid] || 0) + qty;
+      addedUnits += qty;
+      paintCardQty(pid);
+    }
+  }
+  recalcTotals();
+  paintRigBuilder();
+  scheduleCartSave();
+  showActivityToast("Reordered " + addedUnits + (addedUnits === 1 ? " component" : " components") + " from Order #" + orderId + " into your cart!");
+};
+
+window.buyAgainSingleItem = function (productId) {
+  var pid = Number(productId);
+  if (!pid || pid <= 0) return;
+  inc(pid);
+  var prod = findProduct(pid);
+  showActivityToast("Added " + (prod ? prod.title : ("Component #" + pid)) + " to your cart!");
+};
+
+window.onOrderTrackingUpdateReceived = function (msg) {
+  if (!msg || !msg.orderId) return;
+  if (isOrderHistoryPageOpen) {
+    fetchAndRenderOrderHistoryPage(orderHistorySelectedOrderId || msg.orderId);
+  }
+};
+
+function initOrderHistoryPageControls() {
+  var topbarOrdersBtn = document.getElementById("topbar-orders-btn");
+  if (topbarOrdersBtn) {
+    topbarOrdersBtn.addEventListener("click", function () {
+      if (isOrderHistoryPageOpen) {
+        closeOrderHistoryPage();
+      } else {
+        openOrderHistoryPage();
+      }
+    });
+  }
+
+  var profileOrdersPageBtn = document.getElementById("open-order-history-page-btn");
+  if (profileOrdersPageBtn) {
+    profileOrdersPageBtn.addEventListener("click", function () {
+      closeAllSheets();
+      openOrderHistoryPage();
+    });
+  }
+
+  var backBtn = document.getElementById("order-history-back-btn");
+  if (backBtn) {
+    backBtn.addEventListener("click", function () {
+      closeOrderHistoryPage();
+    });
+  }
+
+  var refreshBtn = document.getElementById("oh-refresh-btn");
+  if (refreshBtn) {
+    refreshBtn.addEventListener("click", function () {
+      fetchAndRenderOrderHistoryPage(orderHistorySelectedOrderId);
+      showActivityToast("Order history synced with backend.");
+    });
+  }
+
+  var trackLatestBtn = document.getElementById("oh-track-latest-btn");
+  if (trackLatestBtn) {
+    trackLatestBtn.addEventListener("click", function () {
+      var targetId = orderHistorySelectedOrderId || (orderHistoryAllOrders[0] && orderHistoryAllOrders[0].id) || null;
+      openOrderTrackingDashboard(targetId);
+    });
+  }
+
+  var statusTabsEl = document.getElementById("oh-status-tabs");
+  if (statusTabsEl) {
+    statusTabsEl.addEventListener("click", function (e) {
+      var tab = e.target.closest(".oh-status-tab");
+      if (!tab) return;
+      var statusVal = tab.getAttribute("data-oh-status") || "all";
+      orderHistoryActiveStatus = statusVal;
+
+      var allTabs = statusTabsEl.querySelectorAll(".oh-status-tab");
+      for (var i = 0; i < allTabs.length; i++) {
+        var active = allTabs[i] === tab;
+        allTabs[i].classList.toggle("active", active);
+        allTabs[i].setAttribute("aria-selected", active ? "true" : "false");
+      }
+      refreshOrderHistoryView();
+    });
+  }
+
+  var searchInputEl = document.getElementById("oh-search-input");
+  var searchClearBtnEl = document.getElementById("oh-search-clear-btn");
+  if (searchInputEl) {
+    searchInputEl.addEventListener("input", function () {
+      orderHistorySearchQuery = searchInputEl.value.trim();
+      if (searchClearBtnEl) {
+        searchClearBtnEl.hidden = !orderHistorySearchQuery;
+      }
+      refreshOrderHistoryView();
+    });
+  }
+  if (searchClearBtnEl) {
+    searchClearBtnEl.addEventListener("click", function () {
+      orderHistorySearchQuery = "";
+      if (searchInputEl) searchInputEl.value = "";
+      searchClearBtnEl.hidden = true;
+      refreshOrderHistoryView();
+    });
+  }
+
+  var sortSelectEl = document.getElementById("oh-sort-select");
+  if (sortSelectEl) {
+    sortSelectEl.addEventListener("change", function () {
+      orderHistorySortBy = sortSelectEl.value || "newest";
+      refreshOrderHistoryView();
+    });
+  }
+
+  // Auto-open Full Order History Page if URL path is /orders, /order-history, ?view=orders, or #orders
+  var path = window.location.pathname || "";
+  var search = window.location.search || "";
+  var hash = window.location.hash || "";
+  if (
+    path === "/orders" ||
+    path === "/order-history" ||
+    search.indexOf("view=orders") !== -1 ||
+    hash === "#orders" ||
+    hash === "#order-history"
+  ) {
+    setTimeout(function () {
+      openOrderHistoryPage();
+    }, 150);
+  }
+}
+
+// ============================================================================
+// VERIFIED BUYER REVIEW & RATING SYSTEM (DISPLAYED INSIDE #spec-drawer)
+// ============================================================================
+
+var productReviewsCache = {};
+var activeReviewStarFilter = "all";
+var activeReviewSortBy = "newest";
+var draftReviewRating = 5;
+var draftReviewUseCaseTag = "Gaming Rig";
+var isSubmittingProductReview = false;
+var lastReviewSuccessMsgByProduct = {};
+
+var STAR_RATING_LABELS = {
+  5: "5/5 · Reference-Grade Bench Performance",
+  4: "4/5 · Strong Value & Reliable Thermals",
+  3: "3/5 · Meets Baseline Spec Sheet",
+  2: "2/5 · Below Expected Performance",
+  1: "1/5 · Defective or Thermal Issues"
+};
+
+function renderStaticStarsText(rating) {
+  var r = Math.min(5, Math.max(0, Math.round(Number(rating) || 0)));
+  var out = "";
+  for (var i = 1; i <= 5; i++) {
+    out += i <= r ? "★" : "☆";
+  }
+  return out;
+}
+
+var activeSpecDrawerSectionId = "overview";
+
+function updateSpecDrawerSectionNavUI(activeSectionId, options) {
+  if (activeSectionId) {
+    activeSpecDrawerSectionId = String(activeSectionId);
+  }
+  var navEl = document.getElementById("spec-drawer-section-nav");
+  if (!navEl) return;
+  var opts = options || {};
+  var navItems = (window.VoltboxQR && typeof window.VoltboxQR.resolveSpecDrawerSectionNav === "function")
+    ? window.VoltboxQR.resolveSpecDrawerSectionNav(activeSpecDrawerSectionId, opts)
+    : null;
+
+  var buttons = navEl.querySelectorAll(".spec-sec-nav-btn, .spec-nav-tab");
+  for (var i = 0; i < buttons.length; i++) {
+    var btn = buttons[i];
+    var secId = btn.getAttribute("data-spec-nav") || btn.getAttribute("data-section-id");
+    var isAct = secId === activeSpecDrawerSectionId;
+    btn.classList.toggle("active", isAct);
+    btn.setAttribute("aria-selected", isAct ? "true" : "false");
+  }
+
+  if (navItems) {
+    for (var j = 0; j < navItems.length; j++) {
+      var item = navItems[j];
+      if (item.id === "d3-volatility" && item.badgeText) {
+        var vBadge = document.getElementById("spec-nav-vol-badge");
+        if (vBadge) {
+          vBadge.textContent = item.badgeText;
+          vBadge.hidden = false;
+        }
+      }
+      if (item.id === "reviews" && item.badgeText) {
+        var rBadge = document.getElementById("spec-nav-rev-badge");
+        if (rBadge) {
+          rBadge.textContent = item.badgeText;
+          rBadge.hidden = false;
+        }
+      }
+    }
+  }
+}
+
+window.scrollSpecDrawerToSection = function (sectionId) {
+  var targetMap = {
+    "overview": "spec-overview-section",
+    "d3-volatility": "spec-advanced-price-trends",
+    "tech-specs": "spec-technical-section",
+    "reviews": "spec-reviews-section"
+  };
+  var cleanId = targetMap[sectionId] ? sectionId : "overview";
+  updateSpecDrawerSectionNavUI(cleanId);
+  var targetEl = document.getElementById(targetMap[cleanId]);
+  var bodyEl = document.getElementById("spec-drawer-body");
+  if (!targetEl) return;
+  if (cleanId === "overview") {
+    if (window.momentumDrawers && window.momentumDrawers.spec) {
+      window.momentumDrawers.spec.scrollTo(0, true);
+    } else if (bodyEl) {
+      bodyEl.scrollTo({ top: 0, behavior: "smooth" });
+    }
+    return;
+  }
+  if (window.momentumDrawers && window.momentumDrawers.spec && bodyEl) {
+    var offset = Math.max(0, targetEl.offsetTop - 52);
+    window.momentumDrawers.spec.scrollTo(offset, true);
+  } else {
+    targetEl.scrollIntoView({ behavior: "smooth", block: "start" });
+  }
+};
+
+window.scrollSpecDrawerToReviews = function () {
+  window.scrollSpecDrawerToSection("reviews");
+};
+
+window.openSpecDrawerToReviews = function (productId) {
+  var pid = Number(productId);
+  if (!pid || pid <= 0) return;
+  openSpecDrawer(pid);
+  setTimeout(function () {
+    window.scrollSpecDrawerToSection("reviews");
+  }, 220);
+};
+
+function renderProductReviewsLoading(p) {
+  var summaryEl = document.getElementById("spec-reviews-summary-card");
+  var listEl = document.getElementById("spec-reviews-list");
+  if (summaryEl && !summaryEl.innerHTML) {
+    var fallbackRate = Number(p && p.ratingRate) > 0 ? Number(p.ratingRate).toFixed(1) : "4.8";
+    summaryEl.innerHTML =
+      '<div class="spec-rev-loading">Syncing verified buyer ratings (' + fallbackRate + ' ★) from backend…</div>';
+  }
+  if (listEl && !listEl.innerHTML) {
+    listEl.innerHTML =
+      '<div class="spec-rev-loading">Loading verified hardware owner reviews…</div>';
+  }
+}
+
+function fetchAndRenderProductReviews(productId) {
+  var pid = Number(productId);
+  if (!pid || pid <= 0) return;
+
+  api("/api/products/" + pid + "/reviews")
+    .then(function (r) { return r.ok ? r.json() : null; })
+    .then(function (data) {
+      if (!data || !data.ok) return;
+      productReviewsCache[pid] = data;
+      if (activeSpecProductId === pid) {
+        // Initialize draft form values if shopper has an existing review
+        if (data.eligibility && data.eligibility.existingReview) {
+          draftReviewRating = Number(data.eligibility.existingReview.rating) || 5;
+          draftReviewUseCaseTag = data.eligibility.existingReview.useCaseTag || "Gaming Rig";
+        } else {
+          draftReviewRating = 5;
+          draftReviewUseCaseTag = "Gaming Rig";
+        }
+        renderProductReviewsSection(pid, data);
+        // Update hero rating summary line
+        var p = findProductById(pid);
+        if (p && data.summary) {
+          var ratingSummaryEl = document.getElementById("spec-drawer-rating-summary");
+          if (ratingSummaryEl) {
+            var rateVal = data.summary.averageRating || p.ratingRate || 4.8;
+            var revCount = data.summary.reviewCount;
+            ratingSummaryEl.innerHTML =
+              '<span class="spec-hero-stars" aria-hidden="true">' + renderStaticStarsText(rateVal) + '</span>' +
+              '<strong class="spec-hero-rate-num">' + Number(rateVal).toFixed(1) + '</strong>' +
+              '<span class="spec-hero-rate-sep">·</span>' +
+              '<button type="button" class="spec-hero-reviews-jump" onclick="scrollSpecDrawerToReviews()">' +
+                revCount + (revCount === 1 ? ' Verified Review' : ' Verified Reviews') + ' · Rate / Read &darr;' +
+              '</button>';
+          }
+        }
+      }
+    })
+    .catch(function () {});
+}
+
+function renderProductReviewsSection(productId, payload) {
+  if (!payload) return;
+  var summary = payload.summary || {
+    productId: productId,
+    reviewCount: 0,
+    averageRating: 0,
+    recommendPercent: 100,
+    starCounts: { 1: 0, 2: 0, 3: 0, 4: 0, 5: 0 },
+    starPercentages: { 1: 0, 2: 0, 3: 0, 4: 0, 5: 0 }
+  };
+  var allReviews = Array.isArray(payload.allReviews) ? payload.allReviews : (Array.isArray(payload.reviews) ? payload.reviews : []);
+  var eligibility = payload.eligibility || { hasPurchased: false, matchingOrders: [], existingReview: null };
+
+  // 1. Update section count note & nav badge
+  var countNoteEl = document.getElementById("spec-reviews-count-note");
+  if (countNoteEl) {
+    countNoteEl.textContent =
+      summary.reviewCount +
+      " Verified" +
+      (summary.reviewCount > 0 ? (" · " + summary.recommendPercent + "% Rec.") : "");
+  }
+  var revNavBadge = document.getElementById("spec-nav-rev-badge");
+  if (revNavBadge && typeof summary.reviewCount === "number") {
+    revNavBadge.textContent = String(summary.reviewCount);
+    revNavBadge.hidden = false;
+  }
+
+  // 2. Render Aggregate Rating Score & 5-Star Distribution Card
+  var summaryCardEl = document.getElementById("spec-reviews-summary-card");
+  if (summaryCardEl) {
+    var avgScore = summary.averageRating > 0 ? Number(summary.averageRating).toFixed(1) : "5.0";
+    var distBarsHtml = "";
+    for (var star = 5; star >= 1; star--) {
+      var cnt = (summary.starCounts && summary.starCounts[star]) || 0;
+      var pct = (summary.starPercentages && summary.starPercentages[star]) || 0;
+      var isStarActive = String(activeReviewStarFilter) === String(star);
+      distBarsHtml +=
+        '<button type="button" class="spec-rev-dist-row' + (isStarActive ? ' active' : '') + '" onclick="setSpecReviewStarFilter(\'' + star + '\')" aria-label="Filter by ' + star + ' star reviews (' + cnt + ')">' +
+          '<span class="spec-rev-dist-label">' + star + ' ★</span>' +
+          '<span class="spec-rev-dist-track"><span class="spec-rev-dist-fill" style="width:' + pct + '%"></span></span>' +
+          '<span class="spec-rev-dist-count">' + cnt + ' (' + pct + '%)</span>' +
+        '</button>';
+    }
+
+    summaryCardEl.innerHTML =
+      '<div class="spec-rev-score-left">' +
+        '<div class="spec-rev-big-score" data-testid="spec-rev-big-score">' + avgScore + '</div>' +
+        '<div class="spec-rev-stars-row" aria-label="Average rating ' + avgScore + ' out of 5 stars">' +
+          renderStaticStarsText(avgScore) +
+        '</div>' +
+        '<div class="spec-rev-score-caption">' +
+          'Based on <strong>' + summary.reviewCount + '</strong> verified purchase ' + (summary.reviewCount === 1 ? 'review' : 'reviews') +
+        '</div>' +
+        '<div class="spec-rev-rec-line">' +
+          '<strong>' + summary.recommendPercent + '%</strong> of verified builders recommend this component' +
+        '</div>' +
+      '</div>' +
+      '<div class="spec-rev-dist-right">' +
+        distBarsHtml +
+      '</div>';
+  }
+
+  // 3. Render Verified Purchase Eligibility & Review Submission Composer
+  renderSpecReviewComposer(productId, eligibility);
+
+  // 4. Render Filtered & Sorted Reviews List
+  renderFilteredSpecReviewsList(productId, allReviews);
+
+  if (window.momentumDrawers && window.momentumDrawers.spec) {
+    setTimeout(function () {
+      if (window.momentumDrawers && window.momentumDrawers.spec) {
+        window.momentumDrawers.spec.refreshMetrics();
+      }
+    }, 30);
+  }
+}
+
+function renderSpecReviewComposer(productId, eligibility) {
+  var container = document.getElementById("spec-review-composer-container");
+  if (!container) return;
+
+  var p = findProductById(productId);
+  var prodTitle = p ? p.title : ("Component #" + productId);
+
+  if (!eligibility || !eligibility.hasPurchased) {
+    container.innerHTML =
+      '<div class="spec-review-locked-banner" id="spec-review-locked-banner" data-testid="spec-review-locked-banner">' +
+        '<div class="spec-rev-locked-info">' +
+          '<div class="spec-rev-locked-kicker">VERIFIED OWNER FEEDBACK ONLY</div>' +
+          '<h4 class="spec-rev-locked-title">Purchase Required to Review ' + esc(prodTitle) + '</h4>' +
+          '<p class="spec-rev-locked-desc">To keep Voltbox ratings authentic, only shoppers who have purchased this specific hardware SKU can submit a rating and bench review.</p>' +
+        '</div>' +
+        '<div class="spec-rev-locked-actions">' +
+          '<button type="button" class="spec-rev-unlock-btn" data-testid="spec-rev-add-to-cart-btn" onclick="inc(' + productId + ');showActivityToast(\'Added to cart! Complete checkout to unlock verified review.\');">' +
+            icon("cart", 13) + ' <span>Add to Cart to Purchase</span>' +
+          '</button>' +
+        '</div>' +
+      '</div>';
+    return;
+  }
+
+  var existing = eligibility.existingReview || null;
+  var orders = Array.isArray(eligibility.matchingOrders) ? eligibility.matchingOrders : [];
+  var latestOrder = orders[0] || { orderId: eligibility.latestOrderId || "VB-VERIFIED", formattedDate: "Recent Order", qty: 1 };
+
+  var starButtonsHtml = "";
+  for (var s = 1; s <= 5; s++) {
+    var active = s <= draftReviewRating;
+    starButtonsHtml +=
+      '<button type="button" class="spec-star-pick-btn' + (active ? ' active' : '') + '" ' +
+      '        data-star-val="' + s + '" data-testid="spec-star-pick-' + s + '" ' +
+      '        role="radio" aria-checked="' + (s === draftReviewRating ? 'true' : 'false') + '" ' +
+      '        aria-label="Rate ' + s + ' out of 5 stars" ' +
+      '        onclick="selectDraftReviewStar(' + s + ')">' +
+        (active ? '★' : '☆') +
+      '</button>';
+  }
+
+  var useCaseTags = ["Gaming Rig", "AI / Workstation", "Creator Build", "Silent / Thermal", "Drop-In Upgrade"];
+  var tagsHtml = "";
+  for (var t = 0; t < useCaseTags.length; t++) {
+    var tag = useCaseTags[t];
+    var isTagSelected = draftReviewUseCaseTag === tag;
+    tagsHtml +=
+      '<button type="button" class="spec-rev-tag-btn' + (isTagSelected ? ' active' : '') + '" ' +
+      '        data-use-case="' + esc(tag) + '" ' +
+      '        aria-pressed="' + (isTagSelected ? 'true' : 'false') + '" ' +
+      '        onclick="selectDraftReviewUseCase(\'' + esc(tag) + '\')">' +
+        esc(tag) +
+      '</button>';
+  }
+
+  var orderOptionsHtml = "";
+  for (var o = 0; o < orders.length; o++) {
+    var ordItem = orders[o];
+    var sel = existing && existing.orderId === ordItem.orderId ? " selected" : (o === 0 ? " selected" : "");
+    orderOptionsHtml +=
+      '<option value="' + esc(ordItem.orderId) + '"' + sel + '>' +
+        'Order #' + esc(ordItem.orderId) + ' · ' + esc(ordItem.formattedDate) + ' (Qty ' + ordItem.qty + ')' +
+      '</option>';
+  }
+
+  var defaultHeadline = existing ? existing.title : "";
+  var defaultComment = existing ? existing.comment : "";
+
+  container.innerHTML =
+    '<form class="spec-review-form" id="spec-review-form" data-testid="spec-review-form" onsubmit="submitVerifiedProductReview(event, ' + productId + ')" novalidate>' +
+      '<div class="spec-rev-form-head">' +
+        '<div class="spec-rev-form-head-left">' +
+          '<span class="spec-rev-verified-kicker">✓ VERIFIED HARDWARE OWNER · ORDER #' + esc(latestOrder.orderId) + '</span>' +
+          '<h4 class="spec-rev-form-title">' +
+            (existing ? 'Update Your Verified Hardware Review' : ('Rate &amp; Review Your ' + esc(prodTitle))) +
+          '</h4>' +
+        '</div>' +
+        (orders.length > 1
+          ? '<div class="spec-rev-order-select-wrap">' +
+              '<label for="spec-review-order-select" class="sr-only">Verified Order</label>' +
+              '<select id="spec-review-order-select" class="spec-rev-order-select" aria-label="Select verified purchase order">' +
+                orderOptionsHtml +
+              '</select>' +
+            '</div>'
+          : '<input type="hidden" id="spec-review-order-select" value="' + esc(latestOrder.orderId) + '" />') +
+      '</div>' +
+
+      '<div class="spec-rev-rating-picker-row">' +
+        '<span class="spec-rev-field-label">Your Star Rating</span>' +
+        '<div class="spec-rev-star-picker" id="spec-review-star-picker" role="radiogroup" aria-label="Choose a star rating from 1 to 5">' +
+          starButtonsHtml +
+          '<span class="spec-rev-star-meaning" id="spec-review-star-meaning">' +
+            esc(STAR_RATING_LABELS[draftReviewRating] || STAR_RATING_LABELS[5]) +
+          '</span>' +
+        '</div>' +
+      '</div>' +
+
+      '<div class="spec-rev-usecase-row">' +
+        '<span class="spec-rev-field-label">Primary Build Profile</span>' +
+        '<div class="spec-rev-tags-group" id="spec-review-tags-group" role="group" aria-label="Primary build profile">' +
+          tagsHtml +
+        '</div>' +
+      '</div>' +
+
+      '<div class="spec-rev-input-group">' +
+        '<label for="spec-review-title-input" class="spec-rev-field-label">Review Headline</label>' +
+        '<input type="text" id="spec-review-title-input" data-testid="spec-review-title-input" ' +
+        '       class="spec-rev-input" maxlength="120" required ' +
+        '       placeholder="Summarize your bench results, thermals, or build experience…" ' +
+        '       value="' + esc(defaultHeadline) + '" />' +
+      '</div>' +
+
+      '<div class="spec-rev-input-group">' +
+        '<label for="spec-review-comment-input" class="spec-rev-field-label">Detailed Hardware &amp; Bench Feedback</label>' +
+        '<textarea id="spec-review-comment-input" data-testid="spec-review-comment-input" ' +
+        '          class="spec-rev-textarea" rows="3" maxlength="1200" required ' +
+        '          placeholder="Share real-world clock speeds, temperatures, acoustic performance, or chassis compatibility notes…">' +
+          esc(defaultComment) +
+        '</textarea>' +
+      '</div>' +
+
+      (lastReviewSuccessMsgByProduct[productId]
+        ? '<p class="spec-rev-form-msg success" id="spec-review-form-msg" data-testid="spec-review-form-msg" role="status">' + esc(lastReviewSuccessMsgByProduct[productId]) + '</p>'
+        : '<p class="spec-rev-form-msg" id="spec-review-form-msg" data-testid="spec-review-form-msg" role="status" hidden></p>') +
+
+      '<div class="spec-rev-form-actions">' +
+        '<span class="spec-rev-form-note">Published with Verified Purchase attribution (' + esc(latestOrder.formattedDate) + ')</span>' +
+        '<button type="submit" class="spec-rev-submit-btn" id="spec-review-submit-btn" data-testid="spec-review-submit-btn">' +
+          '<span>' + (existing ? 'Update Verified Review' : 'Submit Verified Review') + '</span>' +
+        '</button>' +
+      '</div>' +
+    '</form>';
+}
+
+window.selectDraftReviewStar = function (starVal) {
+  var s = Math.min(5, Math.max(1, Math.round(Number(starVal) || 5)));
+  draftReviewRating = s;
+  var pickerEl = document.getElementById("spec-review-star-picker");
+  if (pickerEl) {
+    var btns = pickerEl.querySelectorAll(".spec-star-pick-btn");
+    for (var i = 0; i < btns.length; i++) {
+      var bVal = Number(btns[i].getAttribute("data-star-val") || 0);
+      var isOn = bVal <= s;
+      btns[i].classList.toggle("active", isOn);
+      btns[i].setAttribute("aria-checked", bVal === s ? "true" : "false");
+      btns[i].textContent = isOn ? "★" : "☆";
+    }
+  }
+  var meaningEl = document.getElementById("spec-review-star-meaning");
+  if (meaningEl) {
+    meaningEl.textContent = STAR_RATING_LABELS[s] || (s + "/5 Stars");
+  }
+};
+
+window.selectDraftReviewUseCase = function (tag) {
+  draftReviewUseCaseTag = String(tag || "Gaming Rig");
+  var groupEl = document.getElementById("spec-review-tags-group");
+  if (groupEl) {
+    var btns = groupEl.querySelectorAll(".spec-rev-tag-btn");
+    for (var i = 0; i < btns.length; i++) {
+      var match = btns[i].getAttribute("data-use-case") === draftReviewUseCaseTag;
+      btns[i].classList.toggle("active", match);
+      btns[i].setAttribute("aria-pressed", match ? "true" : "false");
+    }
+  }
+};
+
+window.setSpecReviewStarFilter = function (starVal) {
+  var nextVal = String(starVal || "all");
+  if (activeReviewStarFilter === nextVal && nextVal !== "all") {
+    activeReviewStarFilter = "all";
+  } else {
+    activeReviewStarFilter = nextVal;
+  }
+  var tabsEl = document.getElementById("spec-reviews-star-tabs");
+  if (tabsEl) {
+    var tabs = tabsEl.querySelectorAll(".spec-rev-star-tab");
+    for (var i = 0; i < tabs.length; i++) {
+      var isMatch = tabs[i].getAttribute("data-rev-star") === activeReviewStarFilter;
+      tabs[i].classList.toggle("active", isMatch);
+      tabs[i].setAttribute("aria-selected", isMatch ? "true" : "false");
+    }
+  }
+  if (activeSpecProductId && productReviewsCache[activeSpecProductId]) {
+    var payload = productReviewsCache[activeSpecProductId];
+    renderFilteredSpecReviewsList(activeSpecProductId, payload.allReviews || payload.reviews || []);
+  }
+};
+
+function renderFilteredSpecReviewsList(productId, allReviews) {
+  var listEl = document.getElementById("spec-reviews-list");
+  if (!listEl) return;
+
+  var filtered = [];
+  if (window.VoltboxQR && typeof window.VoltboxQR.filterAndSortProductReviews === "function") {
+    filtered = window.VoltboxQR.filterAndSortProductReviews(allReviews, {
+      starFilter: activeReviewStarFilter,
+      sortBy: activeReviewSortBy
+    });
+  } else {
+    filtered = Array.isArray(allReviews) ? allReviews.slice() : [];
+  }
+
+  if (filtered.length === 0) {
+    listEl.innerHTML =
+      '<div class="spec-rev-empty-state" data-testid="spec-rev-empty-state">' +
+        '<p>' +
+          (activeReviewStarFilter !== "all"
+            ? ('No ' + activeReviewStarFilter + '★ reviews found for this component.')
+            : 'No verified buyer reviews yet for this component. Be the first verified owner to share bench feedback!') +
+        '</p>' +
+        (activeReviewStarFilter !== "all"
+          ? '<button type="button" class="spec-rev-reset-filter-btn" onclick="setSpecReviewStarFilter(\'all\')">Show All Reviews</button>'
+          : '') +
+      '</div>';
+    return;
+  }
+
+  var currentEmail = (me && me.email ? String(me.email).toLowerCase() : "");
+  var html = "";
+  for (var i = 0; i < filtered.length; i++) {
+    var rev = filtered[i];
+    var revDate = formatDate(new Date(Number(rev.createdAt) || Date.now()));
+    var isMine = currentEmail && String(rev.authorEmail || "").toLowerCase() === currentEmail;
+    var voters = Array.isArray(rev.helpfulVoterEmails) ? rev.helpfulVoterEmails : [];
+    var hasVotedHelpful = currentEmail && voters.indexOf(currentEmail) !== -1;
+
+    html +=
+      '<article class="spec-review-card' + (isMine ? ' mine' : '') + '" data-review-id="' + esc(rev.id) + '" data-testid="spec-review-card">' +
+        '<div class="spec-review-card-head">' +
+          '<div class="spec-review-author-wrap">' +
+            '<span class="spec-review-avatar" style="background:' + esc(rev.authorColor || "#ffd23f") + '">' +
+              esc(rev.authorInitial || "V") +
+            '</span>' +
+            '<div class="spec-review-author-meta">' +
+              '<div class="spec-review-author-line">' +
+                '<strong class="spec-review-author-name">' + esc(rev.authorName || "Verified Builder") + '</strong>' +
+                (isMine ? '<span class="spec-review-mine-text">· Your Review</span>' : '') +
+              '</div>' +
+              '<div class="spec-review-submeta">' +
+                '<span class="spec-review-verified-label">✓ Verified Purchase</span>' +
+                (rev.orderId ? ('<span>·</span><span>Order #' + esc(rev.orderId) + '</span>') : '') +
+                (rev.useCaseTag ? ('<span>·</span><span>' + esc(rev.useCaseTag) + '</span>') : '') +
+                '<span>·</span>' +
+                '<span>' + esc(revDate) + '</span>' +
+              '</div>' +
+            '</div>' +
+          '</div>' +
+          '<div class="spec-review-rating-box" aria-label="Rated ' + rev.rating + ' out of 5 stars">' +
+            '<span class="spec-review-stars">' + renderStaticStarsText(rev.rating) + '</span>' +
+            '<strong class="spec-review-rate-num">' + Number(rev.rating).toFixed(1) + '</strong>' +
+          '</div>' +
+        '</div>' +
+
+        '<h4 class="spec-review-card-title" data-testid="spec-review-card-title">' + esc(rev.title) + '</h4>' +
+        '<p class="spec-review-card-body" data-testid="spec-review-card-body">' + esc(rev.comment) + '</p>' +
+
+        '<div class="spec-review-card-foot">' +
+          '<span class="spec-review-sku-ref">SKU ' + esc(rev.sku || ("VB-PRT-" + String(productId).padStart(3, "0"))) + '</span>' +
+          '<button type="button" class="spec-review-helpful-btn' + (hasVotedHelpful ? ' active' : '') + '" ' +
+          '        data-testid="spec-review-helpful-' + esc(rev.id) + '" ' +
+          '        onclick="toggleProductReviewHelpful(' + productId + ', \'' + esc(rev.id) + '\')" ' +
+          '        aria-label="Mark review as helpful (' + (rev.helpfulCount || 0) + ')">' +
+            '<span>Helpful (' + (rev.helpfulCount || 0) + ')</span>' +
+          '</button>' +
+        '</div>' +
+      '</article>';
+  }
+
+  listEl.innerHTML = html;
+}
+
+window.submitVerifiedProductReview = function (e, productId) {
+  if (e && typeof e.preventDefault === "function") e.preventDefault();
+  if (isSubmittingProductReview) return;
+
+  var pid = Number(productId || activeSpecProductId);
+  if (!pid || pid <= 0) return;
+
+  var titleInput = document.getElementById("spec-review-title-input");
+  var commentInput = document.getElementById("spec-review-comment-input");
+  var orderSelect = document.getElementById("spec-review-order-select");
+  var msgEl = document.getElementById("spec-review-form-msg");
+  var submitBtn = document.getElementById("spec-review-submit-btn");
+
+  var titleVal = titleInput ? titleInput.value.trim() : "";
+  var commentVal = commentInput ? commentInput.value.trim() : "";
+  var orderIdVal = orderSelect ? orderSelect.value.trim() : null;
+
+  function showFormMsg(text, isError) {
+    if (!msgEl) return;
+    msgEl.textContent = text;
+    msgEl.className = isError ? "spec-rev-form-msg error" : "spec-rev-form-msg success";
+    msgEl.hidden = false;
+  }
+
+  if (titleVal.length < 3) {
+    showFormMsg("Please enter a review headline (at least 3 characters).", true);
+    if (titleInput) titleInput.focus();
+    return;
+  }
+  if (commentVal.length < 8) {
+    showFormMsg("Please share at least 8 characters of feedback about this component.", true);
+    if (commentInput) commentInput.focus();
+    return;
+  }
+
+  isSubmittingProductReview = true;
+  if (submitBtn) submitBtn.disabled = true;
+
+  api("/api/products/" + pid + "/reviews", {
+    method: "POST",
+    body: JSON.stringify({
+      productId: pid,
+      rating: draftReviewRating,
+      title: titleVal,
+      comment: commentVal,
+      useCaseTag: draftReviewUseCaseTag,
+      orderId: orderIdVal
+    })
+  })
+    .then(function (r) {
+      return r.json().then(function (d) { return { ok: r.ok, data: d }; });
+    })
+    .then(function (res) {
+      isSubmittingProductReview = false;
+      if (submitBtn) submitBtn.disabled = false;
+
+      if (!res.ok || !res.data || !res.data.ok) {
+        showFormMsg((res.data && res.data.message) || "Could not submit review.", true);
+        return;
+      }
+
+      var data = res.data;
+      activeReviewStarFilter = "all";
+      activeReviewSortBy = "newest";
+
+      // Update local cache and product rating in catalog
+      productReviewsCache[pid] = {
+        ok: true,
+        productId: pid,
+        reviews: data.reviews || [],
+        allReviews: data.reviews || [],
+        summary: data.summary,
+        eligibility: data.eligibility
+      };
+
+      if (data.product) {
+        var normProd = normalizeProductEntity(data.product);
+        for (var i = 0; i < products.length; i++) {
+          if (products[i].id === normProd.id) {
+            products[i] = normProd;
+            break;
+          }
+        }
+        refreshCard(normProd.id);
+      }
+
+      var successMessage = data.message || "Verified review published!";
+      lastReviewSuccessMsgByProduct[pid] = successMessage;
+
+      renderProductReviewsSection(pid, productReviewsCache[pid]);
+      var updatedMsgEl = document.getElementById("spec-review-form-msg");
+      if (updatedMsgEl) {
+        updatedMsgEl.textContent = successMessage;
+        updatedMsgEl.className = "spec-rev-form-msg success";
+        updatedMsgEl.hidden = false;
+      }
+      showActivityToast(successMessage);
+    })
+    .catch(function () {
+      isSubmittingProductReview = false;
+      if (submitBtn) submitBtn.disabled = false;
+      showFormMsg("Network error while submitting your review.", true);
+    });
+};
+
+window.toggleProductReviewHelpful = function (productId, reviewId) {
+  var pid = Number(productId);
+  if (!pid || !reviewId) return;
+
+  api("/api/products/" + pid + "/reviews/" + encodeURIComponent(reviewId) + "/helpful", {
+    method: "POST"
+  })
+    .then(function (r) { return r.ok ? r.json() : null; })
+    .then(function (data) {
+      if (!data || !data.ok) return;
+      if (productReviewsCache[pid]) {
+        productReviewsCache[pid].allReviews = data.reviews || productReviewsCache[pid].allReviews;
+        productReviewsCache[pid].reviews = data.reviews || productReviewsCache[pid].reviews;
+        if (data.summary) productReviewsCache[pid].summary = data.summary;
+        if (activeSpecProductId === pid) {
+          renderFilteredSpecReviewsList(pid, productReviewsCache[pid].allReviews);
+        }
+      }
+    })
+    .catch(function () {});
+};
+
+window.onProductReviewSubmitted = function (msg) {
+  if (!msg || !msg.productId) return;
+  var pid = Number(msg.productId);
+  if (msg.product) {
+    var normProd = normalizeProductEntity(msg.product);
+    for (var i = 0; i < products.length; i++) {
+      if (products[i].id === normProd.id) {
+        products[i] = normProd;
+        break;
+      }
+    }
+    refreshCard(normProd.id);
+  }
+  if (activeSpecProductId === pid) {
+    fetchAndRenderProductReviews(pid);
+  }
+};
+
+function initProductReviewsControls() {
+  var starTabsEl = document.getElementById("spec-reviews-star-tabs");
+  if (starTabsEl) {
+    starTabsEl.addEventListener("click", function (e) {
+      var btn = e.target.closest(".spec-rev-star-tab");
+      if (!btn) return;
+      var starVal = btn.getAttribute("data-rev-star") || "all";
+      setSpecReviewStarFilter(starVal);
+    });
+  }
+
+  var sortSelectEl = document.getElementById("spec-reviews-sort-select");
+  if (sortSelectEl) {
+    sortSelectEl.addEventListener("change", function () {
+      activeReviewSortBy = sortSelectEl.value || "newest";
+      if (activeSpecProductId && productReviewsCache[activeSpecProductId]) {
+        var payload = productReviewsCache[activeSpecProductId];
+        renderFilteredSpecReviewsList(activeSpecProductId, payload.allReviews || payload.reviews || []);
+      }
+    });
+  }
+}
+
+// ============================================================================
+// ADMIN CATALOG GRID BATCH EDIT MODE (MULTI-SELECT & BULK TRANSACTION)
+// ============================================================================
+
+var catalogBatchEditMode = false;
+var catalogBatchSelectedIds = [];
+var isSubmittingCatalogBatch = false;
+
+function isProductInCatalogBatchSelection(productId) {
+  var pid = Number(productId);
+  return catalogBatchSelectedIds.indexOf(pid) !== -1;
+}
+
+window.handleCardImageAreaClick = function (e, productId) {
+  if (catalogBatchEditMode) {
+    if (e && typeof e.stopPropagation === "function") e.stopPropagation();
+    window.toggleCatalogBatchProductSelection(productId);
+    return;
+  }
+  openSpecDrawer(productId);
+};
+
+window.handleCardTitleAreaClick = function (e, productId) {
+  if (catalogBatchEditMode) {
+    if (e && typeof e.stopPropagation === "function") e.stopPropagation();
+    window.toggleCatalogBatchProductSelection(productId);
+    return;
+  }
+  openSpecDrawer(productId);
+};
+
+window.toggleCatalogBatchEditMode = function (forceState) {
+  var nextMode = typeof forceState === "boolean" ? forceState : !catalogBatchEditMode;
+  catalogBatchEditMode = nextMode;
+
+  var btn = document.getElementById("catalog-batch-edit-btn");
+  var panel = document.getElementById("catalog-batch-edit-panel");
+  if (btn) {
+    btn.hidden = false;
+    btn.classList.toggle("active", catalogBatchEditMode);
+    btn.setAttribute("aria-pressed", catalogBatchEditMode ? "true" : "false");
+  }
+  if (panel) {
+    panel.hidden = !catalogBatchEditMode;
+  }
+  if (gridEl) {
+    gridEl.classList.toggle("batch-edit-active", catalogBatchEditMode);
+  }
+  updateCatalogBatchEditUI();
+  if (catalogBatchEditMode && panel) {
+    panel.scrollIntoView({ behavior: "smooth", block: "nearest" });
+  }
+};
+
+window.toggleCatalogBatchProductSelection = function (productId, forceSelected) {
+  var pid = Number(productId);
+  if (!pid) return;
+
+  if (!catalogBatchEditMode) {
+    window.toggleCatalogBatchEditMode(true);
+  }
+
+  var action = typeof forceSelected === "boolean" ? (forceSelected ? "add" : "remove") : "toggle";
+  if (window.VoltboxQR && typeof window.VoltboxQR.toggleBatchSelectionIds === "function") {
+    catalogBatchSelectedIds = window.VoltboxQR.toggleBatchSelectionIds(catalogBatchSelectedIds, pid, action);
+  } else {
+    var idx = catalogBatchSelectedIds.indexOf(pid);
+    var shouldSelect = typeof forceSelected === "boolean" ? forceSelected : idx === -1;
+    if (shouldSelect && idx === -1) catalogBatchSelectedIds.push(pid);
+    if (!shouldSelect && idx !== -1) catalogBatchSelectedIds.splice(idx, 1);
+  }
+
+  updateCatalogBatchEditUI();
+};
+
+function getVisibleCatalogProductIds() {
+  if (!gridEl) {
+    return products.map(function (p) { return Number(p.id); });
+  }
+  var visibleCards = gridEl.querySelectorAll(".card:not([hidden])");
+  var ids = [];
+  for (var i = 0; i < visibleCards.length; i++) {
+    var pid = Number(visibleCards[i].getAttribute("data-product-id"));
+    if (pid > 0) ids.push(pid);
+  }
+  return ids;
+}
+
+window.selectAllVisibleCatalogBatchProducts = function () {
+  var visibleIds = getVisibleCatalogProductIds();
+  if (window.VoltboxQR && typeof window.VoltboxQR.toggleBatchSelectionIds === "function") {
+    catalogBatchSelectedIds = window.VoltboxQR.toggleBatchSelectionIds(catalogBatchSelectedIds, visibleIds, "add");
+  } else {
+    for (var i = 0; i < visibleIds.length; i++) {
+      if (catalogBatchSelectedIds.indexOf(visibleIds[i]) === -1) {
+        catalogBatchSelectedIds.push(visibleIds[i]);
+      }
+    }
+  }
+  updateCatalogBatchEditUI();
+};
+
+window.selectLowStockCatalogBatchProducts = function () {
+  var visibleIds = getVisibleCatalogProductIds();
+  var lowIds = [];
+  for (var i = 0; i < visibleIds.length; i++) {
+    var p = findProductById(visibleIds[i]);
+    if (p && (isLowStockItem(p) || isBackorderItem(p) || getEffectiveStock(p) <= 5)) {
+      lowIds.push(Number(p.id));
+    }
+  }
+  catalogBatchSelectedIds = lowIds;
+  updateCatalogBatchEditUI();
+};
+
+window.clearCatalogBatchSelection = function () {
+  catalogBatchSelectedIds = [];
+  updateCatalogBatchEditUI();
+};
+
+window.applyCatalogBatchPricePreset = function (mode, val) {
+  var modeEl = document.getElementById("catalog-batch-price-mode");
+  var valEl = document.getElementById("catalog-batch-price-value");
+  if (modeEl) modeEl.value = mode;
+  if (valEl) {
+    valEl.disabled = mode === "none";
+    valEl.value = String(val);
+  }
+  updateCatalogBatchEditUI();
+};
+
+window.applyCatalogBatchStockPreset = function (mode, val) {
+  var modeEl = document.getElementById("catalog-batch-stock-mode");
+  var valEl = document.getElementById("catalog-batch-stock-value");
+  if (modeEl) modeEl.value = mode;
+  if (valEl) {
+    valEl.disabled = mode === "none";
+    valEl.value = String(val);
+  }
+  updateCatalogBatchEditUI();
+};
+
+function getCatalogBatchOperationDraft() {
+  var priceModeEl = document.getElementById("catalog-batch-price-mode");
+  var priceValEl = document.getElementById("catalog-batch-price-value");
+  var stockModeEl = document.getElementById("catalog-batch-stock-mode");
+  var stockValEl = document.getElementById("catalog-batch-stock-value");
+  var reasonEl = document.getElementById("catalog-batch-reason");
+
+  var priceMode = priceModeEl ? priceModeEl.value : "none";
+  var stockMode = stockModeEl ? stockModeEl.value : "none";
+  var rawPrice = priceValEl ? parseFloat(priceValEl.value) : NaN;
+  var rawStock = stockValEl ? parseFloat(stockValEl.value) : NaN;
+
+  return {
+    productIds: catalogBatchSelectedIds.slice(),
+    priceMode: priceMode,
+    priceValue: Number.isFinite(rawPrice) ? rawPrice : 0,
+    PriceHasInput: priceMode !== "none" && priceValEl && priceValEl.value.trim() !== "" && Number.isFinite(rawPrice),
+    stockMode: stockMode,
+    stockValue: Number.isFinite(rawStock) ? rawStock : 0,
+    StockHasInput: stockMode !== "none" && stockValEl && stockValEl.value.trim() !== "" && Number.isFinite(rawStock),
+    reason: reasonEl && reasonEl.value ? reasonEl.value.trim() : ""
+  };
+}
+
+function computeCatalogBatchPreviewPlan() {
+  var draft = getCatalogBatchOperationDraft();
+  var effectivePriceMode = draft.PriceHasInput ? draft.priceMode : "none";
+  var effectiveStockMode = draft.StockHasInput ? draft.stockMode : "none";
+
+  var mappedProducts = products.map(function (p) {
+    return {
+      id: p.id,
+      title: p.title,
+      category: p.category,
+      price: Number(p.price || 0),
+      stock: getEffectiveStock(p)
+    };
+  });
+
+  if (window.VoltboxQR && typeof window.VoltboxQR.planBatchProductTransaction === "function") {
+    return window.VoltboxQR.planBatchProductTransaction(mappedProducts, {
+      productIds: draft.productIds,
+      priceMode: effectivePriceMode,
+      priceValue: draft.priceValue,
+      stockMode: effectiveStockMode,
+      stockValue: draft.stockValue,
+      reason: draft.reason
+    });
+  }
+  return null;
+}
+
+function updateCatalogBatchEditUI() {
+  var btnCountEl = document.getElementById("catalog-batch-edit-count");
+  var countBadgeEl = document.getElementById("catalog-batch-count-badge");
+  var selCountStrongEl = document.getElementById("catalog-batch-selected-count");
+  var selPillEl = document.getElementById("catalog-batch-selected-pill");
+  var submitBtnEl = document.getElementById("catalog-batch-submit-btn");
+  var previewStripEl = document.getElementById("catalog-batch-preview-strip");
+
+  var count = catalogBatchSelectedIds.length;
+  if (btnCountEl) {
+    btnCountEl.textContent = String(count);
+  }
+  if (countBadgeEl) {
+    countBadgeEl.textContent = String(count);
+    countBadgeEl.hidden = count === 0;
+  }
+  if (selCountStrongEl) {
+    selCountStrongEl.textContent = String(count);
+  }
+  if (selPillEl) {
+    selPillEl.textContent = count + " selected";
+  }
+
+  var plan = computeCatalogBatchPreviewPlan();
+  var mutationMap = {};
+  if (plan && Array.isArray(plan.mutations)) {
+    for (var m = 0; m < plan.mutations.length; m++) {
+      mutationMap[plan.mutations[m].productId] = plan.mutations[m];
+    }
+  }
+
+  // Update each product card's selection visual + live price/stock preview badges
+  for (var i = 0; i < products.length; i++) {
+    var pid = Number(products[i].id);
+    var isSel = isProductInCatalogBatchSelection(pid);
+    var cardEl = document.getElementById("card-" + pid);
+    var selBtnEl = document.getElementById("card-batch-select-" + pid);
+    var pricePrevEl = document.getElementById("card-batch-price-preview-" + pid);
+    var stockPrevEl = document.getElementById("card-batch-stock-preview-" + pid);
+
+    if (cardEl) {
+      cardEl.classList.toggle("is-batch-selected", isSel);
+    }
+    if (selBtnEl) {
+      selBtnEl.classList.toggle("is-checked", isSel);
+      selBtnEl.setAttribute("aria-pressed", isSel ? "true" : "false");
+      var boxSpan = selBtnEl.querySelector(".card-batch-check-box");
+      var lblSpan = selBtnEl.querySelector(".card-batch-check-label");
+      if (boxSpan) boxSpan.textContent = isSel ? "✓" : "";
+      if (lblSpan) lblSpan.textContent = isSel ? "Selected" : "Batch Select";
+    }
+
+    var mut = isSel ? mutationMap[pid] : null;
+    if (pricePrevEl) {
+      if (catalogBatchEditMode && mut && mut.priceChanged) {
+        pricePrevEl.textContent = "→ $" + Number(mut.nextPrice).toFixed(2);
+        pricePrevEl.className = "card-batch-price-preview " + (mut.priceDelta < 0 ? "is-drop" : "is-raise");
+        pricePrevEl.hidden = false;
+      } else {
+        pricePrevEl.hidden = true;
+      }
+    }
+    if (stockPrevEl) {
+      if (catalogBatchEditMode && mut && mut.stockChanged) {
+        stockPrevEl.textContent = "→ " + mut.nextStock + " units";
+        stockPrevEl.className = "card-batch-stock-preview";
+        stockPrevEl.hidden = false;
+      } else {
+        stockPrevEl.hidden = true;
+      }
+    }
+  }
+
+  var draft = getCatalogBatchOperationDraft();
+  var hasOp = draft.PriceHasInput || draft.StockHasInput;
+
+  if (previewStripEl) {
+    if (count === 0) {
+      previewStripEl.innerHTML = "Click checkboxes on product cards below (or click <strong>Select All Visible</strong>) to stage a single-transaction bulk update.";
+    } else if (!hasOp) {
+      previewStripEl.innerHTML = "<strong>" + count + " product" + (count === 1 ? "" : "s") + " selected.</strong> Choose a Bulk Price Update or Bulk Stock Adjustment above to preview changes.";
+    } else if (plan && plan.ok) {
+      var parts = [];
+      parts.push("<strong>Transaction Ready (" + esc(plan.transactionId) + "):</strong> " + plan.selectedCount + " selected (" + plan.updatedCount + " modified)");
+      if (draft.PriceHasInput) {
+        var pSign = plan.totalPriceDeltaPerUnit >= 0 ? "+" : "-";
+        parts.push("Net unit price delta: <strong>" + pSign + "$" + Math.abs(plan.totalPriceDeltaPerUnit).toFixed(2) + "</strong>");
+      }
+      if (draft.StockHasInput) {
+        var sSign = plan.totalStockUnitsDelta >= 0 ? "+" : "";
+        parts.push("Net stock delta: <strong>" + sSign + plan.totalStockUnitsDelta + " units</strong>");
+      }
+      var sampleList = plan.mutations.slice(0, 3).map(function (item) {
+        var tags = [];
+        if (item.priceChanged) tags.push("$" + item.previousPrice.toFixed(2) + "→$" + item.nextPrice.toFixed(2));
+        if (item.stockChanged) tags.push(item.previousStock + "→" + item.nextStock + " stk");
+        return esc(item.title) + (tags.length ? " (" + tags.join(", ") + ")" : "");
+      });
+      if (sampleList.length) {
+        parts.push("Preview: " + sampleList.join(" · ") + (plan.mutations.length > 3 ? " +" + (plan.mutations.length - 3) + " more" : ""));
+      }
+      previewStripEl.innerHTML = parts.join(" &nbsp;|&nbsp; ");
+    } else if (plan && plan.message) {
+      previewStripEl.innerHTML = '<span style="color:#fda4af;">' + esc(plan.message) + '</span>';
+    }
+  }
+
+  if (submitBtnEl) {
+    submitBtnEl.innerHTML = '<span>Apply Batch Transaction' + (count > 0 ? (' (' + count + ' SKU' + (count === 1 ? '' : 's') + ')') : '') + '</span>';
+    submitBtnEl.disabled = !(count > 0 && hasOp && !isSubmittingCatalogBatch);
+  }
+}
+
+window.submitCatalogBatchEditTransaction = function (e) {
+  if (e && typeof e.preventDefault === "function") e.preventDefault();
+  if (isSubmittingCatalogBatch) return;
+
+  var statusEl = document.getElementById("catalog-batch-status-msg");
+  var showStatus = function (msg, isError) {
+    if (!statusEl) return;
+    statusEl.textContent = msg;
+    statusEl.className = "cbe-status-msg " + (isError ? "error" : "success");
+    statusEl.hidden = false;
+  };
+
+  var draft = getCatalogBatchOperationDraft();
+  if (draft.productIds.length === 0) {
+    showStatus("Select at least one product card in the catalog grid first.", true);
+    return;
+  }
+  if (!draft.PriceHasInput && !draft.StockHasInput) {
+    showStatus("Specify a bulk price update or bulk stock adjustment value before applying.", true);
+    return;
+  }
+
+  isSubmittingCatalogBatch = true;
+  updateCatalogBatchEditUI();
+
+  api("/api/admin/products/batch-update", {
+    method: "POST",
+    body: JSON.stringify({
+      productIds: draft.productIds,
+      priceMode: draft.PriceHasInput ? draft.priceMode : "none",
+      priceValue: draft.PriceHasInput ? draft.priceValue : 0,
+      stockMode: draft.StockHasInput ? draft.stockMode : "none",
+      stockValue: draft.StockHasInput ? draft.stockValue : 0,
+      reason: draft.reason
+    })
+  })
+    .then(function (r) {
+      return r.json().then(function (d) { return { ok: r.ok, data: d }; });
+    })
+    .then(function (res) {
+      isSubmittingCatalogBatch = false;
+      if (!res.ok || !res.data || !res.data.ok) {
+        showStatus((res.data && res.data.message) || "Batch update failed.", true);
+        updateCatalogBatchEditUI();
+        return;
+      }
+
+      var data = res.data;
+      if (Array.isArray(data.products)) {
+        for (var i = 0; i < data.products.length; i++) {
+          var norm = normalizeProductEntity(data.products[i]);
+          for (var j = 0; j < products.length; j++) {
+            if (products[j].id === norm.id) {
+              products[j] = norm;
+              break;
+            }
+          }
+          refreshCard(norm.id);
+        }
+      }
+      updateFilterTabCounts();
+      applyFiltersAndSearch();
+      recalc(false);
+
+      // Reset inputs so accidental double-apply doesn't happen, while keeping selection visible
+      var priceModeEl = document.getElementById("catalog-batch-price-mode");
+      var priceValEl = document.getElementById("catalog-batch-price-value");
+      var stockModeEl = document.getElementById("catalog-batch-stock-mode");
+      var stockValEl = document.getElementById("catalog-batch-stock-value");
+      if (priceModeEl) priceModeEl.value = "none";
+      if (priceValEl) { priceValEl.value = ""; priceValEl.disabled = true; }
+      if (stockModeEl) stockModeEl.value = "none";
+      if (stockValEl) { stockValEl.value = ""; stockValEl.disabled = true; }
+
+      var msg = data.message || ("Updated " + (data.updatedCount || draft.productIds.length) + " products in transaction " + (data.transactionId || ""));
+      showStatus(msg, false);
+      showActivityToast(msg);
+      updateCatalogBatchEditUI();
+    })
+    .catch(function () {
+      isSubmittingCatalogBatch = false;
+      showStatus("Network error while committing batch transaction.", true);
+      updateCatalogBatchEditUI();
+    });
+};
+
+window.onProductsBatchUpdated = function (msg) {
+  if (!msg || !Array.isArray(msg.products)) return;
+  for (var i = 0; i < msg.products.length; i++) {
+    var norm = normalizeProductEntity(msg.products[i]);
+    for (var j = 0; j < products.length; j++) {
+      if (products[j].id === norm.id) {
+        products[j] = norm;
+        break;
+      }
+    }
+    refreshCard(norm.id);
+  }
+  updateFilterTabCounts();
+  applyFiltersAndSearch();
+  recalc(false);
+  updateCatalogBatchEditUI();
+};
+
+function initCatalogBatchEditControls() {
+  var toggleBtnEl = document.getElementById("catalog-batch-edit-btn");
+  var selectAllBtnEl = document.getElementById("catalog-batch-select-all-btn");
+  var selectLowBtnEl = document.getElementById("catalog-batch-select-low-btn");
+  var clearBtnEl = document.getElementById("catalog-batch-clear-btn");
+  var closeBtnEl = document.getElementById("catalog-batch-close-btn");
+
+  if (toggleBtnEl) {
+    toggleBtnEl.addEventListener("click", function () {
+      window.toggleCatalogBatchEditMode();
+    });
+  }
+  if (selectAllBtnEl) {
+    selectAllBtnEl.addEventListener("click", function () {
+      window.selectAllVisibleCatalogBatchProducts();
+    });
+  }
+  if (selectLowBtnEl) {
+    selectLowBtnEl.addEventListener("click", function () {
+      window.selectLowStockCatalogBatchProducts();
+    });
+  }
+  if (clearBtnEl) {
+    clearBtnEl.addEventListener("click", function () {
+      window.clearCatalogBatchSelection();
+    });
+  }
+  if (closeBtnEl) {
+    closeBtnEl.addEventListener("click", function () {
+      window.toggleCatalogBatchEditMode(false);
+    });
+  }
+
+  var priceModeEl = document.getElementById("catalog-batch-price-mode");
+  var priceValEl = document.getElementById("catalog-batch-price-value");
+  var stockModeEl = document.getElementById("catalog-batch-stock-mode");
+  var stockValEl = document.getElementById("catalog-batch-stock-value");
+
+  if (priceModeEl) {
+    priceModeEl.addEventListener("change", function () {
+      var mode = priceModeEl.value;
+      if (priceValEl) {
+        priceValEl.disabled = mode === "none";
+        if (mode !== "none" && !priceValEl.value) {
+          priceValEl.value = mode === "percent" ? "-10" : (mode === "delta" ? "-5" : "99.99");
+        }
+      }
+      updateCatalogBatchEditUI();
+    });
+  }
+  if (priceValEl) {
+    priceValEl.addEventListener("input", updateCatalogBatchEditUI);
+  }
+  if (stockModeEl) {
+    stockModeEl.addEventListener("change", function () {
+      var mode = stockModeEl.value;
+      if (stockValEl) {
+        stockValEl.disabled = mode === "none";
+        if (mode !== "none" && !stockValEl.value) {
+          stockValEl.value = mode === "delta" ? "10" : "25";
+        }
+      }
+      updateCatalogBatchEditUI();
+    });
+  }
+  if (stockValEl) {
+    stockValEl.addEventListener("input", updateCatalogBatchEditUI);
+  }
+}
+
+// ── Google Maps Platform Store & Pickup Hub Locator (Maps JS API + Places API New + Advanced Markers) ──
+var voltboxGmpMap = null;
+var voltboxGmpInfoWindow = null;
+var voltboxGmpMarkers = [];
+var voltboxGmpPlacesCache = [];
+var voltboxGmpLoaderPromise = null;
+var voltboxGmpInitialized = false;
+var voltboxGmpAutocompleteMounted = false;
+var voltboxGmpAttributionId = "gmp_mcp_codeassist_v1_aistudio";
+
+// Tier 1 Global Quota & Auth Listener (Case A Demo Key Defense)
+(function setupVoltboxGmpQuotaDefense() {
+  window.gm_authFailure = function () {
+    window.dispatchEvent(new CustomEvent("gmp-quota-exceeded"));
+  };
+  var origConsoleError = console.error;
+  console.error = function () {
+    origConsoleError.apply(console, arguments);
+    var argsArr = Array.prototype.slice.call(arguments);
+    var msg = argsArr.map(function (a) { return String(a); }).join(" ");
+    if (msg.indexOf("OverQuotaMapError") !== -1 || msg.indexOf("QuotaExceededError") !== -1) {
+      window.dispatchEvent(new CustomEvent("gmp-quota-exceeded"));
+    }
+  };
+  window.addEventListener("gmp-quota-exceeded", function () {
+    var bannerEl = document.getElementById("gmp-quota-banner");
+    if (bannerEl) {
+      bannerEl.removeAttribute("hidden");
+    }
+  });
+})();
+
+function checkAndDispatchGmpQuotaError(err) {
+  var isQuota =
+    window.VoltboxQR && typeof window.VoltboxQR.isGmpQuotaExceededSignal === "function"
+      ? window.VoltboxQR.isGmpQuotaExceededSignal(err)
+      : Boolean(
+          err &&
+            (String(err).indexOf("OverQuotaMapError") !== -1 ||
+              String(err).indexOf("QuotaExceededError") !== -1 ||
+              String(err).indexOf("OVER_QUERY_LIMIT") !== -1 ||
+              String(err).indexOf("RESOURCE_EXHAUSTED") !== -1 ||
+              String(err).indexOf("429") !== -1)
+        );
+  if (isQuota) {
+    window.dispatchEvent(new CustomEvent("gmp-quota-exceeded"));
+  }
+  return isQuota;
+}
+
+function loadVoltboxGoogleMapsBootstrap() {
+  if (window.google && window.google.maps && typeof window.google.maps.importLibrary === "function") {
+    return Promise.resolve();
+  }
+  if (voltboxGmpLoaderPromise) {
+    return voltboxGmpLoaderPromise;
+  }
+
+  voltboxGmpLoaderPromise = fetch("/api/maps/config")
+    .then(function (r) {
+      if (r.status === 429) {
+        window.dispatchEvent(new CustomEvent("gmp-quota-exceeded"));
+      }
+      return r.json();
+    })
+    .then(function (cfg) {
+      var apiKey = cfg && cfg.apiKey ? String(cfg.apiKey).trim() : "";
+      if (cfg && cfg.attributionId) {
+        voltboxGmpAttributionId = String(cfg.attributionId);
+      }
+      if (!apiKey) {
+        throw new Error("Google Maps API key is not configured.");
+      }
+
+      // Official Google Maps JavaScript API Dynamic Library Import Bootstrap Loader
+      (function (g) {
+        var h,
+          a,
+          k,
+          p = "The Google Maps JavaScript API",
+          c = "google",
+          l = "importLibrary",
+          q = "__ib__",
+          m = document,
+          b = window;
+        b = b[c] || (b[c] = {});
+        var d = b.maps || (b.maps = {}),
+          r = new Set(),
+          e = new URLSearchParams(),
+          u = function () {
+            return (
+              h ||
+              (h = new Promise(function (f, n) {
+                a = m.createElement("script");
+                e.set("libraries", Array.from(r) + "");
+                for (k in g) {
+                  e.set(
+                    k.replace(/[A-Z]/g, function (t) {
+                      return "_" + t[0].toLowerCase();
+                    }),
+                    g[k]
+                  );
+                }
+                e.set("callback", c + ".maps." + q);
+                a.src = "https://maps." + c + "apis.com/maps/api/js?" + e;
+                d[q] = f;
+                a.onerror = function () {
+                  return (h = n(Error(p + " could not load.")));
+                };
+                var nonceEl = m.querySelector("script[nonce]");
+                a.nonce = (nonceEl && nonceEl.nonce) || "";
+                m.head.append(a);
+              }))
+            );
+          };
+        if (!d[l]) {
+          d[l] = function (f) {
+            var rest = Array.prototype.slice.call(arguments, 1);
+            r.add(f);
+            return u().then(function () {
+              return d[l].apply(d, [f].concat(rest));
+            });
+          };
+        }
+      })({
+        key: apiKey,
+        v: "weekly"
+      });
+    });
+
+  return voltboxGmpLoaderPromise;
+}
+
+async function initVoltboxGoogleMap() {
+  var mapEl = document.getElementById("voltbox-gmp-map");
+  var statusEl = document.getElementById("voltbox-gmp-status-text");
+  if (!mapEl) return;
+
+  try {
+    await loadVoltboxGoogleMapsBootstrap();
+
+    var libs = await Promise.all([
+      window.google.maps.importLibrary("maps"),
+      window.google.maps.importLibrary("marker"),
+      window.google.maps.importLibrary("places"),
+      window.google.maps.importLibrary("core")
+    ]);
+
+    var MapClass = libs[0].Map;
+    var InfoWindowClass = libs[0].InfoWindow;
+    var PlaceAutocompleteElement = libs[2].PlaceAutocompleteElement;
+
+    if (!voltboxGmpMap) {
+      voltboxGmpMap = new MapClass(mapEl, {
+        center: { lat: 12.9716, lng: 77.5946 },
+        zoom: 12,
+        mapId: "DEMO_MAP_ID",
+        mapTypeControl: false,
+        streetViewControl: true,
+        fullscreenControl: true,
+        gestureHandling: "greedy",
+        internalUsageAttributionIds: [voltboxGmpAttributionId]
+      });
+      mapEl.setAttribute("data-gmp-ready", "true");
+      mapEl.setAttribute("data-attribution-id", voltboxGmpAttributionId);
+    }
+
+    if (!voltboxGmpInfoWindow) {
+      voltboxGmpInfoWindow = new InfoWindowClass();
+    }
+
+    // Mount PlaceAutocompleteElement imperatively (CF8 safe)
+    var acSlot = document.getElementById("voltbox-gmp-autocomplete-slot");
+    if (acSlot && !voltboxGmpAutocompleteMounted && PlaceAutocompleteElement) {
+      try {
+        var placeAutocomplete = new PlaceAutocompleteElement({});
+        placeAutocomplete.setAttribute("internal-usage-attribution-ids", voltboxGmpAttributionId);
+        placeAutocomplete.placeholder = "Autocomplete place or address…";
+        acSlot.innerHTML = "";
+        acSlot.appendChild(placeAutocomplete);
+        voltboxGmpAutocompleteMounted = true;
+
+        placeAutocomplete.addEventListener("gmp-select", async function (evt) {
+          try {
+            var prediction = evt && evt.placePrediction ? evt.placePrediction : null;
+            if (!prediction || typeof prediction.toPlace !== "function") return;
+            var selectedPlace = prediction.toPlace();
+            await selectedPlace.fetchFields({
+              fields: [
+                "id",
+                "displayName",
+                "formattedAddress",
+                "location",
+                "viewport",
+                "rating",
+                "userRatingCount",
+                "businessStatus",
+                "googleMapsURI",
+                "attributions"
+              ]
+            });
+            var card =
+              window.VoltboxQR && typeof window.VoltboxQR.normalizeGmpPlaceResult === "function"
+                ? window.VoltboxQR.normalizeGmpPlaceResult(selectedPlace, 0)
+                : null;
+            if (card) {
+              renderVoltboxGmpPlacesOnMap([card], selectedPlace.displayName || "Selected Place");
+            }
+          } catch (acErr) {
+            checkAndDispatchGmpQuotaError(acErr);
+          }
+        });
+      } catch (widgetErr) {
+        console.warn("PlaceAutocompleteElement init note:", widgetErr);
+      }
+    }
+
+    if (!voltboxGmpInitialized) {
+      voltboxGmpInitialized = true;
+      var queryInput = document.getElementById("voltbox-gmp-query-input");
+      var initialQuery =
+        queryInput && queryInput.value
+          ? queryInput.value
+          : "computer hardware electronics store in Bengaluru";
+      await searchVoltboxGmpPlaces(initialQuery);
+    }
+
+    if (statusEl) {
+      statusEl.textContent = "Google Maps Platform Ready · Click any pin or card to inspect live place details";
+    }
+  } catch (err) {
+    checkAndDispatchGmpQuotaError(err);
+    var listEl = document.getElementById("voltbox-gmp-places-list");
+    if (listEl) {
+      listEl.innerHTML =
+        '<div class="voltbox-gmp-empty-state">Unable to load Google Maps Platform right now. Please verify network connectivity or API key configuration.</div>';
+    }
+  }
+}
+
+function clearVoltboxGmpMarkers() {
+  for (var i = 0; i < voltboxGmpMarkers.length; i++) {
+    if (voltboxGmpMarkers[i]) {
+      voltboxGmpMarkers[i].map = null;
+    }
+  }
+  voltboxGmpMarkers = [];
+}
+
+function openVoltboxGmpInfoWindow(card, markerAnchor) {
+  if (!voltboxGmpMap || !voltboxGmpInfoWindow || !card) return;
+  var container = document.createElement("div");
+  container.className = "voltbox-gmp-infowindow";
+
+  var titleEl = document.createElement("strong");
+  titleEl.className = "voltbox-gmp-iw-title";
+  titleEl.textContent = card.displayName || "Place Result";
+  container.appendChild(titleEl);
+
+  if (card.formattedAddress) {
+    var addrEl = document.createElement("div");
+    addrEl.className = "voltbox-gmp-iw-addr";
+    addrEl.textContent = card.formattedAddress;
+    container.appendChild(addrEl);
+  }
+
+  if (card.rating !== null) {
+    var ratingEl = document.createElement("div");
+    ratingEl.className = "voltbox-gmp-iw-meta";
+    ratingEl.textContent = "★ " + Number(card.rating).toFixed(1) + " (" + card.userRatingCount + " reviews)";
+    container.appendChild(ratingEl);
+  }
+
+  if (card.googleMapsURI) {
+    var linkEl = document.createElement("a");
+    linkEl.className = "voltbox-gmp-iw-link";
+    linkEl.href = card.googleMapsURI;
+    linkEl.target = "_blank";
+    linkEl.rel = "noopener noreferrer";
+    linkEl.textContent = "Open in Google Maps →";
+    container.appendChild(linkEl);
+  }
+
+  voltboxGmpInfoWindow.setContent(container);
+  voltboxGmpInfoWindow.open({
+    map: voltboxGmpMap,
+    anchor: markerAnchor,
+    shouldFocus: false
+  });
+}
+
+async function renderVoltboxGmpPlacesOnMap(placeCards, queryLabel) {
+  var listEl = document.getElementById("voltbox-gmp-places-list");
+  var countEl = document.getElementById("voltbox-gmp-result-count");
+  var statusEl = document.getElementById("voltbox-gmp-status-text");
+
+  voltboxGmpPlacesCache = Array.isArray(placeCards) ? placeCards : [];
+  clearVoltboxGmpMarkers();
+
+  if (countEl) {
+    countEl.textContent = voltboxGmpPlacesCache.length + " Live Places";
+  }
+
+  if (!voltboxGmpPlacesCache.length) {
+    if (listEl) {
+      listEl.innerHTML =
+        '<div class="voltbox-gmp-empty-state">No places matched "' +
+        esc(queryLabel || "") +
+        '". Try another city or search term.</div>';
+    }
+    return;
+  }
+
+  var markerLib = await window.google.maps.importLibrary("marker");
+  var coreLib = await window.google.maps.importLibrary("core");
+  var AdvancedMarkerElement = markerLib.AdvancedMarkerElement;
+  var PinElement = markerLib.PinElement;
+  var LatLngBounds = coreLib.LatLngBounds;
+  var bounds = new LatLngBounds();
+
+  var listHtml = "";
+  for (var i = 0; i < voltboxGmpPlacesCache.length; i++) {
+    var card = voltboxGmpPlacesCache[i];
+    if (card.location && voltboxGmpMap) {
+      var pin = new PinElement({
+        glyphText: card.badgeNumber,
+        background: "#0f172a",
+        borderColor: "#2dd4bf",
+        glyphColor: "#5eead4"
+      });
+      var marker = new AdvancedMarkerElement({
+        map: voltboxGmpMap,
+        position: card.location,
+        title: card.displayName,
+        content: pin
+      });
+      (function (boundCard, boundMarker) {
+        boundMarker.addEventListener("gmp-click", function () {
+          focusVoltboxGmpPlaceCard(boundCard.index);
+        });
+      })(card, marker);
+      voltboxGmpMarkers.push(marker);
+      bounds.extend(card.location);
+    }
+
+    var ratingBadge =
+      card.rating !== null
+        ? '<span class="voltbox-gmp-card-rating">★ ' +
+          Number(card.rating).toFixed(1) +
+          ' <small>(' +
+          card.userRatingCount +
+          ')</small></span>'
+        : '<span class="voltbox-gmp-card-rating is-muted">Live Place</span>';
+
+    var attrHtml = "";
+    if (Array.isArray(card.attributions) && card.attributions.length > 0) {
+      var attrLinks = [];
+      for (var a = 0; a < card.attributions.length; a++) {
+        var at = card.attributions[a];
+        if (at.providerURI) {
+          attrLinks.push(
+            '<a href="' +
+              esc(at.providerURI) +
+              '" target="_blank" rel="noopener noreferrer">' +
+              esc(at.provider) +
+              "</a>"
+          );
+        } else {
+          attrLinks.push(esc(at.provider));
+        }
+      }
+      attrHtml = '<div class="voltbox-gmp-card-attr">Source: ' + attrLinks.join(", ") + "</div>";
+    }
+
+    var mapsLinkHtml = card.googleMapsURI
+      ? '<a href="' +
+        esc(card.googleMapsURI) +
+        '" target="_blank" rel="noopener noreferrer" class="voltbox-gmp-card-ext" onclick="event.stopPropagation()">Google Maps ↗</a>'
+      : "";
+
+    listHtml +=
+      '<div class="voltbox-gmp-place-card' +
+      (i === 0 ? " is-active" : "") +
+      '" data-testid="voltbox-gmp-place-card-' +
+      i +
+      '" data-place-index="' +
+      i +
+      '" onclick="focusVoltboxGmpPlaceCard(' +
+      i +
+      ')">' +
+      '<div class="voltbox-gmp-card-top">' +
+      '<span class="voltbox-gmp-card-num">' +
+      esc(card.badgeNumber) +
+      "</span>" +
+      '<strong class="voltbox-gmp-card-title">' +
+      esc(card.displayName) +
+      "</strong>" +
+      ratingBadge +
+      "</div>" +
+      '<div class="voltbox-gmp-card-addr">' +
+      esc(card.formattedAddress) +
+      "</div>" +
+      '<div class="voltbox-gmp-card-foot">' +
+      '<span class="voltbox-gmp-card-coords">' +
+      (card.location
+        ? card.location.lat.toFixed(4) + ", " + card.location.lng.toFixed(4)
+        : "") +
+      "</span>" +
+      mapsLinkHtml +
+      "</div>" +
+      attrHtml +
+      "</div>";
+  }
+
+  if (listEl) {
+    listEl.innerHTML = listHtml;
+  }
+
+  if (voltboxGmpMap && voltboxGmpMarkers.length > 0) {
+    if (voltboxGmpMarkers.length === 1 && voltboxGmpPlacesCache[0].location) {
+      voltboxGmpMap.setCenter(voltboxGmpPlacesCache[0].location);
+      voltboxGmpMap.setZoom(15);
+    } else {
+      voltboxGmpMap.fitBounds(bounds);
+    }
+    openVoltboxGmpInfoWindow(voltboxGmpPlacesCache[0], voltboxGmpMarkers[0]);
+  }
+
+  if (statusEl) {
+    statusEl.textContent =
+      'Showing ' +
+      voltboxGmpPlacesCache.length +
+      ' live Places API (New) results for "' +
+      (queryLabel || "") +
+      '"';
+  }
+}
+
+function focusVoltboxGmpPlaceCard(index) {
+  var idx = Number(index);
+  var card = voltboxGmpPlacesCache[idx];
+  if (!card) return;
+
+  var listEl = document.getElementById("voltbox-gmp-places-list");
+  if (listEl) {
+    var cards = listEl.querySelectorAll(".voltbox-gmp-place-card");
+    for (var i = 0; i < cards.length; i++) {
+      cards[i].classList.toggle("is-active", Number(cards[i].getAttribute("data-place-index")) === idx);
+    }
+  }
+
+  if (voltboxGmpMap && card.location) {
+    voltboxGmpMap.panTo(card.location);
+    if ((voltboxGmpMap.getZoom() || 12) < 14) {
+      voltboxGmpMap.setZoom(14);
+    }
+  }
+
+  if (voltboxGmpMarkers[idx]) {
+    openVoltboxGmpInfoWindow(card, voltboxGmpMarkers[idx]);
+  }
+}
+window.focusVoltboxGmpPlaceCard = focusVoltboxGmpPlaceCard;
+
+async function searchVoltboxGmpPlaces(queryInput, centerOverride) {
+  var listEl = document.getElementById("voltbox-gmp-places-list");
+  var countEl = document.getElementById("voltbox-gmp-result-count");
+  if (countEl) countEl.textContent = "Searching…";
+  if (listEl) {
+    listEl.innerHTML = '<div class="voltbox-gmp-empty-state">Querying live Places API (New)…</div>';
+  }
+
+  try {
+    await loadVoltboxGoogleMapsBootstrap();
+    var placesLib = await window.google.maps.importLibrary("places");
+    var Place = placesLib.Place;
+
+    var requestPayload =
+      window.VoltboxQR && typeof window.VoltboxQR.buildGmpTextSearchRequest === "function"
+        ? window.VoltboxQR.buildGmpTextSearchRequest(queryInput, {
+            center: centerOverride || null,
+            maxResultCount: 8
+          })
+        : {
+            textQuery: String(queryInput || "computer hardware electronics store in Bengaluru").trim(),
+            fields: [
+              "id",
+              "displayName",
+              "formattedAddress",
+              "location",
+              "rating",
+              "userRatingCount",
+              "businessStatus",
+              "googleMapsURI",
+              "attributions"
+            ],
+            maxResultCount: 8,
+            internalUsageAttributionIds: [voltboxGmpAttributionId]
+          };
+
+    var res = await Place.searchByText(requestPayload);
+    var rawPlaces = res && Array.isArray(res.places) ? res.places : [];
+    var cards = [];
+    for (var i = 0; i < rawPlaces.length; i++) {
+      var normalized =
+        window.VoltboxQR && typeof window.VoltboxQR.normalizeGmpPlaceResult === "function"
+          ? window.VoltboxQR.normalizeGmpPlaceResult(rawPlaces[i], i)
+          : null;
+      if (normalized) {
+        cards.push(normalized);
+      }
+    }
+
+    await renderVoltboxGmpPlacesOnMap(cards, requestPayload.textQuery);
+  } catch (err) {
+    checkAndDispatchGmpQuotaError(err);
+    if (countEl) countEl.textContent = "0 Places";
+    if (listEl) {
+      listEl.innerHTML =
+        '<div class="voltbox-gmp-empty-state">Unable to complete Places search. Please check your network or Google Maps API quota.</div>';
+    }
+  }
+}
+window.searchVoltboxGmpPlaces = searchVoltboxGmpPlaces;
+
+function submitVoltboxGmpSearch() {
+  var inputEl = document.getElementById("voltbox-gmp-query-input");
+  var q = inputEl && inputEl.value ? inputEl.value.trim() : "computer hardware electronics store in Bengaluru";
+  searchVoltboxGmpPlaces(q);
+}
+window.submitVoltboxGmpSearch = submitVoltboxGmpSearch;
+
+function runVoltboxGmpPreset(btnEl, queryStr) {
+  var chips = document.querySelectorAll(".voltbox-gmp-preset-chip");
+  for (var i = 0; i < chips.length; i++) {
+    chips[i].classList.toggle("active", chips[i] === btnEl);
+  }
+  var inputEl = document.getElementById("voltbox-gmp-query-input");
+  if (inputEl) {
+    inputEl.value = queryStr;
+  }
+  searchVoltboxGmpPlaces(queryStr);
+}
+window.runVoltboxGmpPreset = runVoltboxGmpPreset;
+
+function panVoltboxMapToUserLocation() {
+  var statusEl = document.getElementById("voltbox-gmp-status-text");
+  if (!navigator.geolocation) {
+    if (statusEl) statusEl.textContent = "Browser geolocation is not available in this environment.";
+    return;
+  }
+  if (statusEl) statusEl.textContent = "Requesting browser geolocation…";
+  navigator.geolocation.getCurrentPosition(
+    function (pos) {
+      var coords = {
+        lat: pos.coords.latitude,
+        lng: pos.coords.longitude
+      };
+      if (voltboxGmpMap) {
+        voltboxGmpMap.panTo(coords);
+        voltboxGmpMap.setZoom(13);
+      }
+      searchVoltboxGmpPlaces("computer hardware electronics store", coords);
+    },
+    function () {
+      if (statusEl) {
+        statusEl.textContent = "Location permission declined or unavailable — showing regional search results.";
+      }
+    }
+  );
+}
+window.panVoltboxMapToUserLocation = panVoltboxMapToUserLocation;
+
+function openVoltboxMapsModal(initialQuery) {
+  var overlay = document.getElementById("voltbox-maps-overlay");
+  if (!overlay) return;
+  overlay.classList.add("open");
+  overlay.setAttribute("aria-hidden", "false");
+
+  var inputEl = document.getElementById("voltbox-gmp-query-input");
+  if (initialQuery && typeof initialQuery === "string" && inputEl) {
+    inputEl.value = initialQuery;
+    voltboxGmpInitialized = false;
+  }
+
+  if (inputEl && !inputEl.getAttribute("data-key-bound")) {
+    inputEl.setAttribute("data-key-bound", "true");
+    inputEl.addEventListener("keydown", function (e) {
+      if (e.key === "Enter") {
+        e.preventDefault();
+        submitVoltboxGmpSearch();
+      }
+    });
+  }
+
+  initVoltboxGoogleMap();
+}
+window.openVoltboxMapsModal = openVoltboxMapsModal;
+
+function closeVoltboxMapsModal() {
+  var overlay = document.getElementById("voltbox-maps-overlay");
+  if (!overlay) return;
+  overlay.classList.remove("open");
+  overlay.setAttribute("aria-hidden", "true");
+}
+window.closeVoltboxMapsModal = closeVoltboxMapsModal;

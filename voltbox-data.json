@@ -38,8 +38,9 @@
           ],
           "shippingName": "Harish",
           "shippingAddress": "mmomfomf",
-          "paymentMethod": "Fake Pay",
-          "amountPaid": 27.06
+          "paymentMethod": "UPI QR (PhonePe)",
+          "amountPaid": 27.06,
+          "status": "Delivered"
         },
         {
           "id": "VB-FF6D",
@@ -66,8 +67,9 @@
           ],
           "shippingName": "Harish",
           "shippingAddress": "hariharan colony 72th street theni-123459",
-          "paymentMethod": "Fake Pay",
-          "amountPaid": 411.35
+          "paymentMethod": "Visa •••• 4242",
+          "amountPaid": 411.35,
+          "status": "Delivered"
         },
         {
           "id": "VB-9EEE",
@@ -108,8 +110,9 @@
           ],
           "shippingName": "Harish",
           "shippingAddress": "nunurnusr",
-          "paymentMethod": "Fake Pay",
-          "amountPaid": 692.8
+          "paymentMethod": "Google Pay (UPI)",
+          "amountPaid": 692.8,
+          "status": "Delivered"
         },
         {
           "id": "VB-995F",
@@ -136,8 +139,9 @@
           ],
           "shippingName": "Harish",
           "shippingAddress": "cfyufyufufu766",
-          "paymentMethod": "Fake Pay",
-          "amountPaid": 357.23
+          "paymentMethod": "Mastercard •••• 8819",
+          "amountPaid": 357.23,
+          "status": "Delivered"
         },
         {
           "id": "VB-852D",
@@ -157,8 +161,9 @@
           ],
           "shippingName": "Harish",
           "shippingAddress": "ijijiji",
-          "paymentMethod": "Fake Pay",
-          "amountPaid": 194.85
+          "paymentMethod": "HDFC NetBanking",
+          "amountPaid": 194.85,
+          "status": "Delivered"
         },
         {
           "id": "VB-2E2C",
@@ -185,8 +190,9 @@
           ],
           "shippingName": "Harish",
           "shippingAddress": "uiguidghui",
-          "paymentMethod": "Fake Pay",
-          "amountPaid": 259.8
+          "paymentMethod": "UPI QR (PhonePe)",
+          "amountPaid": 259.8,
+          "status": "Delivered"
         },
         {
           "id": "VB-4FFF",
@@ -227,8 +233,9 @@
           ],
           "shippingName": "Harish",
           "shippingAddress": "bibi kulam",
-          "paymentMethod": "Fake Pay",
-          "amountPaid": 617.03
+          "paymentMethod": "Visa •••• 4242",
+          "amountPaid": 617.03,
+          "status": "Delivered"
         },
         {
           "id": "VB-D402",
@@ -262,8 +269,9 @@
           ],
           "shippingName": "Harshan",
           "shippingAddress": "krishnapuram colony near bibi kulam madurai 14",
-          "paymentMethod": "Fake Pay",
-          "amountPaid": 422.18
+          "paymentMethod": "Google Pay (UPI)",
+          "amountPaid": 422.18,
+          "status": "Delivered"
         },
         {
           "id": "VB-FF5B",
@@ -283,8 +291,9 @@
           ],
           "shippingName": "Harish",
           "shippingAddress": "bibi kiljkhj",
-          "paymentMethod": "Fake Pay",
-          "amountPaid": 75.78
+          "paymentMethod": "Mastercard •••• 8819",
+          "amountPaid": 75.78,
+          "status": "Shipped"
         },
         {
           "id": "VB-5FC8",
@@ -318,8 +327,8 @@
           ],
           "shippingName": "Harish",
           "shippingAddress": "fghfhnfhnthj",
-          "paymentMethod": "Fake Pay",
-          "status": "Pending",
+          "paymentMethod": "HDFC NetBanking",
+          "status": "Processing",
           "amountPaid": 1158.28
         },
         {
@@ -376,8 +385,8 @@
           "priceAtCreation": 200,
           "createdAt": 1793773549231,
           "triggered": true,
-          "triggeredAt": 1793773549242,
-          "triggeredPrice": 182.4
+          "triggeredAt": 1794029913877,
+          "triggeredPrice": 159.16
         }
       ]
     },
@@ -413,8 +422,9 @@
           ],
           "shippingName": "Harish Ragavendran",
           "shippingAddress": "bibi kullam madurai",
-          "paymentMethod": "Fake Pay",
-          "amountPaid": 13.53
+          "paymentMethod": "UPI QR (PhonePe)",
+          "amountPaid": 13.53,
+          "status": "Shipped"
         },
         {
           "id": "VB-DE8F",
@@ -434,8 +444,9 @@
           ],
           "shippingName": "Harish Ragavendran",
           "shippingAddress": "inionfjoenfe",
-          "paymentMethod": "Fake Pay",
-          "amountPaid": 866
+          "paymentMethod": "Visa •••• 4242",
+          "amountPaid": 866,
+          "status": "Processing"
         },
         {
           "id": "VB-B731",
@@ -455,8 +466,9 @@
           ],
           "shippingName": "Harish Ragavendran",
           "shippingAddress": "gfgffjfy",
-          "paymentMethod": "Fake Pay",
-          "amountPaid": 129.9
+          "paymentMethod": "Google Pay (UPI)",
+          "amountPaid": 129.9,
+          "status": "Order Placed"
         }
       ],
       "wishlist": []
@@ -489,8 +501,9 @@
           ],
           "shippingName": "talentteno",
           "shippingAddress": "bibi kulam madurai  625014",
-          "paymentMethod": "Fake Pay",
-          "amountPaid": 584.55
+          "paymentMethod": "UPI QR (PhonePe)",
+          "amountPaid": 584.55,
+          "status": "Processing"
         },
         {
           "id": "VB-A8E8",
@@ -510,8 +523,9 @@
           ],
           "shippingName": "talentteno",
           "shippingAddress": "bibi kulam madurai 625014",
-          "paymentMethod": "Fake Pay",
-          "amountPaid": 162.38
+          "paymentMethod": "Visa •••• 4242",
+          "amountPaid": 162.38,
+          "status": "Order Placed"
         }
       ],
       "wishlist": []
@@ -560,8 +574,8 @@
           ],
           "shippingName": "Harish",
           "shippingAddress": "fghrthfhfh",
-          "paymentMethod": "Fake Pay",
-          "status": "Pending",
+          "paymentMethod": "UPI QR (PhonePe)",
+          "status": "Processing",
           "amountPaid": 194.85
         },
         {
@@ -586,8 +600,8 @@
           ],
           "shippingName": "Harish",
           "shippingAddress": "bvvuyfvhguytfyt",
-          "paymentMethod": "Fake Pay",
-          "status": "Pending",
+          "paymentMethod": "Visa •••• 4242",
+          "status": "Order Placed",
           "amountPaid": 73.61
         }
       ],
@@ -682,13 +696,14 @@
     "ed4022ee-370d-47f0-9f6b-b73599596582": "alex.chen@gmail.com",
     "391b910a-f74f-48a2-abe1-72dd260b59ef": "harish@voltbox.test",
     "8ed81fb0-cc44-453d-b709-f168c7c66e83": "alex.chen@gmail.com",
-    "e4d1dbed-4e68-40c4-9587-93b488f3b0e2": "harish@voltbox.test"
+    "e4d1dbed-4e68-40c4-9587-93b488f3b0e2": "harish@voltbox.test",
+    "a680cb0a-1171-4ba1-babe-ae39c5737bd6": "harish@voltbox.test"
   },
   "products": [
     {
       "id": 1,
       "title": "USB-C 7-in-1 Hub",
-      "price": 34.99,
+      "price": 29.99,
       "description": "HDMI, USB-A, SD and passthrough charging in one dongle.",
       "category": "adapters",
       "image": "TODO: paste a real image link here",
@@ -700,14 +715,14 @@
       "official": true,
       "createdAt": 0,
       "takenDown": true,
-      "quantity": 3,
-      "stock": 3,
-      "lowStock": true
+      "quantity": 7,
+      "stock": 7,
+      "lowStock": false
     },
     {
       "id": 2,
       "title": "USB-C to USB-C Cable 2m (100W)",
-      "price": 12.5,
+      "price": 7.5,
       "description": "Braided, 100W PD, doesn't fray after a week.",
       "category": "cables",
       "image": "TODO: paste a real image link here",
@@ -719,14 +734,14 @@
       "official": true,
       "createdAt": 0,
       "takenDown": true,
-      "quantity": 14,
-      "stock": 14,
+      "quantity": 18,
+      "stock": 18,
       "lowStock": false
     },
     {
       "id": 3,
       "title": "NZXT H5 Flow",
-      "price": 94.99,
+      "price": 89.99,
       "description": "Clean airflow case that's easy to build in.",
       "category": "cases",
       "image": "TODO: paste a real image link here",
@@ -738,9 +753,9 @@
       "official": true,
       "createdAt": 0,
       "takenDown": true,
-      "quantity": 2,
-      "stock": 2,
-      "lowStock": true
+      "quantity": 6,
+      "stock": 6,
+      "lowStock": false
     },
     {
       "id": 4,
@@ -1030,26 +1045,26 @@
     {
       "id": 19,
       "title": "Nvidia RTX 5090",
-      "price": 182.4,
+      "price": 159.16,
       "description": "Flagship 32GB GDDR7 Blackwell GPU with triple-fan vapor chamber cooling and PCIe 5.0 interface.",
       "category": "memory",
       "image": "https://m.media-amazon.com/images/I/513TkgJXfYL._AC_UF1000,1000_QL80_.jpg",
-      "ratingRate": 4.9,
-      "ratingCount": 68,
+      "ratingRate": 4.8,
+      "ratingCount": 69,
       "addedByName": "Harish",
       "addedByColor": "#ffd23f",
       "addedByEmail": "harish@voltbox.test",
       "official": false,
       "createdAt": 1785214969269,
       "takenDown": false,
-      "quantity": 7,
-      "stock": 7,
+      "quantity": 16,
+      "stock": 16,
       "lowStock": false
     },
     {
       "id": 20,
       "title": "AMD RYZEN 9",
-      "price": 180,
+      "price": 175,
       "description": "16-Core / 32-Thread Zen 5 desktop processor with 5.7 GHz boost clock and 80MB cache for AM5.",
       "category": "memory",
       "image": "https://images.unsplash.com/photo-1591799264318-7e6ef8ddb7ea?auto=format&fit=crop&w=900&q=80",
@@ -1061,14 +1076,14 @@
       "official": false,
       "createdAt": 1785215065991,
       "takenDown": false,
-      "quantity": 10,
-      "stock": 10,
+      "quantity": 14,
+      "stock": 14,
       "lowStock": false
     },
     {
       "id": 21,
       "title": "MSI MotherBoard B570",
-      "price": 150,
+      "price": 145,
       "description": "14+2+1 Duet Rail VRM ATX motherboard with PCIe 5.0 M.2 slots, DDR5-7200+ support, and Wi-Fi 7.",
       "category": "microcontrollers",
       "image": "https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcQjIvqk1kcD260O10t4OhFf76_-WdX9DNpxobLReH0DX99Gac-8l5Y28zM&s=10",
@@ -1080,8 +1095,8 @@
       "official": false,
       "createdAt": 1785215319352,
       "takenDown": false,
-      "quantity": 7,
-      "stock": 7,
+      "quantity": 11,
+      "stock": 11,
       "lowStock": false
     },
     {
@@ -2159,6 +2174,232 @@
       },
       "id": 15,
       "createdAt": 1793898581914
+    }
+  ],
+  "reviews": [
+    {
+      "id": "REV-VB-19-6187",
+      "productId": 19,
+      "productTitle": "Nvidia RTX 5090",
+      "sku": "VB-GPU-019",
+      "authorName": "Harish",
+      "authorEmail": "harish@voltbox.test",
+      "authorColor": "#ffd23f",
+      "authorInitial": "H",
+      "rating": 5,
+      "title": "Rock-solid 32GB GDDR7 thermals in our studio AI rig",
+      "comment": "Purchased in Order #VB-5FC8 — sustains 2.91 GHz boost under continuous FP8 inference at 60C with whisper-quiet fans.",
+      "useCaseTag": "AI / Workstation",
+      "verifiedPurchase": true,
+      "orderId": "VB-5FC8",
+      "purchasedAt": 1793509777352,
+      "helpfulCount": 1,
+      "helpfulVoterEmails": [
+        "harish@voltbox.test"
+      ],
+      "createdAt": 1794027684260
+    },
+    {
+      "id": "REV-VB-1901",
+      "productId": 19,
+      "productTitle": "Nvidia RTX 5090",
+      "sku": "VB-GPU-019",
+      "authorName": "Maya Lin",
+      "authorEmail": "maya@voltbox.test",
+      "authorColor": "#20c997",
+      "authorInitial": "M",
+      "rating": 5,
+      "title": "Whisper-quiet vapor chamber under 100% CUDA & Path-Tracing load",
+      "comment": "Installed in my 4-slot SFF workstation with an 850W ATX 3.1 PSU. Core temps stay locked at 61°C during extended PyTorch training and 4K 175Hz gaming with zero coil whine.",
+      "useCaseTag": "AI / Workstation",
+      "verifiedPurchase": true,
+      "orderId": "VB-5FC8",
+      "purchasedAt": 1793250039695,
+      "helpfulCount": 14,
+      "helpfulVoterEmails": [
+        "alex.chen@gmail.com"
+      ],
+      "createdAt": 1793509239695
+    },
+    {
+      "id": "REV-VB-1902",
+      "productId": 19,
+      "productTitle": "Nvidia RTX 5090",
+      "sku": "VB-GPU-019",
+      "authorName": "Devon Park",
+      "authorEmail": "devon@voltbox.test",
+      "authorColor": "#ff922b",
+      "authorInitial": "D",
+      "rating": 5,
+      "title": "PCIe 5.0 bandwidth and 32GB GDDR7 VRAM are a generational leap",
+      "comment": "Upgraded from an RTX 4080. Frame pacing at 3440×1440 ultrawide is rock solid, and the included 16-pin adapter and anti-sag bracket fit cleanly in a mid-tower case.",
+      "useCaseTag": "Gaming Rig",
+      "verifiedPurchase": true,
+      "orderId": "VB-C91E",
+      "purchasedAt": 1792990839695,
+      "helpfulCount": 9,
+      "helpfulVoterEmails": [],
+      "createdAt": 1793336439695
+    },
+    {
+      "id": "REV-VB-1903",
+      "productId": 19,
+      "productTitle": "Nvidia RTX 5090",
+      "sku": "VB-GPU-019",
+      "authorName": "Elena Vance",
+      "authorEmail": "elena@voltbox.test",
+      "authorColor": "#cc5de8",
+      "authorInitial": "E",
+      "rating": 4,
+      "title": "Unmatched 4K rasterization — double check your case length clearance",
+      "comment": "Performance is 10/10 across Blender Cycles and Unreal Engine 5.4. Just make sure you have at least 335mm of front-radiator clearance before mounting.",
+      "useCaseTag": "Creator Build",
+      "verifiedPurchase": true,
+      "orderId": "VB-FF6D",
+      "purchasedAt": 1792731639695,
+      "helpfulCount": 7,
+      "helpfulVoterEmails": [],
+      "createdAt": 1793077239695
+    },
+    {
+      "id": "REV-VB-2001",
+      "productId": 20,
+      "productTitle": "AMD RYZEN 9",
+      "sku": "VB-CPU-020",
+      "authorName": "Alex Chen",
+      "authorEmail": "alex.chen@gmail.com",
+      "authorColor": "#4dabf7",
+      "authorInitial": "A",
+      "rating": 5,
+      "title": "16 cores boost to 5.7 GHz effortlessly with curve optimizer -20",
+      "comment": "Paired with the MSI B570 and 32GB DDR5-6000 CL30. Full C++ and Rust workspace rebuilds dropped by 42%, and gaming 1% lows are butter smooth.",
+      "useCaseTag": "Gaming Rig",
+      "verifiedPurchase": true,
+      "orderId": "VB-C31B",
+      "purchasedAt": 1793422839695,
+      "helpfulCount": 11,
+      "helpfulVoterEmails": [],
+      "createdAt": 1793682039695
+    },
+    {
+      "id": "REV-VB-2002",
+      "productId": 20,
+      "productTitle": "AMD RYZEN 9",
+      "sku": "VB-CPU-020",
+      "authorName": "Marcus Sterling",
+      "authorEmail": "marcus@voltbox.test",
+      "authorColor": "#51cf66",
+      "authorInitial": "M",
+      "rating": 5,
+      "title": "Cooler than expected under a dual-tower air cooler",
+      "comment": "Running Eco-tuned 125W profile under a Noctua NH-D15 Chromax. Hits 96% of stock multi-core score while staying below 72°C all day.",
+      "useCaseTag": "Silent / Thermal",
+      "verifiedPurchase": true,
+      "orderId": "VB-A5AD",
+      "purchasedAt": 1792818039695,
+      "helpfulCount": 6,
+      "helpfulVoterEmails": [],
+      "createdAt": 1793163639695
+    },
+    {
+      "id": "REV-VB-2101",
+      "productId": 21,
+      "productTitle": "MSI MotherBoard B570",
+      "sku": "VB-MBD-021",
+      "authorName": "Samira Khan",
+      "authorEmail": "samira@voltbox.test",
+      "authorColor": "#f06595",
+      "authorInitial": "S",
+      "rating": 5,
+      "title": "Rock-solid 14+2+1 VRM stages and toolless M.2 heatsinks",
+      "comment": "EXPO DDR5-6000 trained on first boot in under 18 seconds. Rear I/O has plenty of 10Gbps USB-A and USB-C ports, and VRM thermals never cross 49°C.",
+      "useCaseTag": "Drop-In Upgrade",
+      "verifiedPurchase": true,
+      "orderId": "VB-5FC8",
+      "purchasedAt": 1793336439695,
+      "helpfulCount": 8,
+      "helpfulVoterEmails": [],
+      "createdAt": 1793595639695
+    },
+    {
+      "id": "REV-VB-2201",
+      "productId": 22,
+      "productTitle": "Samsung SSD",
+      "sku": "VB-STR-022",
+      "authorName": "Devon Park",
+      "authorEmail": "devon@voltbox.test",
+      "authorColor": "#ff922b",
+      "authorInitial": "D",
+      "rating": 5,
+      "title": "Sustained 7,420 MB/s sequential reads on CrystalDiskMark",
+      "comment": "Used as my primary scratch disk for 8K ProRes timelines and Linux VM snapshots. Dedicated DRAM cache keeps sustained writes fast even past 200GB.",
+      "useCaseTag": "Creator Build",
+      "verifiedPurchase": true,
+      "orderId": "VB-6A27",
+      "purchasedAt": 1793163639695,
+      "helpfulCount": 10,
+      "helpfulVoterEmails": [],
+      "createdAt": 1793422839695
+    },
+    {
+      "id": "REV-VB-2401",
+      "productId": 24,
+      "productTitle": "Apple AirPods Max",
+      "sku": "VB-AUD-024",
+      "authorName": "Marcus Sterling",
+      "authorEmail": "marcus@voltbox.test",
+      "authorColor": "#51cf66",
+      "authorInitial": "M",
+      "rating": 5,
+      "title": "Anodized aluminum build and studio-grade ANC isolation",
+      "comment": "Cancels out workstation fan hum completely during late-night editing sessions. Sub-bass extension and spatial imaging are remarkably clean.",
+      "useCaseTag": "Creator Build",
+      "verifiedPurchase": true,
+      "orderId": "VB-04C1",
+      "purchasedAt": 1793077239695,
+      "helpfulCount": 5,
+      "helpfulVoterEmails": [],
+      "createdAt": 1793509239695
+    },
+    {
+      "id": "REV-VB-2501",
+      "productId": 25,
+      "productTitle": "Sony PlayStation 5 Pro",
+      "sku": "VB-GMG-025",
+      "authorName": "Alex Chen",
+      "authorEmail": "alex.chen@gmail.com",
+      "authorColor": "#4dabf7",
+      "authorInitial": "A",
+      "rating": 5,
+      "title": "Locked 60–120 FPS with PSSR upscaling on a 4K OLED display",
+      "comment": "The 2TB built-in NVMe SSD and upgraded RDNA ray-tracing compute units make a huge visual difference on HDMI 2.1 VRR monitors.",
+      "useCaseTag": "Gaming Rig",
+      "verifiedPurchase": true,
+      "orderId": "VB-B9D5",
+      "purchasedAt": 1793250039695,
+      "helpfulCount": 9,
+      "helpfulVoterEmails": [],
+      "createdAt": 1793768439695
+    },
+    {
+      "id": "REV-VB-2801",
+      "productId": 28,
+      "productTitle": "Corsair Vengeance 32GB DDR5-6000 RGB",
+      "sku": "VB-MEM-028",
+      "authorName": "Elena Vance",
+      "authorEmail": "elena@voltbox.test",
+      "authorColor": "#cc5de8",
+      "authorInitial": "E",
+      "rating": 5,
+      "title": "Tight CL30 timings with Hynix A-die stability right out of the box",
+      "comment": "Zero memory errors in 4 passes of MemTest86 at 6000 MT/s CL30. Low-profile aluminum heatspreaders clear dual-tower air coolers easily.",
+      "useCaseTag": "Gaming Rig",
+      "verifiedPurchase": true,
+      "orderId": "VB-596F",
+      "purchasedAt": 1793509239695,
+      "helpfulCount": 6,
+      "helpfulVoterEmails": [],
+      "createdAt": 1793854839695
     }
   ]
 }

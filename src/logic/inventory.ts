@@ -5072,4 +5072,2529 @@ export function selectVisibleProductsForComparison(
   };
 }
 
+// ─────────────────────────────────────────────────────────────
+// Full Order History Page: Enrichment, Receipt Breakdown & Filtering
+// ─────────────────────────────────────────────────────────────
+
+export interface OrderHistoryLineInput {
+  productId: number;
+  title?: string;
+  image?: string;
+  price: number;
+  qty: number;
+  sku?: string;
+  category?: string;
+}
+
+export interface OrderHistoryRawInput {
+  id: string;
+  placedAt: number;
+  count?: number;
+  subtotal?: number;
+  rigDiscount?: number;
+  promoDiscount?: number;
+  discountTotal?: number;
+  promoCode?: string | null;
+  tax?: number;
+  total?: number;
+  amountPaid?: number;
+  shippingName?: string;
+  shippingAddress?: string;
+  paymentMethod?: string;
+  status?: string;
+  lines?: OrderHistoryLineInput[];
+}
+
+export interface EnrichedOrderLineItem {
+  productId: number;
+  sku: string;
+  title: string;
+  category: string;
+  image: string;
+  price: number;
+  qty: number;
+  lineSubtotal: number;
+  sharePercent: number;
+}
+
+export interface EnrichedOrderHistoryRecord {
+  id: string;
+  placedAt: number;
+  formattedDate: string;
+  count: number;
+  uniqueSkus: number;
+  subtotal: number;
+  rigDiscount: number;
+  promoDiscount: number;
+  discountTotal: number;
+  promoCode: string | null;
+  tax: number;
+  taxRatePercent: number;
+  total: number;
+  amountPaid: number;
+  shippingName: string;
+  shippingAddress: string;
+  paymentMethod: string;
+  status: string;
+  rawStatus: string;
+  stageKey: OrderTrackingStageKey;
+  stageIndex: number;
+  progressPercent: number;
+  carrierName: string;
+  trackingNumber: string;
+  estimatedDelivery: string;
+  receiptCode: string;
+  lines: EnrichedOrderLineItem[];
+  timeline: OrderTrackingTimeline;
+}
+
+export interface OrderHistorySummaryMetrics {
+  totalOrders: number;
+  totalSpent: number;
+  totalItemsPurchased: number;
+  totalSavings: number;
+  averageOrderValue: number;
+  statusCounts: {
+    all: number;
+    placed: number;
+    processing: number;
+    shipped: number;
+    delivered: number;
+  };
+}
+
+export type OrderHistoryStatusFilter = 'all' | 'placed' | 'processing' | 'shipped' | 'delivered';
+export type OrderHistorySortOption = 'newest' | 'oldest' | 'total-desc' | 'total-asc' | 'items-desc';
+
+/**
+ * Enriches a backend Order record with complete item breakdowns (SKU, category, line subtotals,
+ * share of order), receipt metadata, and 4-stage fulfillment status timeline.
+ */
+export function enrichOrderForHistory(
+  order: OrderHistoryRawInput,
+  catalogProducts: Array<{ id: number; title?: string; category?: string; image?: string; price?: number }> = [],
+  nowMs: number = Date.now()
+): EnrichedOrderHistoryRecord {
+  const id = String(order?.id || 'VB-0000').trim().toUpperCase();
+  const placedAt = typeof order?.placedAt === 'number' && order.placedAt > 0 ? order.placedAt : nowMs;
+  const rawLines = Array.isArray(order?.lines) ? order.lines : [];
+
+  let computedSubtotal = 0;
+  let computedQtyCount = 0;
+
+  const prelimLines = rawLines.map((ln) => {
+    const productId = Math.max(0, Math.floor(Number(ln?.productId) || 0));
+    const catalogMatch = catalogProducts.find((p) => p.id === productId);
+    const title = String(ln?.title || catalogMatch?.title || `Component #${productId}`).trim();
+    const category = String(ln?.category || catalogMatch?.category || classifyComponentGroup({ title })).trim().toLowerCase();
+    const sku = String(ln?.sku || getProductSku({ id: productId, title, category })).trim();
+    const image = resolveProductImageUrl(
+      { id: productId, productId, title, category, image: ln?.image || catalogMatch?.image },
+      catalogProducts
+    );
+    const price = roundMoney(Math.max(0, Number(ln?.price ?? catalogMatch?.price ?? 0)));
+    const qty = Math.max(1, Math.floor(Number(ln?.qty) || 1));
+    const lineSubtotal = roundMoney(price * qty);
+
+    computedSubtotal = roundMoney(computedSubtotal + lineSubtotal);
+    computedQtyCount += qty;
+
+    return {
+      productId,
+      sku,
+      title,
+      category,
+      image,
+      price,
+      qty,
+      lineSubtotal,
+    };
+  });
+
+  const subtotal = typeof order?.subtotal === 'number' && order.subtotal > 0
+    ? roundMoney(order.subtotal)
+    : computedSubtotal;
+
+  const lines: EnrichedOrderLineItem[] = prelimLines.map((item) => ({
+    ...item,
+    sharePercent: subtotal > 0 ? Math.min(100, Math.max(1, Math.round((item.lineSubtotal / subtotal) * 100))) : 100,
+  }));
+
+  const count = typeof order?.count === 'number' && order.count > 0 ? Math.floor(order.count) : computedQtyCount;
+  const uniqueSkus = lines.length;
+  const rigDiscount = roundMoney(Math.max(0, Number(order?.rigDiscount) || 0));
+  const promoDiscount = roundMoney(Math.max(0, Number(order?.promoDiscount) || 0));
+  const discountTotal = typeof order?.discountTotal === 'number' && order.discountTotal >= 0
+    ? roundMoney(order.discountTotal)
+    : roundMoney(rigDiscount + promoDiscount);
+  const promoCode = order?.promoCode ? String(order.promoCode).trim().toUpperCase() : null;
+
+  const discountedSubtotal = Math.max(0, roundMoney(subtotal - discountTotal));
+  const tax = typeof order?.tax === 'number' && order.tax >= 0
+    ? roundMoney(order.tax)
+    : roundMoney(discountedSubtotal * DEFAULT_TAX_RATE);
+  const total = typeof order?.total === 'number' && order.total > 0
+    ? roundMoney(order.total)
+    : roundMoney(discountedSubtotal + tax);
+  const amountPaid = typeof order?.amountPaid === 'number' && order.amountPaid > 0
+    ? roundMoney(order.amountPaid)
+    : total;
+
+  const taxRatePercent = discountedSubtotal > 0
+    ? Math.round((tax / discountedSubtotal) * 10000) / 100
+    : roundMoney(DEFAULT_TAX_RATE * 100);
+
+  const shippingName = String(order?.shippingName || 'Valued Builder').trim() || 'Valued Builder';
+  const shippingAddress = String(order?.shippingAddress || '42 Circuit Lane, Silicon Bay').trim() || '42 Circuit Lane, Silicon Bay';
+  const rawPay = String(order?.paymentMethod || 'Verified Digital Payment').trim();
+  const paymentMethod = rawPay === 'Fake Pay' ? 'Voltbox Instant Pay (Verified)' : rawPay;
+
+  const rawStatus = String(order?.status || '').trim();
+  const normalized = normalizeTrackingStatus(rawStatus || 'Order Placed');
+  const timeline = resolveOrderTrackingTimeline(
+    {
+      id,
+      placedAt,
+      status: rawStatus || normalized.canonicalLabel,
+      count,
+      total,
+      shippingName,
+      shippingAddress,
+      lines,
+    },
+    nowMs
+  );
+
+  const dateObj = new Date(placedAt);
+  const formattedDate = dateObj.toLocaleDateString('en-US', {
+    month: 'short',
+    day: 'numeric',
+    year: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+  });
+
+  const cleanCode = id.replace(/[^A-Z0-9]/g, '') || 'VB0000';
+  const receiptCode = `RCPT-${cleanCode}-${String(placedAt).slice(-4)}`;
+
+  return {
+    id,
+    placedAt,
+    formattedDate,
+    count,
+    uniqueSkus,
+    subtotal,
+    rigDiscount,
+    promoDiscount,
+    discountTotal,
+    promoCode,
+    tax,
+    taxRatePercent,
+    total,
+    amountPaid,
+    shippingName,
+    shippingAddress,
+    paymentMethod,
+    status: normalized.canonicalLabel,
+    rawStatus: rawStatus || normalized.canonicalLabel,
+    stageKey: normalized.stageKey,
+    stageIndex: normalized.stageIndex,
+    progressPercent: timeline.progressPercent,
+    carrierName: timeline.carrier.name,
+    trackingNumber: timeline.carrier.trackingNumber,
+    estimatedDelivery: timeline.estimatedDelivery,
+    receiptCode,
+    lines,
+    timeline,
+  };
+}
+
+/**
+ * Computes summary analytics across a list of enriched or raw orders for the Order History header ribbon.
+ */
+export function computeOrderHistorySummary(
+  orders: Array<EnrichedOrderHistoryRecord | OrderHistoryRawInput>
+): OrderHistorySummaryMetrics {
+  const safeOrders = Array.isArray(orders) ? orders : [];
+  let totalSpent = 0;
+  let totalItemsPurchased = 0;
+  let totalSavings = 0;
+  const statusCounts = {
+    all: safeOrders.length,
+    placed: 0,
+    processing: 0,
+    shipped: 0,
+    delivered: 0,
+  };
+
+  for (const ord of safeOrders) {
+    const total = roundMoney(Math.max(0, Number(ord?.total) || 0));
+    const discount = roundMoney(
+      Math.max(
+        0,
+        Number(ord?.discountTotal ?? ((Number(ord?.rigDiscount) || 0) + (Number(ord?.promoDiscount) || 0)))
+      )
+    );
+    const lineCount = Array.isArray(ord?.lines)
+      ? ord.lines.reduce((acc, l) => acc + Math.max(1, Math.floor(Number(l?.qty) || 1)), 0)
+      : 0;
+    const itemCount = typeof ord?.count === 'number' && ord.count > 0 ? Math.floor(ord.count) : lineCount;
+
+    totalSpent = roundMoney(totalSpent + total);
+    totalItemsPurchased += itemCount;
+    totalSavings = roundMoney(totalSavings + discount);
+
+    const stageKey = 'stageKey' in ord && ord.stageKey
+      ? ord.stageKey
+      : normalizeTrackingStatus(ord?.status).stageKey;
+
+    if (stageKey === 'delivered') statusCounts.delivered++;
+    else if (stageKey === 'shipped') statusCounts.shipped++;
+    else if (stageKey === 'processing') statusCounts.processing++;
+    else statusCounts.placed++;
+  }
+
+  const totalOrders = safeOrders.length;
+  const averageOrderValue = totalOrders > 0 ? roundMoney(totalSpent / totalOrders) : 0;
+
+  return {
+    totalOrders,
+    totalSpent,
+    totalItemsPurchased,
+    totalSavings,
+    averageOrderValue,
+    statusCounts,
+  };
+}
+
+/**
+ * Filters and sorts enriched order history records by status stage, search query (ID, title, SKU,
+ * recipient, address, payment method), and sort order.
+ */
+export function filterAndSortOrderHistory(
+  orders: EnrichedOrderHistoryRecord[],
+  options?: {
+    statusFilter?: OrderHistoryStatusFilter | string;
+    searchQuery?: string;
+    sortBy?: OrderHistorySortOption | string;
+  }
+): EnrichedOrderHistoryRecord[] {
+  const list = Array.isArray(orders) ? [...orders] : [];
+  const rawStatusFilter = String(options?.statusFilter || 'all').trim().toLowerCase();
+  const query = String(options?.searchQuery || '').trim().toLowerCase();
+  const sortBy = String(options?.sortBy || 'newest').trim().toLowerCase();
+
+  const filtered = list.filter((ord) => {
+    if (
+      rawStatusFilter &&
+      rawStatusFilter !== 'all' &&
+      ord.stageKey !== rawStatusFilter &&
+      ord.status.toLowerCase() !== rawStatusFilter
+    ) {
+      return false;
+    }
+
+    if (query) {
+      const lineText = (ord.lines || [])
+        .map((ln) => `${ln.title} ${ln.sku} ${ln.category}`)
+        .join(' ');
+      const haystack = [
+        ord.id,
+        ord.receiptCode,
+        ord.trackingNumber,
+        ord.status,
+        ord.rawStatus,
+        ord.shippingName,
+        ord.shippingAddress,
+        ord.paymentMethod,
+        ord.promoCode || '',
+        lineText,
+      ]
+        .join(' ')
+        .toLowerCase();
+
+      if (!haystack.includes(query)) {
+        return false;
+      }
+    }
+
+    return true;
+  });
+
+  filtered.sort((a, b) => {
+    if (sortBy === 'oldest') {
+      return a.placedAt - b.placedAt;
+    }
+    if (sortBy === 'total-desc') {
+      return b.total - a.total || b.placedAt - a.placedAt;
+    }
+    if (sortBy === 'total-asc') {
+      return a.total - b.total || b.placedAt - a.placedAt;
+    }
+    if (sortBy === 'items-desc') {
+      return b.count - a.count || b.placedAt - a.placedAt;
+    }
+    // Default: newest first
+    return b.placedAt - a.placedAt;
+  });
+
+  return filtered;
+}
+
+// ── Verified Buyer Review & Rating System Pure Logic ──
+
+export interface ProductReview {
+  id: string;
+  productId: number;
+  productTitle?: string;
+  sku?: string;
+  authorName: string;
+  authorEmail: string;
+  authorColor: string;
+  authorInitial: string;
+  rating: number; // 1 to 5
+  title: string;
+  comment: string;
+  useCaseTag?: string;
+  verifiedPurchase: boolean;
+  orderId: string | null;
+  purchasedAt?: number | null;
+  helpfulCount: number;
+  helpfulVoterEmails?: string[];
+  createdAt: number;
+  updatedAt?: number;
+}
+
+export interface MatchingPurchaseOrder {
+  orderId: string;
+  placedAt: number;
+  formattedDate: string;
+  qty: number;
+  price: number;
+  status: string;
+}
+
+export interface PurchaseVerificationResult {
+  productId: number;
+  hasPurchased: boolean;
+  matchingOrders: MatchingPurchaseOrder[];
+  latestOrderId: string | null;
+  latestPurchasedAt: number | null;
+  totalUnitsPurchased: number;
+  existingReview: ProductReview | null;
+}
+
+export interface ReviewSubmissionInput {
+  productId?: number | string;
+  rating?: number | string;
+  title?: string;
+  comment?: string;
+  useCaseTag?: string;
+  orderId?: string | null;
+}
+
+export interface ReviewValidationResult {
+  ok: boolean;
+  code?: 'INVALID_PRODUCT' | 'NOT_PURCHASED' | 'INVALID_RATING' | 'TITLE_TOO_SHORT' | 'COMMENT_TOO_SHORT';
+  message?: string;
+  normalized?: {
+    productId: number;
+    rating: number;
+    title: string;
+    comment: string;
+    useCaseTag: string;
+    orderId: string | null;
+  };
+}
+
+export interface ProductReviewSummary {
+  productId: number;
+  reviewCount: number;
+  totalRatingCount: number;
+  averageRating: number;
+  submittedAverageRating: number;
+  verifiedPurchaseCount: number;
+  recommendPercent: number;
+  starCounts: Record<1 | 2 | 3 | 4 | 5, number>;
+  starPercentages: Record<1 | 2 | 3 | 4 | 5, number>;
+}
+
+export type ProductReviewSortOption = 'newest' | 'highest' | 'lowest' | 'helpful';
+
+export const ALLOWED_REVIEW_USE_CASE_TAGS = [
+  'Gaming Rig',
+  'AI / Workstation',
+  'Creator Build',
+  'Silent / Thermal',
+  'Drop-In Upgrade',
+] as const;
+
+/**
+ * Checks whether a shopper has purchased a specific hardware component across their order history,
+ * returning matching orders (newest first) and any existing review submitted by that shopper.
+ */
+export function verifyComponentPurchaseForReview(
+  productId: number,
+  userOrders: Array<{
+    id?: string;
+    placedAt?: number;
+    status?: string;
+    lines?: Array<{
+      productId?: number;
+      id?: number;
+      title?: string;
+      price?: number;
+      qty?: number;
+    }>;
+  }> | null | undefined,
+  existingProductReviews?: ProductReview[] | null,
+  userEmail?: string | null
+): PurchaseVerificationResult {
+  const targetPid = Math.floor(Number(productId) || 0);
+  const orders = Array.isArray(userOrders) ? userOrders : [];
+  const matchingOrders: MatchingPurchaseOrder[] = [];
+  let totalUnitsPurchased = 0;
+
+  for (const ord of orders) {
+    const lines = Array.isArray(ord?.lines) ? ord.lines : [];
+    let matchedQty = 0;
+    let matchedPrice = 0;
+    for (const ln of lines) {
+      const lnPid = Math.floor(Number(ln?.productId ?? ln?.id ?? 0));
+      if (lnPid === targetPid && targetPid > 0) {
+        const q = Math.max(1, Math.floor(Number(ln?.qty) || 1));
+        matchedQty += q;
+        matchedPrice = roundMoney(Math.max(0, Number(ln?.price) || 0));
+      }
+    }
+    if (matchedQty > 0) {
+      const placedAt = Number(ord?.placedAt) > 0 ? Number(ord.placedAt) : Date.now();
+      const formattedDate = new Date(placedAt).toLocaleDateString('en-US', {
+        month: 'short',
+        day: 'numeric',
+        year: 'numeric',
+      });
+      matchingOrders.push({
+        orderId: String(ord?.id || 'VB-0000').trim(),
+        placedAt,
+        formattedDate,
+        qty: matchedQty,
+        price: matchedPrice,
+        status: normalizeTrackingStatus(ord?.status || 'Order Placed').canonicalLabel,
+      });
+      totalUnitsPurchased += matchedQty;
+    }
+  }
+
+  matchingOrders.sort((a, b) => b.placedAt - a.placedAt);
+
+  const cleanEmail = String(userEmail || '').trim().toLowerCase();
+  const reviews = Array.isArray(existingProductReviews) ? existingProductReviews : [];
+  const existingReview =
+    cleanEmail && targetPid > 0
+      ? reviews.find(
+          (r) =>
+            Number(r?.productId) === targetPid &&
+            String(r?.authorEmail || '').trim().toLowerCase() === cleanEmail
+        ) || null
+      : null;
+
+  return {
+    productId: targetPid,
+    hasPurchased: matchingOrders.length > 0,
+    matchingOrders,
+    latestOrderId: matchingOrders.length > 0 ? matchingOrders[0].orderId : null,
+    latestPurchasedAt: matchingOrders.length > 0 ? matchingOrders[0].placedAt : null,
+    totalUnitsPurchased,
+    existingReview,
+  };
+}
+
+/**
+ * Validates a shopper's review submission and enforces verified purchase eligibility.
+ */
+export function validateProductReviewSubmission(
+  input: ReviewSubmissionInput,
+  eligibility: Pick<PurchaseVerificationResult, 'hasPurchased' | 'matchingOrders' | 'latestOrderId'>
+): ReviewValidationResult {
+  const productId = Math.floor(Number(input?.productId) || 0);
+  if (productId <= 0) {
+    return {
+      ok: false,
+      code: 'INVALID_PRODUCT',
+      message: 'A valid hardware component ID is required to submit a review.',
+    };
+  }
+
+  if (!eligibility || !eligibility.hasPurchased) {
+    return {
+      ok: false,
+      code: 'NOT_PURCHASED',
+      message: 'Only shoppers who have purchased this hardware component can submit a verified review.',
+    };
+  }
+
+  const rawRating = Number(input?.rating);
+  if (Number.isNaN(rawRating) || rawRating < 1 || rawRating > 5) {
+    return {
+      ok: false,
+      code: 'INVALID_RATING',
+      message: 'Please select a star rating between 1 and 5 stars.',
+    };
+  }
+  const rating = Math.min(5, Math.max(1, Math.round(rawRating)));
+
+  const rawTitle = String(input?.title || '').trim().replace(/\s+/g, ' ');
+  if (rawTitle.length < 3) {
+    return {
+      ok: false,
+      code: 'TITLE_TOO_SHORT',
+      message: 'Please enter a review headline (at least 3 characters).',
+    };
+  }
+  const title = rawTitle.slice(0, 120);
+
+  const rawComment = String(input?.comment || '').trim();
+  if (rawComment.length < 8) {
+    return {
+      ok: false,
+      code: 'COMMENT_TOO_SHORT',
+      message: 'Please share at least 8 characters of feedback about this component.',
+    };
+  }
+  const comment = rawComment.slice(0, 1200);
+
+  const rawTag = String(input?.useCaseTag || '').trim();
+  const useCaseTag = rawTag ? rawTag.slice(0, 40) : 'Gaming Rig';
+
+  const requestedOrderId = String(input?.orderId || '').trim();
+  const validOrderIds = new Set((eligibility.matchingOrders || []).map((o) => o.orderId));
+  const resolvedOrderId =
+    requestedOrderId && validOrderIds.has(requestedOrderId)
+      ? requestedOrderId
+      : eligibility.latestOrderId || (eligibility.matchingOrders?.[0]?.orderId ?? null);
+
+  return {
+    ok: true,
+    normalized: {
+      productId,
+      rating,
+      title,
+      comment,
+      useCaseTag,
+      orderId: resolvedOrderId,
+    },
+  };
+}
+
+/**
+ * Computes aggregate rating score, star distribution counts/percentages, and recommendation rate
+ * across submitted reviews for a component.
+ */
+export function computeProductReviewSummary(
+  reviews: ProductReview[] | null | undefined,
+  productId = 0,
+  fallbackRatingRate = 0
+): ProductReviewSummary {
+  const list = Array.isArray(reviews) ? reviews.filter((r) => r && Number(r.rating) >= 1 && Number(r.rating) <= 5) : [];
+  const starCounts: Record<1 | 2 | 3 | 4 | 5, number> = {
+    1: 0,
+    2: 0,
+    3: 0,
+    4: 0,
+    5: 0,
+  };
+
+  let sumRatings = 0;
+  let verifiedCount = 0;
+  let recommendedCount = 0;
+
+  for (const rev of list) {
+    const r = Math.min(5, Math.max(1, Math.round(Number(rev.rating) || 5))) as 1 | 2 | 3 | 4 | 5;
+    starCounts[r] = (starCounts[r] || 0) + 1;
+    sumRatings += r;
+    if (rev.verifiedPurchase) verifiedCount++;
+    if (r >= 4) recommendedCount++;
+  }
+
+  const reviewCount = list.length;
+  const submittedAverageRating = reviewCount > 0 ? Math.round((sumRatings / reviewCount) * 10) / 10 : 0;
+  const averageRating =
+    reviewCount > 0
+      ? submittedAverageRating
+      : fallbackRatingRate > 0
+      ? Math.round(Number(fallbackRatingRate) * 10) / 10
+      : 0;
+
+  const starPercentages: Record<1 | 2 | 3 | 4 | 5, number> = {
+    1: reviewCount > 0 ? Math.round((starCounts[1] / reviewCount) * 100) : 0,
+    2: reviewCount > 0 ? Math.round((starCounts[2] / reviewCount) * 100) : 0,
+    3: reviewCount > 0 ? Math.round((starCounts[3] / reviewCount) * 100) : 0,
+    4: reviewCount > 0 ? Math.round((starCounts[4] / reviewCount) * 100) : 0,
+    5: reviewCount > 0 ? Math.round((starCounts[5] / reviewCount) * 100) : 0,
+  };
+
+  const recommendPercent = reviewCount > 0 ? Math.round((recommendedCount / reviewCount) * 100) : 100;
+
+  return {
+    productId: Math.floor(Number(productId) || 0),
+    reviewCount,
+    totalRatingCount: reviewCount,
+    averageRating,
+    submittedAverageRating,
+    verifiedPurchaseCount: verifiedCount,
+    recommendPercent,
+    starCounts,
+    starPercentages,
+  };
+}
+
+/**
+ * Filters and sorts product reviews by star rating, search query, and sort order.
+ */
+export function filterAndSortProductReviews(
+  reviews: ProductReview[] | null | undefined,
+  options?: {
+    starFilter?: number | 'all' | string;
+    sortBy?: ProductReviewSortOption | string;
+    searchQuery?: string;
+  }
+): ProductReview[] {
+  const list = Array.isArray(reviews) ? [...reviews] : [];
+  const rawStar = options?.starFilter;
+  const starNum = rawStar !== undefined && rawStar !== 'all' && rawStar !== '' ? Math.round(Number(rawStar)) : 0;
+  const sortBy = String(options?.sortBy || 'newest').trim().toLowerCase();
+  const query = String(options?.searchQuery || '').trim().toLowerCase();
+
+  const filtered = list.filter((rev) => {
+    if (starNum >= 1 && starNum <= 5) {
+      if (Math.round(Number(rev.rating)) !== starNum) return false;
+    }
+    if (query) {
+      const hay = [
+        rev.title,
+        rev.comment,
+        rev.authorName,
+        rev.useCaseTag || '',
+        rev.orderId || '',
+        rev.sku || '',
+      ]
+        .join(' ')
+        .toLowerCase();
+      if (!hay.includes(query)) return false;
+    }
+    return true;
+  });
+
+  filtered.sort((a, b) => {
+    if (sortBy === 'highest') {
+      return b.rating - a.rating || b.helpfulCount - a.helpfulCount || b.createdAt - a.createdAt;
+    }
+    if (sortBy === 'lowest') {
+      return a.rating - b.rating || b.createdAt - a.createdAt;
+    }
+    if (sortBy === 'helpful') {
+      return b.helpfulCount - a.helpfulCount || b.rating - a.rating || b.createdAt - a.createdAt;
+    }
+    // Default: newest first
+    return b.createdAt - a.createdAt;
+  });
+
+  return filtered;
+}
+
+// ============================================================================
+// Admin Catalog Batch Edit Mode & Single-Transaction Bulk Updates
+// ============================================================================
+
+export type BatchPriceOperationMode = 'none' | 'percent' | 'delta' | 'set';
+export type BatchStockOperationMode = 'none' | 'delta' | 'set';
+
+export interface BatchEditOperationInput {
+  productIds: Array<number | string>;
+  priceMode?: BatchPriceOperationMode | string;
+  priceValue?: number | string | null;
+  stockMode?: BatchStockOperationMode | string;
+  stockValue?: number | string | null;
+  reason?: string;
+}
+
+export interface BatchProductMutationPreview {
+  productId: number;
+  sku: string;
+  title: string;
+  category: string;
+  previousPrice: number;
+  nextPrice: number;
+  priceDelta: number;
+  priceChanged: boolean;
+  previousStock: number;
+  nextStock: number;
+  stockDelta: number;
+  stockChanged: boolean;
+  nextLowStock: boolean;
+}
+
+export interface BatchEditTransactionPlan {
+  ok: boolean;
+  code?:
+    | 'NO_PRODUCTS_SELECTED'
+    | 'NO_OPERATION_SPECIFIED'
+    | 'INVALID_PRICE_VALUE'
+    | 'INVALID_STOCK_VALUE'
+    | 'NO_MATCHING_PRODUCTS';
+  message?: string;
+  transactionId: string;
+  selectedCount: number;
+  updatedCount: number;
+  priceChangedCount: number;
+  stockChangedCount: number;
+  totalPriceDeltaPerUnit: number;
+  totalStockUnitsDelta: number;
+  previousValuation: number;
+  nextValuation: number;
+  valuationDelta: number;
+  normalizedReason: string;
+  priceMode: BatchPriceOperationMode;
+  priceValue: number | null;
+  stockMode: BatchStockOperationMode;
+  stockValue: number | null;
+  mutations: BatchProductMutationPreview[];
+}
+
+/**
+ * Pure selection state helper for toggling, adding, removing, or replacing product IDs in Batch Edit Mode.
+ */
+export function toggleBatchSelectionIds(
+  currentIds: Array<number | string> | null | undefined,
+  targetIds: number | string | Array<number | string>,
+  mode: 'toggle' | 'add' | 'remove' | 'replace' | 'clear' = 'toggle'
+): number[] {
+  if (mode === 'clear') {
+    return [];
+  }
+
+  const normalizeIds = (arr: Array<number | string>): number[] => {
+    const out: number[] = [];
+    const seen = new Set<number>();
+    for (const raw of arr) {
+      const id = Math.floor(Number(raw) || 0);
+      if (id > 0 && !seen.has(id)) {
+        seen.add(id);
+        out.push(id);
+      }
+    }
+    return out;
+  };
+
+  const baseList = Array.isArray(currentIds) ? normalizeIds(currentIds) : [];
+  const targets = normalizeIds(Array.isArray(targetIds) ? targetIds : [targetIds]);
+
+  if (mode === 'replace') {
+    return targets;
+  }
+
+  const set = new Set<number>(baseList);
+
+  if (mode === 'add') {
+    for (const id of targets) set.add(id);
+    return Array.from(set);
+  }
+
+  if (mode === 'remove') {
+    for (const id of targets) set.delete(id);
+    return Array.from(set);
+  }
+
+  // Default: 'toggle'
+  for (const id of targets) {
+    if (set.has(id)) {
+      set.delete(id);
+    } else {
+      set.add(id);
+    }
+  }
+  return Array.from(set);
+}
+
+/**
+ * Computes the next unit price for a single product under a batch price operation.
+ */
+export function computeBatchProductPrice(
+  currentPrice: number,
+  priceMode?: BatchPriceOperationMode | string,
+  priceValue?: number | string | null
+): {
+  ok: boolean;
+  nextPrice: number;
+  delta: number;
+  changed: boolean;
+  error?: string;
+} {
+  const basePrice = Math.max(0.01, roundMoney(Number(currentPrice) || 0));
+  const mode = String(priceMode || 'none').trim().toLowerCase();
+
+  if (!mode || mode === 'none') {
+    return {
+      ok: true,
+      nextPrice: basePrice,
+      delta: 0,
+      changed: false,
+    };
+  }
+
+  if (priceValue === undefined || priceValue === null || String(priceValue).trim() === '') {
+    return {
+      ok: false,
+      nextPrice: basePrice,
+      delta: 0,
+      changed: false,
+      error: 'Enter a numeric value for the bulk price update.',
+    };
+  }
+
+  const val = Number(priceValue);
+  if (!Number.isFinite(val)) {
+    return {
+      ok: false,
+      nextPrice: basePrice,
+      delta: 0,
+      changed: false,
+      error: 'Price adjustment value must be a valid number.',
+    };
+  }
+
+  let computed = basePrice;
+  if (mode === 'set') {
+    if (val < 1 || val > 50000) {
+      return {
+        ok: false,
+        nextPrice: basePrice,
+        delta: 0,
+        changed: false,
+        error: 'Exact unit price must be between $1.00 and $50,000.00.',
+      };
+    }
+    computed = roundMoney(val);
+  } else if (mode === 'delta') {
+    if (val < -10000 || val > 10000) {
+      return {
+        ok: false,
+        nextPrice: basePrice,
+        delta: 0,
+        changed: false,
+        error: 'Fixed price offset must be between -$10,000.00 and +$10,000.00.',
+      };
+    }
+    computed = Math.max(1.0, roundMoney(basePrice + val));
+  } else if (mode === 'percent') {
+    if (val <= -95 || val > 500) {
+      return {
+        ok: false,
+        nextPrice: basePrice,
+        delta: 0,
+        changed: false,
+        error: 'Percentage price change must be between -95% and +500%.',
+      };
+    }
+    computed = Math.max(1.0, roundMoney(basePrice * (1 + val / 100)));
+  } else {
+    return {
+      ok: false,
+      nextPrice: basePrice,
+      delta: 0,
+      changed: false,
+      error: `Unsupported price operation mode: ${mode}`,
+    };
+  }
+
+  const delta = roundMoney(computed - basePrice);
+  return {
+    ok: true,
+    nextPrice: computed,
+    delta,
+    changed: Math.abs(delta) >= 0.01,
+  };
+}
+
+/**
+ * Computes the next stock quantity for a single product under a batch stock operation.
+ */
+export function computeBatchProductStock(
+  currentStock: number,
+  stockMode?: BatchStockOperationMode | string,
+  stockValue?: number | string | null
+): {
+  ok: boolean;
+  nextStock: number;
+  delta: number;
+  changed: boolean;
+  error?: string;
+} {
+  const baseStock = Math.max(0, Math.floor(Number(currentStock) || 0));
+  const mode = String(stockMode || 'none').trim().toLowerCase();
+
+  if (!mode || mode === 'none') {
+    return {
+      ok: true,
+      nextStock: baseStock,
+      delta: 0,
+      changed: false,
+    };
+  }
+
+  if (stockValue === undefined || stockValue === null || String(stockValue).trim() === '') {
+    return {
+      ok: false,
+      nextStock: baseStock,
+      delta: 0,
+      changed: false,
+      error: 'Enter an integer quantity for the bulk stock adjustment.',
+    };
+  }
+
+  const val = Number(stockValue);
+  if (!Number.isFinite(val)) {
+    return {
+      ok: false,
+      nextStock: baseStock,
+      delta: 0,
+      changed: false,
+      error: 'Stock adjustment value must be a valid integer.',
+    };
+  }
+
+  const intVal = Math.round(val);
+  let computed = baseStock;
+
+  if (mode === 'set') {
+    if (intVal < 0 || intVal > 9999) {
+      return {
+        ok: false,
+        nextStock: baseStock,
+        delta: 0,
+        changed: false,
+        error: 'Exact stock quantity must be between 0 and 9,999 units.',
+      };
+    }
+    computed = intVal;
+  } else if (mode === 'delta') {
+    if (intVal < -9999 || intVal > 9999) {
+      return {
+        ok: false,
+        nextStock: baseStock,
+        delta: 0,
+        changed: false,
+        error: 'Stock adjustment delta must be between -9,999 and +9,999 units.',
+      };
+    }
+    computed = Math.max(0, Math.min(9999, baseStock + intVal));
+  } else {
+    return {
+      ok: false,
+      nextStock: baseStock,
+      delta: 0,
+      changed: false,
+      error: `Unsupported stock operation mode: ${mode}`,
+    };
+  }
+
+  const delta = computed - baseStock;
+  return {
+    ok: true,
+    nextStock: computed,
+    delta,
+    changed: delta !== 0,
+  };
+}
+
+/**
+ * Plans and validates a single-transaction bulk price and/or stock update across multiple selected catalog products.
+ */
+export function planBatchProductTransaction(
+  catalog: Array<{
+    id: number;
+    title?: string;
+    name?: string;
+    category?: string;
+    sku?: string;
+    price: number;
+    quantity?: number;
+    stock?: number;
+    stockQuantity?: number;
+    takenDown?: boolean;
+  }>,
+  input: BatchEditOperationInput,
+  timestampMs = Date.now()
+): BatchEditTransactionPlan {
+  const normalizedIds = toggleBatchSelectionIds([], input?.productIds || [], 'replace');
+  const rawPriceMode = String(input?.priceMode || 'none').trim().toLowerCase();
+  const priceMode: BatchPriceOperationMode =
+    rawPriceMode === 'percent' || rawPriceMode === 'delta' || rawPriceMode === 'set'
+      ? rawPriceMode
+      : 'none';
+
+  const rawStockMode = String(input?.stockMode || 'none').trim().toLowerCase();
+  const stockMode: BatchStockOperationMode =
+    rawStockMode === 'delta' || rawStockMode === 'set' ? rawStockMode : 'none';
+
+  const txSuffix = Math.abs(Math.floor(Number(timestampMs) || Date.now()))
+    .toString(36)
+    .toUpperCase()
+    .slice(-5)
+    .padStart(5, '0');
+  const transactionId = `TX-BATCH-${txSuffix}`;
+
+  const rawReason = String(input?.reason || '').trim();
+  const defaultReasonParts: string[] = [];
+  if (priceMode !== 'none' && input?.priceValue !== undefined && input?.priceValue !== null && String(input.priceValue).trim() !== '') {
+    const pv = Number(input.priceValue);
+    if (priceMode === 'percent') defaultReasonParts.push(`Price ${pv >= 0 ? '+' : ''}${pv}%`);
+    else if (priceMode === 'delta') defaultReasonParts.push(`Price ${pv >= 0 ? '+$' : '-$'}${Math.abs(pv).toFixed(2)}`);
+    else if (priceMode === 'set') defaultReasonParts.push(`Price set to $${pv.toFixed(2)}`);
+  }
+  if (stockMode !== 'none' && input?.stockValue !== undefined && input?.stockValue !== null && String(input.stockValue).trim() !== '') {
+    const sv = Math.round(Number(input.stockValue));
+    if (stockMode === 'delta') defaultReasonParts.push(`Stock ${sv >= 0 ? '+' : ''}${sv} units`);
+    else if (stockMode === 'set') defaultReasonParts.push(`Stock set to ${sv} units`);
+  }
+  const normalizedReason =
+    rawReason ||
+    (defaultReasonParts.length > 0
+      ? `Admin Batch Edit (${defaultReasonParts.join(' · ')})`
+      : 'Admin Batch Catalog Update');
+
+  const emptyPlan = (
+    code: NonNullable<BatchEditTransactionPlan['code']>,
+    message: string
+  ): BatchEditTransactionPlan => ({
+    ok: false,
+    code,
+    message,
+    transactionId,
+    selectedCount: normalizedIds.length,
+    updatedCount: 0,
+    priceChangedCount: 0,
+    stockChangedCount: 0,
+    totalPriceDeltaPerUnit: 0,
+    totalStockUnitsDelta: 0,
+    previousValuation: 0,
+    nextValuation: 0,
+    valuationDelta: 0,
+    normalizedReason,
+    priceMode,
+    priceValue: input?.priceValue != null && String(input.priceValue).trim() !== '' ? Number(input.priceValue) : null,
+    stockMode,
+    stockValue: input?.stockValue != null && String(input.stockValue).trim() !== '' ? Math.round(Number(input.stockValue)) : null,
+    mutations: [],
+  });
+
+  if (normalizedIds.length === 0) {
+    return emptyPlan('NO_PRODUCTS_SELECTED', 'Select at least one product in the catalog to apply a batch update.');
+  }
+
+  if (priceMode === 'none' && stockMode === 'none') {
+    return emptyPlan(
+      'NO_OPERATION_SPECIFIED',
+      'Choose a bulk price update or a bulk stock adjustment to apply.'
+    );
+  }
+
+  // Validate price and stock inputs upfront
+  if (priceMode !== 'none') {
+    const priceCheck = computeBatchProductPrice(100, priceMode, input?.priceValue);
+    if (!priceCheck.ok) {
+      return emptyPlan('INVALID_PRICE_VALUE', priceCheck.error || 'Invalid bulk price value.');
+    }
+  }
+
+  if (stockMode !== 'none') {
+    const stockCheck = computeBatchProductStock(10, stockMode, input?.stockValue);
+    if (!stockCheck.ok) {
+      return emptyPlan('INVALID_STOCK_VALUE', stockCheck.error || 'Invalid bulk stock value.');
+    }
+  }
+
+  const catalogList = Array.isArray(catalog) ? catalog : [];
+  const byId = new Map<number, (typeof catalogList)[number]>();
+  for (const p of catalogList) {
+    if (p && typeof p.id === 'number') {
+      byId.set(p.id, p);
+    }
+  }
+
+  const mutations: BatchProductMutationPreview[] = [];
+  let updatedCount = 0;
+  let priceChangedCount = 0;
+  let stockChangedCount = 0;
+  let totalPriceDeltaPerUnit = 0;
+  let totalStockUnitsDelta = 0;
+  let previousValuation = 0;
+  let nextValuation = 0;
+
+  for (const pid of normalizedIds) {
+    const prod = byId.get(pid);
+    if (!prod) continue;
+
+    const prevPrice = roundMoney(Number(prod.price) || 0);
+    const prevStock =
+      typeof prod.stockQuantity === 'number'
+        ? Math.max(0, Math.floor(prod.stockQuantity))
+        : getProductQuantity(prod);
+
+    const priceRes = computeBatchProductPrice(prevPrice, priceMode, input?.priceValue);
+    const stockRes = computeBatchProductStock(prevStock, stockMode, input?.stockValue);
+
+    const sku = prod.sku || getProductSku({ id: prod.id, category: prod.category });
+    const title = String(prod.title || prod.name || `Component #${prod.id}`).trim();
+    const category = String(prod.category || 'components').trim();
+
+    if (priceRes.changed) priceChangedCount++;
+    if (stockRes.changed) stockChangedCount++;
+    if (priceRes.changed || stockRes.changed) updatedCount++;
+
+    totalPriceDeltaPerUnit = roundMoney(totalPriceDeltaPerUnit + priceRes.delta);
+    totalStockUnitsDelta += stockRes.delta;
+
+    previousValuation = roundMoney(previousValuation + prevPrice * prevStock);
+    nextValuation = roundMoney(nextValuation + priceRes.nextPrice * stockRes.nextStock);
+
+    mutations.push({
+      productId: prod.id,
+      sku,
+      title,
+      category,
+      previousPrice: prevPrice,
+      nextPrice: priceRes.nextPrice,
+      priceDelta: priceRes.delta,
+      priceChanged: priceRes.changed,
+      previousStock: prevStock,
+      nextStock: stockRes.nextStock,
+      stockDelta: stockRes.delta,
+      stockChanged: stockRes.changed,
+      nextLowStock: isLowStock({ quantity: stockRes.nextStock }),
+    });
+  }
+
+  if (mutations.length === 0) {
+    return emptyPlan('NO_MATCHING_PRODUCTS', 'None of the selected product IDs exist in the catalog.');
+  }
+
+  return {
+    ok: true,
+    transactionId,
+    selectedCount: mutations.length,
+    updatedCount,
+    priceChangedCount,
+    stockChangedCount,
+    totalPriceDeltaPerUnit,
+    totalStockUnitsDelta,
+    previousValuation,
+    nextValuation,
+    valuationDelta: roundMoney(nextValuation - previousValuation),
+    normalizedReason,
+    priceMode,
+    priceValue: input?.priceValue != null && String(input.priceValue).trim() !== '' ? Number(input.priceValue) : null,
+    stockMode,
+    stockValue: input?.stockValue != null && String(input.stockValue).trim() !== '' ? Math.round(Number(input.stockValue)) : null,
+    mutations,
+  };
+}
+
+// ============================================================================
+// 26. ADVANCED PRICE TRENDS & 6-MONTH VOLATILITY INDEX ANALYTICS (D3 MODEL)
+// ============================================================================
+
+export type VolatilityRegimeTier = 'low' | 'moderate' | 'elevated' | 'high';
+
+export interface AdvancedPriceTrendPoint {
+  index: number;
+  month: string;
+  price: number;
+  marketAvg: number;
+  rollingMean: number;
+  rollingStdDev: number;
+  upperBand: number;
+  lowerBand: number;
+  monthlyChangeUsd: number;
+  monthlyChangePct: number;
+  absMonthlySwingPct: number;
+  deviationFromSixMonthMeanPct: number;
+  zScore: number;
+  volatilityIndex: number; // 0 to 100
+  volatilityRegime: VolatilityRegimeTier;
+}
+
+export type VolatilityEventSeverity = 'peak-spike' | 'elevated-swing' | 'drawdown-trough';
+
+export interface VolatilityEventFlag {
+  month: string;
+  index: number;
+  severity: VolatilityEventSeverity;
+  badgeLabel: string;
+  shortTag: string;
+  headline: string;
+  summary: string;
+  price: number;
+  volatilityIndex: number;
+  monthlyChangeUsd: number;
+  monthlyChangePct: number;
+  zScore: number;
+  isPrimaryPeak: boolean;
+}
+
+export interface HighVolatilityThresholdConfig {
+  enabled: boolean;
+  sigmaThreshold: number; // e.g. 1.0, 1.5, 2.0 (default 2.0)
+}
+
+export interface VolatilityThresholdBreach {
+  month: string;
+  index: number;
+  price: number;
+  volatilityIndex: number;
+  thresholdVolatilityIndex: number;
+  exceedanceVolPoints: number;
+  effectiveSigmaScore: number;
+  priceZScore: number;
+  monthlyChangePct: number;
+  shortMarkerLabel: string;
+  badgeText: string;
+  summary: string;
+}
+
+export interface HighVolatilityThresholdEvaluation {
+  enabled: boolean;
+  sigmaThreshold: number;
+  sigmaLabel: string;
+  seriesMeanVolatility: number;
+  seriesStdDevVolatility: number;
+  thresholdVolatilityIndex: number;
+  zScoreCutoff: number;
+  breachCount: number;
+  breachedMonths: string[];
+  breaches: VolatilityThresholdBreach[];
+  statusSummary: string;
+}
+
+export interface AdvancedPriceTrendsAnalytics {
+  sixMonthMean: number;
+  sixMonthLow: number;
+  sixMonthHigh: number;
+  currentPrice: number;
+  standardDeviationUsd: number;
+  coefficientOfVariationPct: number;
+  sixMonthVolatilityIndex: number; // 0 to 100 composite score
+  peakMonthlyVolatilityIndex: number;
+  peakVolatilityMonth: string;
+  volatilityRegime: VolatilityRegimeTier;
+  volatilityRegimeLabel: 'Low Volatility' | 'Moderate Volatility' | 'Elevated Volatility' | 'High Volatility';
+  maxDrawdownPct: number;
+  priceRangeSpreadUsd: number;
+  priceRangeSpreadPct: number;
+  currentZScore: number;
+  buySignalLabel: 'Strong Buy Zone' | 'Below 6M Mean' | 'Fair Value Band' | 'Above 6M Mean';
+  buySignalReason: string;
+  points: AdvancedPriceTrendPoint[];
+  peakEvents: VolatilityEventFlag[];
+  highVolatilityThreshold: HighVolatilityThresholdEvaluation;
+}
+
+export function classifyVolatilityRegime(indexScore: number): {
+  regime: VolatilityRegimeTier;
+  label: 'Low Volatility' | 'Moderate Volatility' | 'Elevated Volatility' | 'High Volatility';
+} {
+  const s = Number.isFinite(indexScore) ? indexScore : 0;
+  if (s >= 65) {
+    return { regime: 'high', label: 'High Volatility' };
+  }
+  if (s >= 42) {
+    return { regime: 'elevated', label: 'Elevated Volatility' };
+  }
+  if (s >= 22) {
+    return { regime: 'moderate', label: 'Moderate Volatility' };
+  }
+  return { regime: 'low', label: 'Low Volatility' };
+}
+
+/**
+ * Automatically detects and flags peak volatility events and major price swing inflection
+ * months across a 6-month component price series for D3 vertical marker and tooltip rendering.
+ */
+export function detectPeakVolatilityEvents(
+  points: AdvancedPriceTrendPoint[],
+  sixMonthLow?: number
+): VolatilityEventFlag[] {
+  if (!Array.isArray(points) || points.length === 0) {
+    return [];
+  }
+
+  // Check if series has any non-zero volatility
+  const maxVol = Math.max(...points.map((p) => p.volatilityIndex));
+  if (maxVol <= 0.05) {
+    return [];
+  }
+
+  // 1. Identify primary peak volatility month (highest volatilityIndex)
+  let primaryIdx = 0;
+  for (let i = 0; i < points.length; i++) {
+    if (points[i].volatilityIndex >= points[primaryIdx].volatilityIndex) {
+      primaryIdx = i;
+    }
+  }
+
+  const flaggedIndices = new Set<number>([primaryIdx]);
+
+  // 2. Identify deepest trough / drawdown or second-highest elevated volatility spike (>= 50v or |MoM| >= 8%)
+  const rankedByVol = points
+    .map((pt, idx) => ({ pt, idx }))
+    .filter(({ idx, pt }) => idx !== primaryIdx && (pt.volatilityIndex >= 50 || Math.abs(pt.monthlyChangePct) >= 8))
+    .sort((a, b) => b.pt.volatilityIndex - a.pt.volatilityIndex);
+
+  if (rankedByVol.length > 0) {
+    flaggedIndices.add(rankedByVol[0].idx);
+  } else if (typeof sixMonthLow === 'number') {
+    const troughIdx = points.findIndex(
+      (pt, idx) => idx !== primaryIdx && Math.abs(pt.price - sixMonthLow) < 0.02 && pt.volatilityIndex >= 22
+    );
+    if (troughIdx !== -1) {
+      flaggedIndices.add(troughIdx);
+    }
+  }
+
+  const orderedIndices = Array.from(flaggedIndices).sort((a, b) => a - b);
+
+  return orderedIndices.map((idx) => {
+    const pt = points[idx];
+    const isPrimaryPeak = idx === primaryIdx;
+    const isTrough =
+      typeof sixMonthLow === 'number' && Math.abs(pt.price - sixMonthLow) < 0.02 && pt.monthlyChangePct < 0;
+
+    const severity: VolatilityEventSeverity = isPrimaryPeak
+      ? 'peak-spike'
+      : isTrough
+        ? 'drawdown-trough'
+        : 'elevated-swing';
+
+    const momSign = pt.monthlyChangePct > 0 ? '+' : '';
+    const usdSign = pt.monthlyChangeUsd > 0 ? '+$' : '-$';
+    const absUsd = Math.abs(pt.monthlyChangeUsd).toFixed(2);
+
+    const shortTag = isPrimaryPeak
+      ? `PEAK ${pt.volatilityIndex.toFixed(0)}v`
+      : isTrough
+        ? `LOW $${pt.price.toFixed(0)}`
+        : `SWING ${pt.volatilityIndex.toFixed(0)}v`;
+
+    const badgeLabel = isPrimaryPeak
+      ? `⚡ ${pt.month} Peak · ${pt.volatilityIndex.toFixed(1)}v (${momSign}${pt.monthlyChangePct.toFixed(1)}%)`
+      : isTrough
+        ? `↘ ${pt.month} 6M Trough · $${pt.price.toFixed(2)} (${momSign}${pt.monthlyChangePct.toFixed(1)}%)`
+        : `Δ ${pt.month} Swing · ${pt.volatilityIndex.toFixed(1)}v (${momSign}${pt.monthlyChangePct.toFixed(1)}%)`;
+
+    const headline = isPrimaryPeak
+      ? `${pt.month} Peak Volatility Spike (${pt.volatilityIndex.toFixed(1)} / 100)`
+      : isTrough
+        ? `${pt.month} 6-Month Support Trough ($${pt.price.toFixed(2)})`
+        : `${pt.month} Elevated Price Swing (${pt.volatilityIndex.toFixed(1)} / 100)`;
+
+    const directionPhrase =
+      pt.monthlyChangePct < -0.05
+        ? `dropped ${pt.monthlyChangePct.toFixed(2)}% MoM (${usdSign}${absUsd})`
+        : pt.monthlyChangePct > 0.05
+          ? `surged +${pt.monthlyChangePct.toFixed(2)}% MoM (${usdSign}${absUsd})`
+          : `stabilized at $${pt.price.toFixed(2)}`;
+
+    const summary = `Spot price ${directionPhrase} to $${pt.price.toFixed(2)} (${pt.zScore >= 0 ? '+' : ''}${pt.zScore.toFixed(2)}σ vs 6M mean).`;
+
+    return {
+      month: pt.month,
+      index: pt.index,
+      severity,
+      badgeLabel,
+      shortTag,
+      headline,
+      summary,
+      price: pt.price,
+      volatilityIndex: pt.volatilityIndex,
+      monthlyChangeUsd: pt.monthlyChangeUsd,
+      monthlyChangePct: pt.monthlyChangePct,
+      zScore: pt.zScore,
+      isPrimaryPeak,
+    };
+  });
+}
+
+/**
+ * Normalizes a requested volatility standard-deviation multiplier (e.g., 1.0, 1.5, 2.0)
+ * into a safe finite range [0.5, 3.5], defaulting to 2.0σ.
+ */
+export function normalizeVolatilitySigmaThreshold(rawSigma?: number | string | null): number {
+  const num = Number(rawSigma);
+  if (!Number.isFinite(num) || num <= 0) {
+    return 2.0;
+  }
+  return roundMoney(Math.max(0.5, Math.min(3.5, num)));
+}
+
+/**
+ * Evaluates a 6-month volatility series against a configurable standard-deviation threshold
+ * (e.g., 2.0σ, 1.5σ, 1.0σ) and returns all periods where the volatility index or standardized
+ * deviation exceeds the threshold for automatic D3 highlighting.
+ */
+export function evaluateHighVolatilityThreshold(
+  points: AdvancedPriceTrendPoint[],
+  config?: Partial<HighVolatilityThresholdConfig>
+): HighVolatilityThresholdEvaluation {
+  const enabled = config?.enabled !== undefined ? Boolean(config.enabled) : true;
+  const sigmaThreshold = normalizeVolatilitySigmaThreshold(config?.sigmaThreshold);
+  const sigmaLabel = `${sigmaThreshold.toFixed(1)}σ`;
+
+  if (!Array.isArray(points) || points.length === 0) {
+    return {
+      enabled,
+      sigmaThreshold,
+      sigmaLabel,
+      seriesMeanVolatility: 0,
+      seriesStdDevVolatility: 0,
+      thresholdVolatilityIndex: roundMoney(Math.min(92, Math.max(35, 25 + sigmaThreshold * 25))),
+      zScoreCutoff: sigmaThreshold,
+      breachCount: 0,
+      breachedMonths: [],
+      breaches: [],
+      statusSummary: enabled
+        ? `No periods exceed ${sigmaLabel} threshold`
+        : `High Volatility Threshold (${sigmaLabel}) disabled`,
+    };
+  }
+
+  const volValues = points.map((p) => Number(p.volatilityIndex) || 0);
+  const seriesMeanVolatility = roundMoney(
+    volValues.reduce((a, b) => a + b, 0) / Math.max(1, volValues.length)
+  );
+  const volVariance =
+    volValues.reduce((acc, v) => acc + Math.pow(v - seriesMeanVolatility, 2), 0) /
+    Math.max(1, volValues.length);
+  const seriesStdDevVolatility = roundMoney(Math.sqrt(volVariance));
+
+  // Calibrated volatility index threshold: baseline calm mean (25v) + sigmaThreshold * 25v
+  // (1.0σ -> 50.0v, 1.5σ -> 62.5v, 2.0σ -> 75.0v)
+  const thresholdVolatilityIndex = roundMoney(
+    Math.min(92, Math.max(35, 25 + sigmaThreshold * 25))
+  );
+
+  // Calibrated Z-score cutoff for the Z-Score view mode
+  const zScoreCutoff = roundMoney(Math.max(0.65, sigmaThreshold * 0.72));
+
+  const maxVol = Math.max(...volValues);
+  const breaches: VolatilityThresholdBreach[] = [];
+
+  if (maxVol > 0.05) {
+    for (const pt of points) {
+      const effectiveSigmaScore = roundMoney(
+        Math.max(Math.abs(pt.zScore), Math.max(0, (pt.volatilityIndex - 25) / 25))
+      );
+      const isBreach =
+        pt.volatilityIndex >= thresholdVolatilityIndex ||
+        Math.abs(pt.zScore) >= sigmaThreshold;
+
+      if (isBreach) {
+        const exceedanceVolPoints = roundMoney(
+          Math.max(0, pt.volatilityIndex - thresholdVolatilityIndex)
+        );
+        const momSign = pt.monthlyChangePct > 0 ? '+' : '';
+        const shortMarkerLabel = `>${sigmaLabel} (${ effectiveSigmaScore.toFixed(1)}σ)`;
+        const badgeText = `${pt.month} · ${pt.volatilityIndex.toFixed(1)}v (${effectiveSigmaScore.toFixed(2)}σ)`;
+        const summary = `${pt.month} volatility (${pt.volatilityIndex.toFixed(1)}v, ${effectiveSigmaScore.toFixed(2)}σ) exceeds the ${sigmaLabel} threshold (${thresholdVolatilityIndex.toFixed(1)}v cutoff; ${momSign}${pt.monthlyChangePct.toFixed(1)}% MoM).`;
+
+        breaches.push({
+          month: pt.month,
+          index: pt.index,
+          price: pt.price,
+          volatilityIndex: pt.volatilityIndex,
+          thresholdVolatilityIndex,
+          exceedanceVolPoints,
+          effectiveSigmaScore,
+          priceZScore: pt.zScore,
+          monthlyChangePct: pt.monthlyChangePct,
+          shortMarkerLabel,
+          badgeText,
+          summary,
+        });
+      }
+    }
+  }
+
+  const breachedMonths = breaches.map((b) => b.month);
+  const breachCount = breaches.length;
+  const statusSummary = !enabled
+    ? `Threshold markers hidden (${sigmaLabel} ≥ ${thresholdVolatilityIndex.toFixed(0)}v)`
+    : breachCount > 0
+      ? `Cutoff ≥${thresholdVolatilityIndex.toFixed(0)}v (${sigmaLabel}) · ${breachCount} ${breachCount === 1 ? 'Period' : 'Periods'} Highlighted (${breachedMonths.join(', ')})`
+      : `Cutoff ≥${thresholdVolatilityIndex.toFixed(0)}v (${sigmaLabel}) · 0 Periods Exceed Threshold`;
+
+  return {
+    enabled,
+    sigmaThreshold,
+    sigmaLabel,
+    seriesMeanVolatility,
+    seriesStdDevVolatility,
+    thresholdVolatilityIndex,
+    zScoreCutoff,
+    breachCount,
+    breachedMonths,
+    breaches,
+    statusSummary,
+  };
+}
+
+/**
+ * Computes 6-month volatility index series, rolling Bollinger-style volatility envelopes,
+ * Z-scores, maximum drawdown, and buy-zone telemetry for D3 visualization in the spec drawer.
+ */
+export function computeAdvancedPriceTrends(
+  rawHistory: Array<{ month: string; price: number; marketAvg?: number }>,
+  thresholdConfig?: Partial<HighVolatilityThresholdConfig>
+): AdvancedPriceTrendsAnalytics {
+  const fallbackMonths = ['May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct'];
+  const sanitized = Array.isArray(rawHistory) && rawHistory.length > 0
+    ? rawHistory.map((pt, i) => {
+        const price = Math.max(0.01, roundMoney(Number(pt?.price) || 100));
+        const marketAvg = Math.max(
+          0.01,
+          roundMoney(Number(pt?.marketAvg) > 0 ? Number(pt.marketAvg) : price * 1.07)
+        );
+        return {
+          month: String(pt?.month || fallbackMonths[i % fallbackMonths.length]).trim() || fallbackMonths[i % fallbackMonths.length],
+          price,
+          marketAvg,
+        };
+      })
+    : generatePriceHistory({ id: 19, price: 150 });
+
+  const prices = sanitized.map((d) => d.price);
+  const n = prices.length;
+  const sixMonthMean = roundMoney(prices.reduce((acc, p) => acc + p, 0) / n);
+  const sixMonthLow = roundMoney(Math.min(...prices));
+  const sixMonthHigh = roundMoney(Math.max(...prices));
+  const currentPrice = roundMoney(prices[n - 1] ?? sixMonthMean);
+
+  const variance =
+    prices.reduce((acc, p) => acc + Math.pow(p - sixMonthMean, 2), 0) / Math.max(1, n);
+  const standardDeviationUsd = roundMoney(Math.sqrt(variance));
+  const coefficientOfVariationPct =
+    sixMonthMean > 0 ? roundMoney((standardDeviationUsd / sixMonthMean) * 100) : 0;
+
+  // Compute max peak-to-trough drawdown across the 6M window
+  let runningPeak = prices[0] || currentPrice;
+  let maxDrawdownPct = 0;
+  for (const p of prices) {
+    if (p > runningPeak) {
+      runningPeak = p;
+    }
+    if (runningPeak > 0) {
+      const dd = ((runningPeak - p) / runningPeak) * 100;
+      if (dd > maxDrawdownPct) {
+        maxDrawdownPct = dd;
+      }
+    }
+  }
+  maxDrawdownPct = roundMoney(maxDrawdownPct);
+
+  const priceRangeSpreadUsd = roundMoney(sixMonthHigh - sixMonthLow);
+  const priceRangeSpreadPct =
+    sixMonthMean > 0 ? roundMoney((priceRangeSpreadUsd / sixMonthMean) * 100) : 0;
+
+  const points: AdvancedPriceTrendPoint[] = sanitized.map((pt, idx) => {
+    const windowSlice = prices.slice(0, idx + 1);
+    const rollingMean = roundMoney(
+      windowSlice.reduce((a, b) => a + b, 0) / windowSlice.length
+    );
+
+    // Use a 3-point local window (or full 6M stdDev scaled for point 0) so the envelope is smooth and meaningful
+    const localStart = Math.max(0, idx - 2);
+    const localEnd = Math.min(n, idx + 2);
+    const localPrices = prices.slice(localStart, localEnd);
+    const localMean = localPrices.reduce((a, b) => a + b, 0) / localPrices.length;
+    const localVar =
+      localPrices.reduce((acc, v) => acc + Math.pow(v - localMean, 2), 0) /
+      Math.max(1, localPrices.length);
+    const rollingStdDev = roundMoney(
+      Math.max(standardDeviationUsd * 0.45, Math.sqrt(localVar))
+    );
+
+    const upperBand = roundMoney(rollingMean + 1.25 * rollingStdDev);
+    const lowerBand = roundMoney(Math.max(0.01, rollingMean - 1.25 * rollingStdDev));
+
+    const prevPrice = idx > 0 ? prices[idx - 1] : sixMonthMean;
+    const monthlyChangeUsd = roundMoney(pt.price - prevPrice);
+    const monthlyChangePct =
+      prevPrice > 0 ? roundMoney(((pt.price - prevPrice) / prevPrice) * 100) : 0;
+    const absMonthlySwingPct = roundMoney(Math.abs(monthlyChangePct));
+
+    const deviationFromSixMonthMeanPct =
+      sixMonthMean > 0
+        ? roundMoney(((pt.price - sixMonthMean) / sixMonthMean) * 100)
+        : 0;
+
+    const zScore =
+      standardDeviationUsd > 0.001
+        ? roundMoney((pt.price - sixMonthMean) / standardDeviationUsd)
+        : 0;
+
+    // Normalized 0-100 Volatility Index combining monthly swing %, deviation from 6M mean %, and local dispersion
+    const localDispersionPct =
+      rollingMean > 0 ? (rollingStdDev / rollingMean) * 100 : 0;
+    const rawVolatilityScore =
+      standardDeviationUsd < 0.01 && absMonthlySwingPct < 0.01
+        ? 0
+        : absMonthlySwingPct * 3.1 +
+          Math.abs(deviationFromSixMonthMeanPct) * 2.2 +
+          localDispersionPct * 2.4;
+    const volatilityIndex = Math.max(
+      0,
+      Math.min(100, roundMoney(rawVolatilityScore))
+    );
+
+    const { regime: volatilityRegime } = classifyVolatilityRegime(volatilityIndex);
+
+    return {
+      index: idx,
+      month: pt.month,
+      price: pt.price,
+      marketAvg: pt.marketAvg,
+      rollingMean,
+      rollingStdDev,
+      upperBand,
+      lowerBand,
+      monthlyChangeUsd,
+      monthlyChangePct,
+      absMonthlySwingPct,
+      deviationFromSixMonthMeanPct,
+      zScore,
+      volatilityIndex,
+      volatilityRegime,
+    };
+  });
+
+  const avgPointVolatility =
+    points.reduce((acc, p) => acc + p.volatilityIndex, 0) / Math.max(1, points.length);
+  const sixMonthVolatilityIndex =
+    standardDeviationUsd < 0.01
+      ? 0
+      : Math.max(
+          0,
+          Math.min(
+            100,
+            roundMoney(
+              avgPointVolatility * 0.65 +
+                coefficientOfVariationPct * 2.2 +
+                maxDrawdownPct * 0.6
+            )
+          )
+        );
+
+  let peakMonthlyVolatilityIndex = 0;
+  let peakVolatilityMonth = points[0]?.month || 'May';
+  for (const pt of points) {
+    if (pt.volatilityIndex >= peakMonthlyVolatilityIndex) {
+      peakMonthlyVolatilityIndex = pt.volatilityIndex;
+      peakVolatilityMonth = pt.month;
+    }
+  }
+
+  const { regime: volatilityRegime, label: volatilityRegimeLabel } =
+    classifyVolatilityRegime(sixMonthVolatilityIndex);
+
+  const currentZScore =
+    points[points.length - 1]?.zScore ?? 0;
+
+  let buySignalLabel: AdvancedPriceTrendsAnalytics['buySignalLabel'] = 'Fair Value Band';
+  let buySignalReason = `Current price ($${currentPrice.toFixed(2)}) tracks within the 6-month equilibrium envelope ($${sixMonthMean.toFixed(2)} mean).`;
+
+  if (currentZScore <= -0.75 || currentPrice <= sixMonthLow * 1.02) {
+    buySignalLabel = 'Strong Buy Zone';
+    buySignalReason = `Trading ${Math.abs(currentZScore).toFixed(2)}σ below the 6-month average ($${sixMonthMean.toFixed(2)}) near the 6M support floor ($${sixMonthLow.toFixed(2)}).`;
+  } else if (currentZScore < -0.15 || currentPrice < sixMonthMean) {
+    buySignalLabel = 'Below 6M Mean';
+    buySignalReason = `Priced $${roundMoney(sixMonthMean - currentPrice).toFixed(2)} below the 6-month mean ($${sixMonthMean.toFixed(2)}) with ${volatilityRegimeLabel.toLowerCase()}.`;
+  } else if (currentZScore >= 0.65) {
+    buySignalLabel = 'Above 6M Mean';
+    buySignalReason = `Trading +${currentZScore.toFixed(2)}σ above the 6-month mean ($${sixMonthMean.toFixed(2)}); consider setting a Price Drop Alert.`;
+  }
+
+  const peakEvents = detectPeakVolatilityEvents(points, sixMonthLow);
+  const highVolatilityThreshold = evaluateHighVolatilityThreshold(points, thresholdConfig);
+
+  return {
+    sixMonthMean,
+    sixMonthLow,
+    sixMonthHigh,
+    currentPrice,
+    standardDeviationUsd,
+    coefficientOfVariationPct,
+    sixMonthVolatilityIndex,
+    peakMonthlyVolatilityIndex,
+    peakVolatilityMonth,
+    volatilityRegime,
+    volatilityRegimeLabel,
+    maxDrawdownPct,
+    priceRangeSpreadUsd,
+    priceRangeSpreadPct,
+    currentZScore,
+    buySignalLabel,
+    buySignalReason,
+    points,
+    peakEvents,
+    highVolatilityThreshold,
+  };
+}
+
+export type D3TrendViewMode = 'composite' | 'volatility-bars' | 'zscore';
+
+export interface D3GsapTransitionProfile {
+  fromMode: D3TrendViewMode;
+  toMode: D3TrendViewMode;
+  isModeSwitch: boolean;
+  direction: -1 | 0 | 1;
+  reducedMotion: boolean;
+  stageDurationSec: number;
+  stageShiftPx: number;
+  stageEase: string;
+  barDurationSec: number;
+  barStaggerSec: number;
+  barEase: string;
+  pathDurationSec: number;
+  pathEase: string;
+  nodeDurationSec: number;
+  nodeStaggerSec: number;
+  nodeEase: string;
+}
+
+const D3_MODE_ORDER: readonly D3TrendViewMode[] = [
+  'composite',
+  'volatility-bars',
+  'zscore',
+];
+
+export function normalizeD3TrendViewMode(mode?: string | null): D3TrendViewMode {
+  if (mode === 'volatility-bars' || mode === 'zscore' || mode === 'composite') {
+    return mode;
+  }
+  return 'composite';
+}
+
+/**
+ * Computes deterministic GSAP animation timing, easing, stagger, and directional shift
+ * parameters when transitioning between 'composite', 'volatility-bars', and 'zscore' D3 views.
+ */
+export function resolveD3ModeGsapTransitionProfile(
+  fromModeInput?: string | null,
+  toModeInput?: string | null,
+  options?: { reducedMotion?: boolean }
+): D3GsapTransitionProfile {
+  const fromMode = normalizeD3TrendViewMode(fromModeInput);
+  const toMode = normalizeD3TrendViewMode(toModeInput);
+  const fromIdx = D3_MODE_ORDER.indexOf(fromMode);
+  const toIdx = D3_MODE_ORDER.indexOf(toMode);
+  const isModeSwitch = Boolean(fromModeInput) && fromMode !== toMode;
+  const rawDir = toIdx - fromIdx;
+  const direction: -1 | 0 | 1 = !isModeSwitch
+    ? 0
+    : rawDir > 0
+      ? 1
+      : rawDir < 0
+        ? -1
+        : 0;
+
+  const reducedMotion = Boolean(options?.reducedMotion);
+  if (reducedMotion) {
+    return {
+      fromMode,
+      toMode,
+      isModeSwitch,
+      direction,
+      reducedMotion: true,
+      stageDurationSec: 0,
+      stageShiftPx: 0,
+      stageEase: 'none',
+      barDurationSec: 0,
+      barStaggerSec: 0,
+      barEase: 'none',
+      pathDurationSec: 0,
+      pathEase: 'none',
+      nodeDurationSec: 0,
+      nodeStaggerSec: 0,
+      nodeEase: 'none',
+    };
+  }
+
+  return {
+    fromMode,
+    toMode,
+    isModeSwitch,
+    direction,
+    reducedMotion: false,
+    stageDurationSec: isModeSwitch ? 0.34 : 0.26,
+    stageShiftPx: direction * 10,
+    stageEase: 'power2.out',
+    barDurationSec: toMode === 'volatility-bars' ? 0.42 : 0.36,
+    barStaggerSec: 0.032,
+    barEase: 'power3.out',
+    pathDurationSec: 0.46,
+    pathEase: 'power2.out',
+    nodeDurationSec: 0.3,
+    nodeStaggerSec: 0.028,
+    nodeEase: 'back.out(1.5)',
+  };
+}
+
+export interface D3LegendItemDescriptor {
+  key: string;
+  swatchClass: string;
+  label: string;
+}
+
+export interface D3LegendToggleState {
+  legendVisible: boolean;
+  isHidden: boolean;
+  buttonLabel: 'Hide Legend' | 'Show Legend';
+  ariaPressed: 'true' | 'false';
+  ariaExpanded: 'true' | 'false';
+  statusNote: string;
+}
+
+/**
+ * Resolves the UI button label, ARIA state attributes, and status copy for the
+ * D3 signal legend visibility toggle ('Hide Legend' / 'Show Legend').
+ */
+export function resolveD3LegendToggleState(legendVisibleInput?: boolean | null): D3LegendToggleState {
+  const legendVisible = legendVisibleInput !== undefined && legendVisibleInput !== null ? Boolean(legendVisibleInput) : true;
+  return {
+    legendVisible,
+    isHidden: !legendVisible,
+    buttonLabel: legendVisible ? 'Hide Legend' : 'Show Legend',
+    ariaPressed: legendVisible ? 'false' : 'true',
+    ariaExpanded: legendVisible ? 'true' : 'false',
+    statusNote: legendVisible
+      ? 'Signal legend visible'
+      : 'Signal legend hidden for cleaner chart view',
+  };
+}
+
+/**
+ * Returns the structured list of signal legend items for the active D3 view mode
+ * ('composite', 'volatility-bars', or 'zscore') and threshold configuration.
+ */
+export function getD3ModeLegendItems(
+  modeInput?: string | null,
+  thresholdConfig?: Partial<HighVolatilityThresholdConfig>
+): D3LegendItemDescriptor[] {
+  const mode = normalizeD3TrendViewMode(modeInput);
+  const thresholdEnabled =
+    thresholdConfig?.enabled !== undefined ? Boolean(thresholdConfig.enabled) : true;
+  const sigmaVal = normalizeVolatilitySigmaThreshold(thresholdConfig?.sigmaThreshold);
+  const sigmaShort = sigmaVal.toFixed(1).replace(/\.0$/, '') + 'σ';
+
+  let items: D3LegendItemDescriptor[];
+  if (mode === 'volatility-bars') {
+    items = [
+      { key: 'low', swatchClass: 'is-stable', label: 'Low (<25)' },
+      { key: 'mod', swatchClass: 'is-mod', label: 'Mod (25–54)' },
+      { key: 'high', swatchClass: 'is-elev', label: 'High (55+)' },
+      { key: 'peak', swatchClass: 'is-peak-marker', label: 'Peak Event' },
+    ];
+  } else if (mode === 'zscore') {
+    items = [
+      { key: 'zneg', swatchClass: 'is-zneg', label: 'Below Mean (-σ Buy Zone)' },
+      { key: 'zpos', swatchClass: 'is-zpos', label: 'Above Mean (+σ Premium)' },
+      { key: 'peak', swatchClass: 'is-peak-marker', label: 'Peak Event' },
+    ];
+  } else {
+    items = [
+      { key: 'band', swatchClass: 'is-band', label: '±1σ Envelope' },
+      { key: 'price', swatchClass: 'is-price', label: 'Spot Price' },
+      { key: 'vol', swatchClass: 'is-vol', label: 'Volatility Index' },
+      { key: 'peak', swatchClass: 'is-peak-marker', label: 'Peak Event' },
+    ];
+  }
+
+  if (thresholdEnabled) {
+    items.push({
+      key: 'threshold',
+      swatchClass: 'is-threshold-marker',
+      label: `≥${sigmaShort} Threshold`,
+    });
+  }
+
+  return items;
+}
+
+// ── Google Maps Platform Store & Pickup Hub Locator Pure Logic ──
+
+export const GMP_ATTRIBUTION_ID = 'gmp_mcp_codeassist_v1_aistudio' as const;
+export const GMP_DEFAULT_MAP_ID = 'DEMO_MAP_ID' as const;
+
+export const GMP_PLACE_SEARCH_FIELDS = [
+  'id',
+  'displayName',
+  'formattedAddress',
+  'location',
+  'rating',
+  'userRatingCount',
+  'businessStatus',
+  'googleMapsURI',
+  'attributions',
+] as const;
+
+export interface GmpLatLngLiteral {
+  lat: number;
+  lng: number;
+}
+
+export interface GmpTextSearchRequestOptions {
+  center?: GmpLatLngLiteral | null;
+  radiusMeters?: number;
+  maxResultCount?: number;
+  minRating?: number;
+  isOpenNow?: boolean;
+  language?: string;
+  region?: string;
+}
+
+export interface GmpNormalizedTextSearchRequest {
+  textQuery: string;
+  fields: string[];
+  maxResultCount: number;
+  language: string;
+  region: string;
+  internalUsageAttributionIds: string[];
+  locationBias?: {
+    center: GmpLatLngLiteral;
+    radius: number;
+  };
+  minRating?: number;
+  isOpenNow?: boolean;
+}
+
+export interface GmpPlaceAttributionItem {
+  provider: string;
+  providerURI: string | null;
+}
+
+export interface VoltboxGmpPlaceCard {
+  id: string;
+  index: number;
+  badgeNumber: string;
+  displayName: string;
+  formattedAddress: string;
+  location: GmpLatLngLiteral | null;
+  rating: number | null;
+  userRatingCount: number;
+  businessStatus: string;
+  googleMapsURI: string | null;
+  attributions: GmpPlaceAttributionItem[];
+}
+
+/**
+ * Pure helper to detect whether an error message, HTTP status, or SDK error object
+ * indicates Google Maps Platform quota exhaustion (OverQuotaMapError, QuotaExceededError,
+ * OVER_QUERY_LIMIT, RESOURCE_EXHAUSTED, or HTTP 429). Never returns true for normal
+ * empty results or generic network 404s.
+ */
+export function isGmpQuotaExceededSignal(input: unknown): boolean {
+  if (!input) return false;
+
+  if (typeof input === 'number') {
+    return input === 429;
+  }
+
+  if (typeof input === 'string') {
+    const str = input.trim();
+    if (!str) return false;
+    return (
+      str.includes('OverQuotaMapError') ||
+      str.includes('QuotaExceededError') ||
+      str.includes('OVER_QUERY_LIMIT') ||
+      str.includes('RESOURCE_EXHAUSTED') ||
+      /\b429\b/.test(str)
+    );
+  }
+
+  if (typeof input === 'object') {
+    const obj = input as Record<string, unknown>;
+    if (obj.status === 429 || obj.code === 429) return true;
+    if (
+      typeof obj.status === 'string' &&
+      (obj.status === 'OVER_QUERY_LIMIT' || obj.status === 'RESOURCE_EXHAUSTED')
+    ) {
+      return true;
+    }
+    if (
+      typeof obj.code === 'string' &&
+      (obj.code === 'OVER_QUERY_LIMIT' || obj.code === 'RESOURCE_EXHAUSTED')
+    ) {
+      return true;
+    }
+    if (obj.error && isGmpQuotaExceededSignal(obj.error)) {
+      return true;
+    }
+    const combinedMsg = [obj.name, obj.message, obj.statusText]
+      .filter((v) => typeof v === 'string')
+      .join(' ');
+    if (combinedMsg && isGmpQuotaExceededSignal(combinedMsg)) {
+      return true;
+    }
+  }
+
+  return false;
+}
+
+/**
+ * Builds a compliant Places API (New) `Place.searchByText()` request payload
+ * with explicit field masks and the required `gmp_mcp_codeassist_v1_aistudio` attribution ID.
+ */
+export function buildGmpTextSearchRequest(
+  queryInput?: string | null,
+  options?: GmpTextSearchRequestOptions
+): GmpNormalizedTextSearchRequest {
+  const cleanedQuery = String(queryInput || '').trim();
+  const textQuery = cleanedQuery || 'computer hardware electronics store in Bengaluru';
+
+  const rawMax = Number(options?.maxResultCount);
+  const maxResultCount = Number.isFinite(rawMax)
+    ? Math.max(1, Math.min(20, Math.round(rawMax)))
+    : 8;
+
+  const req: GmpNormalizedTextSearchRequest = {
+    textQuery,
+    fields: [...GMP_PLACE_SEARCH_FIELDS],
+    maxResultCount,
+    language: String(options?.language || 'en-US').trim() || 'en-US',
+    region: String(options?.region || 'in').trim() || 'in',
+    internalUsageAttributionIds: [GMP_ATTRIBUTION_ID],
+  };
+
+  if (
+    options?.center &&
+    typeof options.center.lat === 'number' &&
+    typeof options.center.lng === 'number' &&
+    Number.isFinite(options.center.lat) &&
+    Number.isFinite(options.center.lng)
+  ) {
+    const rawRadius = Number(options?.radiusMeters);
+    const radius =
+      Number.isFinite(rawRadius) && rawRadius >= 100
+        ? Math.min(50000, Math.round(rawRadius))
+        : 12000;
+    req.locationBias = {
+      center: {
+        lat: Number(options.center.lat.toFixed(6)),
+        lng: Number(options.center.lng.toFixed(6)),
+      },
+      radius,
+    };
+  }
+
+  if (typeof options?.minRating === 'number' && Number.isFinite(options.minRating)) {
+    const clampedRating = Math.max(1.0, Math.min(5.0, Math.round(options.minRating * 10) / 10));
+    req.minRating = clampedRating;
+  }
+
+  if (typeof options?.isOpenNow === 'boolean') {
+    req.isOpenNow = options.isOpenNow;
+  }
+
+  return req;
+}
+
+/**
+ * Extracts and normalizes a live `google.maps.places.Place` result without fabricating
+ * any place fields. Preserves `attributions` for mandatory UI attribution display.
+ */
+export function normalizeGmpPlaceResult(
+  rawPlace: any,
+  index = 0
+): VoltboxGmpPlaceCard | null {
+  if (!rawPlace || typeof rawPlace !== 'object') return null;
+
+  let lat: number | null = null;
+  let lng: number | null = null;
+  const loc = rawPlace.location;
+  if (loc) {
+    const rawLat = typeof loc.lat === 'function' ? loc.lat() : loc.lat;
+    const rawLng = typeof loc.lng === 'function' ? loc.lng() : loc.lng;
+    if (typeof rawLat === 'number' && typeof rawLng === 'number' && Number.isFinite(rawLat) && Number.isFinite(rawLng)) {
+      lat = Number(rawLat.toFixed(6));
+      lng = Number(rawLng.toFixed(6));
+    }
+  }
+
+  const displayName = String(rawPlace.displayName || '').trim();
+  const formattedAddress = String(rawPlace.formattedAddress || '').trim();
+  const id = String(rawPlace.id || '').trim();
+
+  if (!id && !displayName && lat === null) {
+    return null;
+  }
+
+  const rawRating = Number(rawPlace.rating);
+  const rating =
+    Number.isFinite(rawRating) && rawRating > 0
+      ? Math.round(rawRating * 10) / 10
+      : null;
+
+  const rawCount = Number(rawPlace.userRatingCount);
+  const userRatingCount =
+    Number.isFinite(rawCount) && rawCount >= 0 ? Math.round(rawCount) : 0;
+
+  const attributions: GmpPlaceAttributionItem[] = Array.isArray(rawPlace.attributions)
+    ? rawPlace.attributions
+        .map((attr: any): GmpPlaceAttributionItem | null => {
+          if (!attr || typeof attr !== 'object') return null;
+          const provider = String(attr.provider || '').trim();
+          if (!provider) return null;
+          const providerURI = attr.providerURI ? String(attr.providerURI).trim() : null;
+          return { provider, providerURI };
+        })
+        .filter((item: GmpPlaceAttributionItem | null): item is GmpPlaceAttributionItem => item !== null)
+    : [];
+
+  return {
+    id: id || `gmp-place-${index + 1}`,
+    index,
+    badgeNumber: String(index + 1),
+    displayName,
+    formattedAddress,
+    location: lat !== null && lng !== null ? { lat, lng } : null,
+    rating,
+    userRatingCount,
+    businessStatus: String(rawPlace.businessStatus || 'OPERATIONAL').trim(),
+    googleMapsURI: rawPlace.googleMapsURI ? String(rawPlace.googleMapsURI).trim() : null,
+    attributions,
+  };
+}
+
+// ── D3 Volatility Engine Mouse-Wheel Zoom & Drag-to-Pan Pure Logic ──
+
+export const D3_ZOOM_MIN_SCALE = 1;
+export const D3_ZOOM_MAX_SCALE = 4;
+export const D3_ZOOM_STEP_FACTOR = 1.35;
+export const D3_PAN_STEP_PX = 64;
+
+export interface D3ZoomPanTransformInput {
+  k?: number;
+  x?: number;
+}
+
+export interface D3ClampedZoomPanTransform {
+  k: number;
+  x: number;
+  minX: number;
+  maxX: number;
+  isZoomed: boolean;
+  isAtLeftEdge: boolean;
+  isAtRightEdge: boolean;
+  zoomPercent: number;
+  scaleLabel: string;
+}
+
+export interface D3ZoomedVisibleWindow extends D3ClampedZoomPanTransform {
+  visibleMonths: string[];
+  startMonth: string;
+  endMonth: string;
+  visibleCount: number;
+  totalCount: number;
+  windowLabel: string;
+  statusSummary: string;
+}
+
+/**
+ * Clamps a horizontal D3 zoom/pan transform `{ k, x }` so `k` stays within `[minScale, maxScale]`
+ * (default `[1, 4]`) and `x` stays within `[-(innerWidth * (k - 1)), 0]`.
+ */
+export function clampD3ZoomPanTransform(
+  transform?: D3ZoomPanTransformInput | null,
+  innerWidth = 300,
+  minScale = D3_ZOOM_MIN_SCALE,
+  maxScale = D3_ZOOM_MAX_SCALE
+): D3ClampedZoomPanTransform {
+  const safeMinScale = Number.isFinite(minScale) && minScale >= 1 ? minScale : D3_ZOOM_MIN_SCALE;
+  const safeMaxScale =
+    Number.isFinite(maxScale) && maxScale > safeMinScale ? maxScale : D3_ZOOM_MAX_SCALE;
+  const w = Number.isFinite(innerWidth) && innerWidth > 0 ? innerWidth : 300;
+
+  const rawK = Number(transform?.k);
+  const clampedRawK = Number.isFinite(rawK)
+    ? Math.max(safeMinScale, Math.min(safeMaxScale, rawK))
+    : safeMinScale;
+  const k = clampedRawK <= safeMinScale + 0.01 ? safeMinScale : Math.round(clampedRawK * 100) / 100;
+  const isZoomed = k > safeMinScale + 0.01;
+
+  const maxX = 0;
+  const minX = isZoomed ? -Math.round(w * (k - 1) * 100) / 100 : 0;
+
+  const rawX = Number(transform?.x);
+  const clampedRawX =
+    isZoomed && Number.isFinite(rawX) ? Math.max(minX, Math.min(maxX, rawX)) : 0;
+  const x = Math.abs(clampedRawX) < 0.05 ? 0 : Math.round(clampedRawX * 100) / 100;
+
+  const isAtLeftEdge = !isZoomed || x >= maxX - 0.5;
+  const isAtRightEdge = !isZoomed || x <= minX + 0.5;
+  const zoomPercent = Math.round(k * 100);
+  const scaleLabel = `${Number.isInteger(k) ? k.toFixed(1) : k.toFixed(2).replace(/0$/, '')}×`;
+
+  return {
+    k,
+    x,
+    minX,
+    maxX,
+    isZoomed,
+    isAtLeftEdge,
+    isAtRightEdge,
+    zoomPercent,
+    scaleLabel,
+  };
+}
+
+/**
+ * Computes the next horizontal zoom/pan transform from a mouse-wheel event (`wheelDeltaY`)
+ * anchored at cursor X position `anchorX` within `[0, innerWidth]`.
+ * Negative `wheelDeltaY` (scrolling up) zooms in; positive `wheelDeltaY` zooms out.
+ */
+export function computeD3WheelZoomTransform(
+  currentTransform?: D3ZoomPanTransformInput | null,
+  wheelDeltaY = -100,
+  anchorX?: number,
+  innerWidth = 300,
+  minScale = D3_ZOOM_MIN_SCALE,
+  maxScale = D3_ZOOM_MAX_SCALE
+): D3ClampedZoomPanTransform {
+  const w = Number.isFinite(innerWidth) && innerWidth > 0 ? innerWidth : 300;
+  const current = clampD3ZoomPanTransform(currentTransform, w, minScale, maxScale);
+  const deltaY = Number(wheelDeltaY);
+
+  if (!Number.isFinite(deltaY) || Math.abs(deltaY) < 0.001) {
+    return current;
+  }
+
+  const focalX =
+    typeof anchorX === 'number' && Number.isFinite(anchorX)
+      ? Math.max(0, Math.min(w, anchorX))
+      : w / 2;
+
+  const magnitude = Math.min(Math.abs(deltaY), 240);
+  const stepRatio = 1 + Math.max(0.14, magnitude / 280);
+  const nextRawK = deltaY < 0 ? current.k * stepRatio : current.k / stepRatio;
+  const clampedNextK = Math.max(minScale, Math.min(maxScale, nextRawK));
+
+  // Keep the data point under focalX stationary while zooming
+  const unscaledFocalX = (focalX - current.x) / current.k;
+  const nextRawX = focalX - unscaledFocalX * clampedNextK;
+
+  return clampD3ZoomPanTransform({ k: clampedNextK, x: nextRawX }, w, minScale, maxScale);
+}
+
+/**
+ * Computes the next horizontal zoom/pan transform when dragging horizontally by `deltaX` pixels.
+ */
+export function computeD3DragPanTransform(
+  startTransform?: D3ZoomPanTransformInput | null,
+  deltaX = 0,
+  innerWidth = 300,
+  minScale = D3_ZOOM_MIN_SCALE,
+  maxScale = D3_ZOOM_MAX_SCALE
+): D3ClampedZoomPanTransform {
+  const w = Number.isFinite(innerWidth) && innerWidth > 0 ? innerWidth : 300;
+  const base = clampD3ZoomPanTransform(startTransform, w, minScale, maxScale);
+  if (!base.isZoomed) {
+    return base;
+  }
+  const dx = Number.isFinite(Number(deltaX)) ? Number(deltaX) : 0;
+  return clampD3ZoomPanTransform({ k: base.k, x: base.x + dx }, w, minScale, maxScale);
+}
+
+/**
+ * Resolves which months in the 6-month series fall inside the visible zoomed/panned viewport
+ * and returns formatted status and window labels for the D3 Volatility Engine toolbar.
+ */
+export function resolveD3ZoomedVisibleWindow(
+  months: string[],
+  innerWidth = 300,
+  transform?: D3ZoomPanTransformInput | null,
+  edgePaddingPx = 14
+): D3ZoomedVisibleWindow {
+  const safeMonths = Array.isArray(months) && months.length > 0
+    ? months.map((m) => String(m || '').trim()).filter(Boolean)
+    : ['May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct'];
+  const totalCount = safeMonths.length;
+  const w = Number.isFinite(innerWidth) && innerWidth > 0 ? innerWidth : 300;
+  const pad = Math.max(0, Math.min(w * 0.2, Number(edgePaddingPx) || 14));
+  const clamped = clampD3ZoomPanTransform(transform, w);
+
+  if (!clamped.isZoomed || totalCount <= 1) {
+    const startMonth = safeMonths[0] || 'May';
+    const endMonth = safeMonths[totalCount - 1] || 'Oct';
+    const windowLabel = `${startMonth} – ${endMonth} (All ${totalCount}M)`;
+    return {
+      ...clamped,
+      visibleMonths: [...safeMonths],
+      startMonth,
+      endMonth,
+      visibleCount: totalCount,
+      totalCount,
+      windowLabel,
+      statusSummary: `${clamped.scaleLabel} · ${windowLabel} · Scroll wheel to zoom, drag to pan`,
+    };
+  }
+
+  const span = Math.max(1, w - pad * 2);
+  const positioned = safeMonths.map((month, idx) => {
+    const baseX = pad + (idx / Math.max(1, totalCount - 1)) * span;
+    const tx = baseX * clamped.k + clamped.x;
+    const distFromCenter = Math.abs(tx - w / 2);
+    return { month, idx, baseX, tx, distFromCenter };
+  });
+
+  // Tolerance around [0, w] so edge ticks remain counted when slightly inside the frame
+  let visible = positioned.filter((item) => item.tx >= -8 && item.tx <= w + 8);
+  if (visible.length === 0) {
+    const sorted = [...positioned].sort((a, b) => a.distFromCenter - b.distFromCenter);
+    visible = sorted.slice(0, Math.min(2, sorted.length)).sort((a, b) => a.idx - b.idx);
+  }
+
+  const visibleMonths = visible.map((v) => v.month);
+  const startMonth = visibleMonths[0] || safeMonths[0];
+  const endMonth = visibleMonths[visibleMonths.length - 1] || startMonth;
+  const visibleCount = visibleMonths.length;
+
+  const rangeText = startMonth === endMonth ? startMonth : `${startMonth} – ${endMonth}`;
+  const countSuffix =
+    visibleCount >= totalCount ? `(All ${totalCount}M)` : `(${visibleCount}/${totalCount}M)`;
+  const windowLabel = `${rangeText} ${countSuffix}`;
+
+  return {
+    ...clamped,
+    visibleMonths,
+    startMonth,
+    endMonth,
+    visibleCount,
+    totalCount,
+    windowLabel,
+    statusSummary: `${clamped.scaleLabel} Zoom · ${windowLabel} · Drag chart to pan`,
+  };
+}
+
+// ── Product Spec Drawer Section Navigation & Structured Layout Helpers ──
+
+export type SpecDrawerSectionId =
+  | 'overview'
+  | 'd3-volatility'
+  | 'tech-specs'
+  | 'reviews';
+
+export interface SpecDrawerSectionNavItem {
+  id: SpecDrawerSectionId;
+  targetElementId: string;
+  label: string;
+  shortLabel: string;
+  badgeText?: string;
+  isActive: boolean;
+}
+
+export const SPEC_DRAWER_SECTIONS: ReadonlyArray<{
+  id: SpecDrawerSectionId;
+  targetElementId: string;
+  label: string;
+  shortLabel: string;
+}> = [
+  {
+    id: 'overview',
+    targetElementId: 'spec-overview-section',
+    label: 'Overview & 6M Price',
+    shortLabel: 'Overview',
+  },
+  {
+    id: 'd3-volatility',
+    targetElementId: 'spec-advanced-price-trends',
+    label: 'D3 Volatility Engine',
+    shortLabel: 'D3 Volatility',
+  },
+  {
+    id: 'tech-specs',
+    targetElementId: 'spec-technical-section',
+    label: 'Tech Specs & Bench',
+    shortLabel: 'Tech Specs',
+  },
+  {
+    id: 'reviews',
+    targetElementId: 'spec-reviews-section',
+    label: 'Verified Reviews',
+    shortLabel: 'Reviews',
+  },
+];
+
+export function resolveSpecDrawerSectionNav(
+  activeSectionId?: string | null,
+  options?: { reviewCount?: number; volatilityScore?: number }
+): SpecDrawerSectionNavItem[] {
+  const normalizedActive: SpecDrawerSectionId =
+    activeSectionId === 'd3-volatility' ||
+    activeSectionId === 'tech-specs' ||
+    activeSectionId === 'reviews'
+      ? activeSectionId
+      : 'overview';
+
+  const revCount =
+    typeof options?.reviewCount === 'number' &&
+    Number.isFinite(options.reviewCount) &&
+    options.reviewCount >= 0
+      ? Math.round(options.reviewCount)
+      : undefined;
+
+  const volScore =
+    typeof options?.volatilityScore === 'number' &&
+    Number.isFinite(options.volatilityScore) &&
+    options.volatilityScore >= 0
+      ? Math.round(options.volatilityScore)
+      : undefined;
+
+  return SPEC_DRAWER_SECTIONS.map((sec) => {
+    let badgeText: string | undefined;
+    if (sec.id === 'reviews' && revCount !== undefined) {
+      badgeText = String(revCount);
+    } else if (sec.id === 'd3-volatility' && volScore !== undefined) {
+      badgeText = `${volScore}v`;
+    }
+    return {
+      ...sec,
+      badgeText,
+      isActive: sec.id === normalizedActive,
+    };
+  });
+}
+
+export function resolveActiveSpecSectionFromScroll(
+  scrollTop: number,
+  sectionOffsets: Array<{ id: SpecDrawerSectionId; offsetTop: number }>,
+  activationThresholdPx = 90
+): SpecDrawerSectionId {
+  if (!Array.isArray(sectionOffsets) || sectionOffsets.length === 0) {
+    return 'overview';
+  }
+  const safeScroll = Math.max(0, Number(scrollTop) || 0);
+  const threshold = Math.max(0, Number(activationThresholdPx) || 90);
+  const sorted = [...sectionOffsets]
+    .filter((s) => s && typeof s.offsetTop === 'number' && Number.isFinite(s.offsetTop))
+    .sort((a, b) => a.offsetTop - b.offsetTop);
+
+  let current: SpecDrawerSectionId = 'overview';
+  for (const item of sorted) {
+    if (safeScroll + threshold >= item.offsetTop) {
+      current = item.id;
+    }
+  }
+  return current;
+}
+
 

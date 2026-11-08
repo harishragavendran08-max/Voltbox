@@ -46,6 +46,14 @@ import {
   recommendStarterRigBundle,
   advanceOrderTrackingStage,
   resolveOrderTrackingTimeline,
+  enrichOrderForHistory,
+  computeOrderHistorySummary,
+  filterAndSortOrderHistory,
+  verifyComponentPurchaseForReview,
+  validateProductReviewSubmission,
+  computeProductReviewSummary,
+  filterAndSortProductReviews,
+  planBatchProductTransaction,
 } from './src/logic/inventory';
 
 const PORT = 3000;
@@ -255,11 +263,31 @@ app.get(['/actuator/health', '/api/health'], (_req, res) => {
   });
 });
 
+// ── Google Maps Platform Configuration Endpoint ──
+app.get('/api/maps/config', (_req, res) => {
+  const apiKey =
+    process.env.VITE_GOOGLE_MAPS_API_KEY ||
+    process.env.GOOGLE_MAPS_PLATFORM_KEY ||
+    process.env.GOOGLE_MAPS_API_KEY ||
+    '';
+  res.json({
+    ok: true,
+    apiKey,
+    hasApiKey: Boolean(apiKey),
+    mapId: 'DEMO_MAP_ID',
+    attributionId: 'gmp_mcp_codeassist_v1_aistudio',
+  });
+});
+
 // ── Product Controller (mirrors com.voltbox.controller.ProductController & JPA ProductEntity) ──
 function enrichProduct(p: ReturnType<typeof store.getProducts>[number]) {
+  const productReviews = store.getReviews(p.id);
+  const reviewSummary = computeProductReviewSummary(productReviews, p.id, p.ratingRate);
   return {
     ...p,
     ...toProductJpaEntity(p),
+    verifiedReviewCount: productReviews.length,
+    reviewSummary,
   };
 }
 
@@ -397,6 +425,165 @@ app.get('/api/products/:id', (req, res) => {
   const p = Number.isNaN(id) ? null : store.findProduct(id);
   if (!p || p.takenDown) return notFound(res, 'Product not found.');
   return res.json(enrichProduct(p));
+});
+
+// ── Verified Buyer Review & Rating Controller ──
+app.get('/api/products/:id/reviews', (req, res) => {
+  const id = Number.parseInt(String(req.params.id || ''), 10);
+  const p = Number.isNaN(id) ? null : store.findProduct(id);
+  if (!p || p.takenDown) return notFound(res, 'Product not found.');
+
+  const user = userFromReq(req);
+  const allReviews = store.getReviews(p.id);
+  const starFilter = typeof req.query.star === 'string' ? req.query.star : 'all';
+  const sortBy = typeof req.query.sort === 'string' ? req.query.sort : 'newest';
+  const searchQuery = typeof req.query.search === 'string' ? req.query.search : '';
+
+  const filteredReviews = filterAndSortProductReviews(allReviews, {
+    starFilter,
+    sortBy,
+    searchQuery,
+  });
+
+  const summary = computeProductReviewSummary(allReviews, p.id, p.ratingRate);
+  const eligibility = verifyComponentPurchaseForReview(
+    p.id,
+    user?.orders || [],
+    allReviews,
+    user?.email || null
+  );
+
+  return res.json({
+    ok: true,
+    productId: p.id,
+    sku: getProductSku(p),
+    productTitle: p.title,
+    reviews: filteredReviews,
+    allReviews,
+    summary,
+    eligibility,
+  });
+});
+
+app.post('/api/products/:id/reviews', (req, res) => {
+  const user = userFromReq(req);
+  if (!user) return notSignedIn(res);
+
+  const id = Number.parseInt(String(req.params.id || ''), 10);
+  const p = Number.isNaN(id) ? null : store.findProduct(id);
+  if (!p || p.takenDown) return notFound(res, 'Product not found.');
+
+  const existingReviews = store.getReviews(p.id);
+  const eligibility = verifyComponentPurchaseForReview(
+    p.id,
+    user.orders || [],
+    existingReviews,
+    user.email
+  );
+
+  const validation = validateProductReviewSubmission(
+    {
+      productId: p.id,
+      rating: req.body?.rating,
+      title: req.body?.title,
+      comment: req.body?.comment,
+      useCaseTag: req.body?.useCaseTag,
+      orderId: req.body?.orderId,
+    },
+    eligibility
+  );
+
+  if (!validation.ok || !validation.normalized) {
+    const status = validation.code === 'NOT_PURCHASED' ? 403 : 400;
+    return res.status(status).json({
+      ok: false,
+      code: validation.code || 'VALIDATION_ERROR',
+      message: validation.message || 'Invalid review submission.',
+      eligibility,
+    });
+  }
+
+  const matchedOrder = eligibility.matchingOrders.find(
+    (o) => o.orderId === validation.normalized?.orderId
+  ) || eligibility.matchingOrders[0];
+
+  const upserted = store.upsertReview({
+    productId: p.id,
+    authorName: user.name,
+    authorEmail: user.email,
+    authorColor: user.avatarColor || '#ffd23f',
+    authorInitial: store.getUserInitial(user),
+    rating: validation.normalized.rating,
+    title: validation.normalized.title,
+    comment: validation.normalized.comment,
+    useCaseTag: validation.normalized.useCaseTag,
+    orderId: validation.normalized.orderId,
+    purchasedAt: matchedOrder?.placedAt || eligibility.latestPurchasedAt || Date.now(),
+  });
+
+  const updatedReviews = store.getReviews(p.id);
+  const summary = computeProductReviewSummary(updatedReviews, p.id, p.ratingRate);
+  const updatedEligibility = verifyComponentPurchaseForReview(
+    p.id,
+    user.orders || [],
+    updatedReviews,
+    user.email
+  );
+  const enriched = enrichProduct(p);
+
+  broadcastToAll({
+    type: 'product-review-submitted',
+    productId: p.id,
+    review: upserted.review,
+    summary,
+    product: enriched,
+    isUpdate: upserted.isUpdate,
+    timestamp: Date.now(),
+  });
+  broadcastToAll({
+    type: 'activity-feed',
+    message: `${user.name} rated ${p.title} ${upserted.review.rating}★ ("${upserted.review.title}")`,
+    timestamp: Date.now(),
+  });
+
+  return res.json({
+    ok: true,
+    isUpdate: upserted.isUpdate,
+    review: upserted.review,
+    reviews: updatedReviews,
+    summary,
+    eligibility: updatedEligibility,
+    product: enriched,
+    message: upserted.isUpdate
+      ? `Updated your verified ${upserted.review.rating}★ review for ${p.title}.`
+      : `Published your verified ${upserted.review.rating}★ review for ${p.title}!`,
+  });
+});
+
+app.post('/api/products/:id/reviews/:reviewId/helpful', (req, res) => {
+  const user = userFromReq(req);
+  if (!user) return notSignedIn(res);
+
+  const id = Number.parseInt(String(req.params.id || ''), 10);
+  const p = Number.isNaN(id) ? null : store.findProduct(id);
+  if (!p || p.takenDown) return notFound(res, 'Product not found.');
+
+  const reviewId = String(req.params.reviewId || '').trim();
+  const toggled = store.toggleReviewHelpful(reviewId, user.email);
+  if (!toggled.review) {
+    return notFound(res, 'Review not found.');
+  }
+
+  const allReviews = store.getReviews(p.id);
+  const summary = computeProductReviewSummary(allReviews, p.id, p.ratingRate);
+
+  return res.json({
+    ok: true,
+    voted: toggled.voted,
+    review: toggled.review,
+    reviews: allReviews,
+    summary,
+  });
 });
 
 app.get('/api/products/:id/qr', async (req, res) => {
@@ -1368,14 +1555,36 @@ app.get('/api/orders', (req, res) => {
   if (!user) return notSignedIn(res);
 
   const allProducts = store.getProducts();
-  const newestFirst = [...(user.orders || [])].reverse().map((ord) => ({
-    ...ord,
-    lines: (ord.lines || []).map((ln) => ({
-      ...ln,
-      image: resolveProductImageUrl(ln, allProducts),
-    })),
-  }));
+  const nowMs = Date.now();
+  const newestFirst = [...(user.orders || [])]
+    .reverse()
+    .map((ord) => enrichOrderForHistory(ord, allProducts, nowMs));
   return res.json(newestFirst);
+});
+
+app.get('/api/orders/history', (req, res) => {
+  const user = userFromReq(req);
+  if (!user) return notSignedIn(res);
+
+  const allProducts = store.getProducts();
+  const nowMs = Date.now();
+  const enriched = [...(user.orders || [])]
+    .reverse()
+    .map((ord) => enrichOrderForHistory(ord, allProducts, nowMs));
+
+  const statusFilter = typeof req.query.status === 'string' ? req.query.status.trim() : 'all';
+  const searchQuery = typeof req.query.search === 'string' ? req.query.search.trim() : '';
+  const sortBy = typeof req.query.sort === 'string' ? req.query.sort.trim() : 'newest';
+
+  const summary = computeOrderHistorySummary(enriched);
+  const filtered = filterAndSortOrderHistory(enriched, { statusFilter, searchQuery, sortBy });
+
+  return res.json({
+    ok: true,
+    orders: filtered,
+    allOrders: enriched,
+    summary,
+  });
 });
 
 app.put('/api/me/bill-email', (req, res) => {
@@ -2248,6 +2457,134 @@ app.post('/api/admin/inventory/restock-low-stock', (req, res) => {
   });
 });
 
+app.post(
+  ['/api/admin/products/batch-update', '/api/admin/products/batch'],
+  (req, res) => {
+    const user = userFromReq(req);
+    if (!user) return notSignedIn(res);
+    if (!isModerator(user)) return forbidden(res, 'Administrator privileges required.');
+
+    const rawProductIds = Array.isArray(req.body?.productIds)
+      ? req.body.productIds
+      : Array.isArray(req.body?.ids)
+      ? req.body.ids
+      : [];
+
+    const plan = planBatchProductTransaction(store.getProducts(), {
+      productIds: rawProductIds,
+      priceMode: req.body?.priceMode,
+      priceValue: req.body?.priceValue,
+      stockMode: req.body?.stockMode,
+      stockValue: req.body?.stockValue,
+      reason: req.body?.reason,
+    });
+
+    if (!plan.ok) {
+      return res.status(400).json({
+        ok: false,
+        code: plan.code || 'BATCH_VALIDATION_ERROR',
+        message: plan.message || 'Invalid batch edit configuration.',
+        plan,
+      });
+    }
+
+    const updatedProducts: ReturnType<typeof enrichProduct>[] = [];
+    const triggeredAlerts: PriceAlertEmailNotification[] = [];
+
+    for (const mut of plan.mutations) {
+      const p = store.findProduct(mut.productId);
+      if (!p) continue;
+
+      if (mut.priceChanged) {
+        p.price = mut.nextPrice;
+        if (mut.nextPrice < mut.previousPrice) {
+          for (const u of store.getUsers()) {
+            if (!Array.isArray(u.priceAlerts) || u.priceAlerts.length === 0) continue;
+            const evalRes = evaluatePriceDropAlerts(u.priceAlerts, p.id, p.price);
+            u.priceAlerts = evalRes.updatedAlerts;
+            for (const notif of evalRes.triggeredNotifications) {
+              triggeredAlerts.push(notif);
+              broadcastToUser(u.email, {
+                type: 'price-drop-alert',
+                notification: notif,
+                product: enrichProduct(p),
+              });
+            }
+          }
+        }
+      }
+
+      if (mut.stockChanged) {
+        p.quantity = mut.nextStock;
+        p.stock = mut.nextStock;
+        p.lowStock = mut.nextLowStock;
+      }
+
+      if (mut.priceChanged || mut.stockChanged) {
+        const txReason = `[${plan.transactionId}] ${plan.normalizedReason}${
+          mut.priceChanged ? ` (Price $${mut.previousPrice.toFixed(2)} → $${mut.nextPrice.toFixed(2)})` : ''
+        }`;
+        recordInventoryTransaction(
+          p,
+          mut.stockDelta >= 0 ? 'RESTOCK' : 'MANUAL_ADJUSTMENT',
+          mut.stockDelta,
+          mut.previousStock,
+          mut.nextStock,
+          user.name,
+          txReason
+        );
+      }
+
+      const enriched = enrichProduct(p);
+      updatedProducts.push(enriched);
+      broadcastToAll({
+        type: 'product-restocked',
+        product: enriched,
+        added: mut.stockDelta,
+        actor: user.name,
+        priceDropped: mut.nextPrice < mut.previousPrice,
+      });
+    }
+
+    // Commit all mutations in a single persistence transaction
+    store.save();
+
+    broadcastToAll({
+      type: 'products-batch-updated',
+      transactionId: plan.transactionId,
+      selectedCount: plan.selectedCount,
+      updatedCount: plan.updatedCount,
+      products: updatedProducts,
+      actor: user.name,
+      timestamp: Date.now(),
+    });
+    broadcastToAll({
+      type: 'activity-feed',
+      message: `${user.name} executed Batch Edit ${plan.transactionId} across ${plan.selectedCount} SKUs (${plan.normalizedReason})`,
+      timestamp: Date.now(),
+    });
+
+    return res.json({
+      ok: true,
+      transactionId: plan.transactionId,
+      selectedCount: plan.selectedCount,
+      updatedCount: plan.updatedCount,
+      priceChangedCount: plan.priceChangedCount,
+      stockChangedCount: plan.stockChangedCount,
+      valuationDelta: plan.valuationDelta,
+      normalizedReason: plan.normalizedReason,
+      plan,
+      products: updatedProducts,
+      triggeredAlerts,
+      message: `Transaction ${plan.transactionId} applied to ${plan.selectedCount} product${
+        plan.selectedCount === 1 ? '' : 's'
+      } (${plan.priceChangedCount} price update${plan.priceChangedCount === 1 ? '' : 's'}, ${
+        plan.stockChangedCount
+      } stock adjustment${plan.stockChangedCount === 1 ? '' : 's'}).`,
+    });
+  }
+);
+
 // ── Serve Static Frontend & Generated Assets ──
 const assetsDir = path.resolve(process.cwd(), 'src/assets');
 app.use('/src/assets', express.static(assetsDir));
@@ -2267,7 +2604,7 @@ app.get(['/admin-login', '/login/admin'], (_req, res) => {
   res.redirect('/login.html?switch=1&mode=admin');
 });
 
-app.get('/', (_req, res) => {
+app.get(['/', '/orders', '/order-history'], (_req, res) => {
   res.sendFile(path.join(staticDir, 'index.html'));
 });
 

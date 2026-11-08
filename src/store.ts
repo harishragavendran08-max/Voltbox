@@ -1,7 +1,14 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import crypto from 'node:crypto';
-import { getProductQuantity, isLowStock, resolveProductImageUrl, PriceAlertSubscription } from './logic/inventory';
+import {
+  getProductQuantity,
+  isLowStock,
+  resolveProductImageUrl,
+  PriceAlertSubscription,
+  ProductReview,
+  getProductSku,
+} from './logic/inventory';
 
 export interface OrderLine {
   productId: number;
@@ -117,6 +124,7 @@ export interface StoreData {
   applications: Application[];
   reports: Report[];
   messages?: ChatMessage[];
+  reviews?: ProductReview[];
 }
 
 const DATA_FILE = path.resolve(process.cwd(), 'voltbox-data.json');
@@ -135,6 +143,7 @@ export class Store {
   private nextReportId = 1;
   private messages: ChatMessage[] = [];
   private nextMessageId = 1;
+  private reviews: ProductReview[] = [];
   private sessions: Record<string, string> = {};
 
   constructor() {
@@ -155,6 +164,7 @@ export class Store {
       this.applications = Array.isArray(data.applications) ? data.applications : [];
       this.reports = Array.isArray(data.reports) ? data.reports : [];
       this.messages = Array.isArray(data.messages) ? data.messages : [];
+      this.reviews = Array.isArray(data.reviews) ? data.reviews : [];
       this.nextId = Math.max(data.nextId || 1, 1);
       this.nextProductId = Math.max(data.nextProductId || 1, 1);
       this.nextApplicationId = Math.max(data.nextApplicationId || 1, 1);
@@ -527,7 +537,27 @@ export class Store {
           updated = true;
         }
         if (Array.isArray(u.orders)) {
-          for (const ord of u.orders) {
+          const fallbackPayMethods = [
+            'UPI QR (PhonePe)',
+            'Visa •••• 4242',
+            'Google Pay (UPI)',
+            'Mastercard •••• 8819',
+            'HDFC NetBanking',
+          ];
+          for (let idx = 0; idx < u.orders.length; idx++) {
+            const ord = u.orders[idx];
+            if (!ord.status || ord.status === 'Pending') {
+              const fromEnd = u.orders.length - 1 - idx;
+              if (fromEnd === 0) ord.status = 'Order Placed';
+              else if (fromEnd === 1) ord.status = 'Processing';
+              else if (fromEnd === 2) ord.status = 'Shipped';
+              else ord.status = 'Delivered';
+              updated = true;
+            }
+            if (!ord.paymentMethod || ord.paymentMethod === 'Fake Pay') {
+              ord.paymentMethod = fallbackPayMethods[idx % fallbackPayMethods.length];
+              updated = true;
+            }
             if (Array.isArray(ord.lines)) {
               for (const ln of ord.lines) {
                 const resolvedImg = resolveProductImageUrl(ln, this.products);
@@ -539,6 +569,10 @@ export class Store {
             }
           }
         }
+      }
+      if (this.reviews.length === 0) {
+        this.seedReviews();
+        updated = true;
       }
       if (updated) {
         this.save();
@@ -562,6 +596,7 @@ export class Store {
       applications: this.applications,
       reports: this.reports,
       messages: this.messages,
+      reviews: this.reviews,
     };
     const tmpFile = `${DATA_FILE}.tmp`;
     fs.writeFileSync(tmpFile, JSON.stringify(data, null, 2), 'utf-8');
@@ -575,6 +610,7 @@ export class Store {
     this.applications = [];
     this.reports = [];
     this.messages = [];
+    this.reviews = [];
     this.nextId = 1;
     this.nextProductId = 1;
     this.nextApplicationId = 1;
@@ -593,6 +629,7 @@ export class Store {
 
     this.seedProducts();
     this.seedMessages();
+    this.seedReviews();
     this.save();
   }
 
@@ -1006,5 +1043,349 @@ export class Store {
     msg.reactions[emoji] = count + 1;
     this.save();
     return msg;
+  }
+
+  private seedReviews(): void {
+    const now = Date.now();
+    const dayMs = 86_400_000;
+    const seeded: ProductReview[] = [
+      {
+        id: 'REV-VB-1901',
+        productId: 19,
+        productTitle: 'Nvidia RTX 5090',
+        sku: 'VB-GPU-019',
+        authorName: 'Maya Lin',
+        authorEmail: 'maya@voltbox.test',
+        authorColor: '#20c997',
+        authorInitial: 'M',
+        rating: 5,
+        title: 'Whisper-quiet vapor chamber under 100% CUDA & Path-Tracing load',
+        comment:
+          'Installed in my 4-slot SFF workstation with an 850W ATX 3.1 PSU. Core temps stay locked at 61°C during extended PyTorch training and 4K 175Hz gaming with zero coil whine.',
+        useCaseTag: 'AI / Workstation',
+        verifiedPurchase: true,
+        orderId: 'VB-5FC8',
+        purchasedAt: now - dayMs * 9,
+        helpfulCount: 14,
+        helpfulVoterEmails: ['alex.chen@gmail.com'],
+        createdAt: now - dayMs * 6,
+      },
+      {
+        id: 'REV-VB-1902',
+        productId: 19,
+        productTitle: 'Nvidia RTX 5090',
+        sku: 'VB-GPU-019',
+        authorName: 'Devon Park',
+        authorEmail: 'devon@voltbox.test',
+        authorColor: '#ff922b',
+        authorInitial: 'D',
+        rating: 5,
+        title: 'PCIe 5.0 bandwidth and 32GB GDDR7 VRAM are a generational leap',
+        comment:
+          'Upgraded from an RTX 4080. Frame pacing at 3440×1440 ultrawide is rock solid, and the included 16-pin adapter and anti-sag bracket fit cleanly in a mid-tower case.',
+        useCaseTag: 'Gaming Rig',
+        verifiedPurchase: true,
+        orderId: 'VB-C91E',
+        purchasedAt: now - dayMs * 12,
+        helpfulCount: 9,
+        helpfulVoterEmails: [],
+        createdAt: now - dayMs * 8,
+      },
+      {
+        id: 'REV-VB-1903',
+        productId: 19,
+        productTitle: 'Nvidia RTX 5090',
+        sku: 'VB-GPU-019',
+        authorName: 'Elena Vance',
+        authorEmail: 'elena@voltbox.test',
+        authorColor: '#cc5de8',
+        authorInitial: 'E',
+        rating: 4,
+        title: 'Unmatched 4K rasterization — double check your case length clearance',
+        comment:
+          'Performance is 10/10 across Blender Cycles and Unreal Engine 5.4. Just make sure you have at least 335mm of front-radiator clearance before mounting.',
+        useCaseTag: 'Creator Build',
+        verifiedPurchase: true,
+        orderId: 'VB-FF6D',
+        purchasedAt: now - dayMs * 15,
+        helpfulCount: 7,
+        helpfulVoterEmails: [],
+        createdAt: now - dayMs * 11,
+      },
+      {
+        id: 'REV-VB-2001',
+        productId: 20,
+        productTitle: 'AMD RYZEN 9',
+        sku: 'VB-CPU-020',
+        authorName: 'Alex Chen',
+        authorEmail: 'alex.chen@gmail.com',
+        authorColor: '#4dabf7',
+        authorInitial: 'A',
+        rating: 5,
+        title: '16 cores boost to 5.7 GHz effortlessly with curve optimizer -20',
+        comment:
+          'Paired with the MSI B570 and 32GB DDR5-6000 CL30. Full C++ and Rust workspace rebuilds dropped by 42%, and gaming 1% lows are butter smooth.',
+        useCaseTag: 'Gaming Rig',
+        verifiedPurchase: true,
+        orderId: 'VB-C31B',
+        purchasedAt: now - dayMs * 7,
+        helpfulCount: 11,
+        helpfulVoterEmails: [],
+        createdAt: now - dayMs * 4,
+      },
+      {
+        id: 'REV-VB-2002',
+        productId: 20,
+        productTitle: 'AMD RYZEN 9',
+        sku: 'VB-CPU-020',
+        authorName: 'Marcus Sterling',
+        authorEmail: 'marcus@voltbox.test',
+        authorColor: '#51cf66',
+        authorInitial: 'M',
+        rating: 5,
+        title: 'Cooler than expected under a dual-tower air cooler',
+        comment:
+          'Running Eco-tuned 125W profile under a Noctua NH-D15 Chromax. Hits 96% of stock multi-core score while staying below 72°C all day.',
+        useCaseTag: 'Silent / Thermal',
+        verifiedPurchase: true,
+        orderId: 'VB-A5AD',
+        purchasedAt: now - dayMs * 14,
+        helpfulCount: 6,
+        helpfulVoterEmails: [],
+        createdAt: now - dayMs * 10,
+      },
+      {
+        id: 'REV-VB-2101',
+        productId: 21,
+        productTitle: 'MSI MotherBoard B570',
+        sku: 'VB-MBD-021',
+        authorName: 'Samira Khan',
+        authorEmail: 'samira@voltbox.test',
+        authorColor: '#f06595',
+        authorInitial: 'S',
+        rating: 5,
+        title: 'Rock-solid 14+2+1 VRM stages and toolless M.2 heatsinks',
+        comment:
+          'EXPO DDR5-6000 trained on first boot in under 18 seconds. Rear I/O has plenty of 10Gbps USB-A and USB-C ports, and VRM thermals never cross 49°C.',
+        useCaseTag: 'Drop-In Upgrade',
+        verifiedPurchase: true,
+        orderId: 'VB-5FC8',
+        purchasedAt: now - dayMs * 8,
+        helpfulCount: 8,
+        helpfulVoterEmails: [],
+        createdAt: now - dayMs * 5,
+      },
+      {
+        id: 'REV-VB-2201',
+        productId: 22,
+        productTitle: 'Samsung SSD',
+        sku: 'VB-STR-022',
+        authorName: 'Devon Park',
+        authorEmail: 'devon@voltbox.test',
+        authorColor: '#ff922b',
+        authorInitial: 'D',
+        rating: 5,
+        title: 'Sustained 7,420 MB/s sequential reads on CrystalDiskMark',
+        comment:
+          'Used as my primary scratch disk for 8K ProRes timelines and Linux VM snapshots. Dedicated DRAM cache keeps sustained writes fast even past 200GB.',
+        useCaseTag: 'Creator Build',
+        verifiedPurchase: true,
+        orderId: 'VB-6A27',
+        purchasedAt: now - dayMs * 10,
+        helpfulCount: 10,
+        helpfulVoterEmails: [],
+        createdAt: now - dayMs * 7,
+      },
+      {
+        id: 'REV-VB-2401',
+        productId: 24,
+        productTitle: 'Apple AirPods Max',
+        sku: 'VB-AUD-024',
+        authorName: 'Marcus Sterling',
+        authorEmail: 'marcus@voltbox.test',
+        authorColor: '#51cf66',
+        authorInitial: 'M',
+        rating: 5,
+        title: 'Anodized aluminum build and studio-grade ANC isolation',
+        comment:
+          'Cancels out workstation fan hum completely during late-night editing sessions. Sub-bass extension and spatial imaging are remarkably clean.',
+        useCaseTag: 'Creator Build',
+        verifiedPurchase: true,
+        orderId: 'VB-04C1',
+        purchasedAt: now - dayMs * 11,
+        helpfulCount: 5,
+        helpfulVoterEmails: [],
+        createdAt: now - dayMs * 6,
+      },
+      {
+        id: 'REV-VB-2501',
+        productId: 25,
+        productTitle: 'Sony PlayStation 5 Pro',
+        sku: 'VB-GMG-025',
+        authorName: 'Alex Chen',
+        authorEmail: 'alex.chen@gmail.com',
+        authorColor: '#4dabf7',
+        authorInitial: 'A',
+        rating: 5,
+        title: 'Locked 60–120 FPS with PSSR upscaling on a 4K OLED display',
+        comment:
+          'The 2TB built-in NVMe SSD and upgraded RDNA ray-tracing compute units make a huge visual difference on HDMI 2.1 VRR monitors.',
+        useCaseTag: 'Gaming Rig',
+        verifiedPurchase: true,
+        orderId: 'VB-B9D5',
+        purchasedAt: now - dayMs * 9,
+        helpfulCount: 9,
+        helpfulVoterEmails: [],
+        createdAt: now - dayMs * 3,
+      },
+      {
+        id: 'REV-VB-2801',
+        productId: 28,
+        productTitle: 'Corsair Vengeance 32GB DDR5-6000 RGB',
+        sku: 'VB-MEM-028',
+        authorName: 'Elena Vance',
+        authorEmail: 'elena@voltbox.test',
+        authorColor: '#cc5de8',
+        authorInitial: 'E',
+        rating: 5,
+        title: 'Tight CL30 timings with Hynix A-die stability right out of the box',
+        comment:
+          'Zero memory errors in 4 passes of MemTest86 at 6000 MT/s CL30. Low-profile aluminum heatspreaders clear dual-tower air coolers easily.',
+        useCaseTag: 'Gaming Rig',
+        verifiedPurchase: true,
+        orderId: 'VB-596F',
+        purchasedAt: now - dayMs * 6,
+        helpfulCount: 6,
+        helpfulVoterEmails: [],
+        createdAt: now - dayMs * 2,
+      },
+    ];
+    this.reviews = seeded;
+  }
+
+  public getReviews(productId?: number): ProductReview[] {
+    if (productId === undefined || productId === null || Number.isNaN(Number(productId))) {
+      return [...this.reviews].sort((a, b) => b.createdAt - a.createdAt);
+    }
+    const targetPid = Math.floor(Number(productId));
+    return this.reviews
+      .filter((r) => Number(r.productId) === targetPid)
+      .sort((a, b) => b.createdAt - a.createdAt);
+  }
+
+  public upsertReview(input: {
+    productId: number;
+    authorName: string;
+    authorEmail: string;
+    authorColor: string;
+    authorInitial: string;
+    rating: number;
+    title: string;
+    comment: string;
+    useCaseTag: string;
+    orderId: string | null;
+    purchasedAt?: number | null;
+  }): { review: ProductReview; isUpdate: boolean; product: Product | null } {
+    const product = this.findProduct(input.productId);
+    const cleanEmail = input.authorEmail.trim().toLowerCase();
+    const existingIdx = this.reviews.findIndex(
+      (r) =>
+        Number(r.productId) === Number(input.productId) &&
+        String(r.authorEmail || '').trim().toLowerCase() === cleanEmail
+    );
+
+    const now = Date.now();
+    const sku = product ? getProductSku(product) : `VB-PRT-${String(input.productId).padStart(3, '0')}`;
+    let savedReview: ProductReview;
+    let isUpdate = false;
+
+    if (existingIdx >= 0) {
+      isUpdate = true;
+      const prev = this.reviews[existingIdx];
+      savedReview = {
+        ...prev,
+        authorName: input.authorName,
+        authorColor: input.authorColor || prev.authorColor,
+        authorInitial: input.authorInitial || prev.authorInitial,
+        rating: Math.min(5, Math.max(1, Math.round(Number(input.rating) || 5))),
+        title: input.title,
+        comment: input.comment,
+        useCaseTag: input.useCaseTag || prev.useCaseTag || 'Gaming Rig',
+        orderId: input.orderId || prev.orderId,
+        purchasedAt: input.purchasedAt ?? prev.purchasedAt ?? now,
+        verifiedPurchase: true,
+        updatedAt: now,
+      };
+      this.reviews[existingIdx] = savedReview;
+    } else {
+      const randSuffix = Math.floor(1000 + Math.random() * 9000);
+      savedReview = {
+        id: `REV-VB-${input.productId}-${randSuffix}`,
+        productId: input.productId,
+        productTitle: product?.title || `Component #${input.productId}`,
+        sku,
+        authorName: input.authorName,
+        authorEmail: input.authorEmail,
+        authorColor: input.authorColor || BRAND_COLOR,
+        authorInitial: input.authorInitial || 'V',
+        rating: Math.min(5, Math.max(1, Math.round(Number(input.rating) || 5))),
+        title: input.title,
+        comment: input.comment,
+        useCaseTag: input.useCaseTag || 'Gaming Rig',
+        verifiedPurchase: true,
+        orderId: input.orderId,
+        purchasedAt: input.purchasedAt ?? now,
+        helpfulCount: 1,
+        helpfulVoterEmails: [cleanEmail],
+        createdAt: now,
+      };
+      this.reviews.unshift(savedReview);
+    }
+
+    // Recalculate product ratingRate & ratingCount so catalog cards reflect live shopper reviews
+    if (product) {
+      const productReviews = this.getReviews(product.id);
+      if (productReviews.length > 0) {
+        const sum = productReviews.reduce((acc, r) => acc + Number(r.rating || 5), 0);
+        const avg = Math.round((sum / productReviews.length) * 10) / 10;
+        if (!isUpdate) {
+          product.ratingCount = Math.max(productReviews.length, (Number(product.ratingCount) || 0) + 1);
+        } else {
+          product.ratingCount = Math.max(productReviews.length, Number(product.ratingCount) || productReviews.length);
+        }
+        // Blend slightly with historical catalog rating or use direct review average so user sees immediate impact
+        product.ratingRate = avg;
+      }
+    }
+
+    this.save();
+    return { review: savedReview, isUpdate, product };
+  }
+
+  public toggleReviewHelpful(
+    reviewId: string,
+    voterEmail: string
+  ): { review: ProductReview | null; voted: boolean } {
+    const cleanId = String(reviewId || '').trim();
+    const cleanVoter = String(voterEmail || '').trim().toLowerCase();
+    const rev = this.reviews.find((r) => r.id === cleanId);
+    if (!rev) return { review: null, voted: false };
+
+    if (!Array.isArray(rev.helpfulVoterEmails)) {
+      rev.helpfulVoterEmails = [];
+    }
+    const idx = rev.helpfulVoterEmails.indexOf(cleanVoter);
+    let voted = false;
+    if (idx >= 0) {
+      rev.helpfulVoterEmails.splice(idx, 1);
+      rev.helpfulCount = Math.max(0, (Number(rev.helpfulCount) || 1) - 1);
+      voted = false;
+    } else {
+      rev.helpfulVoterEmails.push(cleanVoter);
+      rev.helpfulCount = (Number(rev.helpfulCount) || 0) + 1;
+      voted = true;
+    }
+    this.save();
+    return { review: rev, voted };
   }
 }

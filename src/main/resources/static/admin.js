@@ -8,6 +8,12 @@ var adminMetrics = null;
 var adminInventorySummary = null;
 var activeAdminView = "catalog";
 var activeStockFilter = "all";
+var adminCatalogLayout = "table";
+var adminBatchModeActive = false;
+var adminSelectedProductIds = [];
+var isExecutingAdminBatch = false;
+var lastAdminBatchStatusMessage = "";
+var lastAdminBatchStatusIsError = false;
 var toastTimeout = null;
 
 function getToken() {
@@ -102,6 +108,8 @@ function loadAllAdminData(retriedWithDemoToken) {
 
       renderKpiStrip();
       renderProductsTable();
+      renderAdminCatalogGrid();
+      updateAdminBatchPanelUI();
       renderInventoryView();
       renderHealthView();
     })
@@ -166,20 +174,71 @@ function getFilteredAdminProducts() {
   });
 }
 
+function isAdminProductSelected(productId) {
+  return adminSelectedProductIds.indexOf(Number(productId)) !== -1;
+}
+
+function getCurrentAdminBatchPlan() {
+  var priceModeEl = document.getElementById("admin-batch-price-mode");
+  var priceValEl = document.getElementById("admin-batch-price-value");
+  var stockModeEl = document.getElementById("admin-batch-stock-mode");
+  var stockValEl = document.getElementById("admin-batch-stock-value");
+  var reasonEl = document.getElementById("admin-batch-reason");
+
+  var priceMode = priceModeEl ? priceModeEl.value : "none";
+  var priceVal = priceValEl ? priceValEl.value : "";
+  var stockMode = stockModeEl ? stockModeEl.value : "none";
+  var stockVal = stockValEl ? stockValEl.value : "";
+  var reason = reasonEl ? reasonEl.value : "";
+
+  if (window.VoltboxQR && typeof window.VoltboxQR.planBatchProductTransaction === "function") {
+    return window.VoltboxQR.planBatchProductTransaction(adminProducts, {
+      productIds: adminSelectedProductIds,
+      priceMode: priceMode,
+      priceValue: priceVal,
+      stockMode: stockMode,
+      stockValue: stockVal,
+      reason: reason
+    });
+  }
+  return null;
+}
+
 function renderProductsTable() {
   var tbody = document.getElementById("admin-products-tbody");
   if (!tbody) return;
 
   var filtered = getFilteredAdminProducts();
+  var selectAllEl = document.getElementById("admin-table-select-all");
+  if (selectAllEl) {
+    var allVisibleSelected =
+      filtered.length > 0 &&
+      filtered.every(function (p) { return isAdminProductSelected(p.id); });
+    selectAllEl.checked = allVisibleSelected;
+    selectAllEl.indeterminate =
+      !allVisibleSelected &&
+      filtered.some(function (p) { return isAdminProductSelected(p.id); });
+  }
+
   if (filtered.length === 0) {
     tbody.innerHTML =
-      '<tr><td colspan="8" class="empty-cell">No products match the current filter criteria.</td></tr>';
+      '<tr><td colspan="9" class="empty-cell">No products match the current filter criteria.</td></tr>';
     return;
+  }
+
+  var plan = getCurrentAdminBatchPlan();
+  var mutationById = {};
+  if (plan && plan.ok && Array.isArray(plan.mutations)) {
+    for (var m = 0; m < plan.mutations.length; m++) {
+      mutationById[plan.mutations[m].productId] = plan.mutations[m];
+    }
   }
 
   var html = "";
   for (var i = 0; i < filtered.length; i++) {
     var p = filtered[i];
+    var isSelected = isAdminProductSelected(p.id);
+    var mut = mutationById[p.id] || null;
     var qty = typeof p.stockQuantity === "number" ? p.stockQuantity : (p.quantity || 0);
     var statusClass = "ok";
     var statusText = "Nominal (" + qty + ")";
@@ -201,8 +260,28 @@ function renderProductsTable() {
       ? p.image
       : ("/images/categories/" + (p.category || "components") + ".svg");
 
+    var priceCellHtml = formatMoney(p.price);
+    if (mut && mut.priceChanged) {
+      priceCellHtml =
+        '<span class="batch-prev-val">' + formatMoney(mut.previousPrice) + '</span> ' +
+        '<span class="batch-next-val ' + (mut.priceDelta < 0 ? 'drop' : 'gain') + '">&rarr; ' + formatMoney(mut.nextPrice) + '</span>';
+    }
+
+    var stockCellHtml = String(qty);
+    if (mut && mut.stockChanged) {
+      stockCellHtml =
+        '<span class="batch-prev-val">' + mut.previousStock + '</span> ' +
+        '<span class="batch-next-val ' + (mut.stockDelta >= 0 ? 'gain' : 'drop') + '">&rarr; ' + mut.nextStock + '</span>';
+    }
+
     html +=
-      '<tr class="' + (p.takenDown ? 'is-archived' : '') + '" data-product-id="' + p.id + '">' +
+      '<tr class="' + (p.takenDown ? 'is-archived ' : '') + (isSelected ? 'is-batch-selected' : '') + '" data-product-id="' + p.id + '" onclick="handleAdminRowClick(event, ' + p.id + ')">' +
+        '<td class="select-col">' +
+          '<input type="checkbox" class="admin-row-select-cb" data-product-id="' + p.id + '" data-testid="admin-select-product-' + p.id + '" ' +
+          '       aria-label="Select ' + escHtml(p.title || p.name) + ' for batch edit" ' +
+          (isSelected ? 'checked ' : '') +
+          '       onclick="event.stopPropagation(); toggleAdminProductSelection(' + p.id + ')" />' +
+        '</td>' +
         '<td>' +
           '<div class="prod-cell">' +
             '<img class="prod-thumb" src="' + escHtml(imgSrc) + '" alt="' + escHtml(p.title) + '" referrerpolicy="no-referrer" onerror="this.onerror=null;this.src=\'/images/categories/components.svg\';" />' +
@@ -214,27 +293,374 @@ function renderProductsTable() {
         '</td>' +
         '<td class="mono">' + escHtml(p.sku) + '</td>' +
         '<td>' + escHtml(p.componentGroup || "other") + ' · ' + escHtml(p.category || "components") + '</td>' +
-        '<td class="num-col">' + formatMoney(p.price) + '</td>' +
-        '<td class="num-col" id="admin-stock-val-' + p.id + '">' + qty + '</td>' +
+        '<td class="num-col" id="admin-price-val-' + p.id + '">' + priceCellHtml + '</td>' +
+        '<td class="num-col" id="admin-stock-val-' + p.id + '">' + stockCellHtml + '</td>' +
         '<td>' +
           '<div class="stock-stepper">' +
-            '<button type="button" class="step-btn" onclick="quickAdjustStock(' + p.id + ', -1)">−1</button>' +
-            '<button type="button" class="step-btn" onclick="quickAdjustStock(' + p.id + ', 1)">+1</button>' +
-            '<button type="button" class="step-btn" onclick="quickAdjustStock(' + p.id + ', 5)">+5</button>' +
+            '<button type="button" class="step-btn" onclick="event.stopPropagation(); quickAdjustStock(' + p.id + ', -1)">−1</button>' +
+            '<button type="button" class="step-btn" onclick="event.stopPropagation(); quickAdjustStock(' + p.id + ', 1)">+1</button>' +
+            '<button type="button" class="step-btn" onclick="event.stopPropagation(); quickAdjustStock(' + p.id + ', 5)">+5</button>' +
           '</div>' +
         '</td>' +
         '<td><span class="state-label ' + statusClass + '">' + escHtml(statusText) + '</span></td>' +
         '<td class="actions-col">' +
           '<div class="row-actions">' +
-            '<button type="button" class="btn-secondary" onclick="openEditProductModal(' + p.id + ')">Edit</button>' +
+            '<button type="button" class="btn-secondary" onclick="event.stopPropagation(); openEditProductModal(' + p.id + ')">Edit</button>' +
             (p.takenDown
-              ? '<button type="button" class="btn-secondary" onclick="toggleArchiveProduct(' + p.id + ', true)">Restore</button>'
-              : '<button type="button" class="btn-danger-outline" onclick="toggleArchiveProduct(' + p.id + ', false)">Archive</button>') +
+              ? '<button type="button" class="btn-secondary" onclick="event.stopPropagation(); toggleArchiveProduct(' + p.id + ', true)">Restore</button>'
+              : '<button type="button" class="btn-danger-outline" onclick="event.stopPropagation(); toggleArchiveProduct(' + p.id + ', false)">Archive</button>') +
           '</div>' +
         '</td>' +
       '</tr>';
   }
   tbody.innerHTML = html;
+}
+
+function renderAdminCatalogGrid() {
+  var gridEl = document.getElementById("admin-catalog-grid");
+  if (!gridEl) return;
+
+  var filtered = getFilteredAdminProducts();
+  if (filtered.length === 0) {
+    gridEl.innerHTML =
+      '<div class="empty-cell">No products match the current filter criteria.</div>';
+    return;
+  }
+
+  var plan = getCurrentAdminBatchPlan();
+  var mutationById = {};
+  if (plan && plan.ok && Array.isArray(plan.mutations)) {
+    for (var m = 0; m < plan.mutations.length; m++) {
+      mutationById[plan.mutations[m].productId] = plan.mutations[m];
+    }
+  }
+
+  var html = "";
+  for (var i = 0; i < filtered.length; i++) {
+    var p = filtered[i];
+    var isSelected = isAdminProductSelected(p.id);
+    var mut = mutationById[p.id] || null;
+    var qty = typeof p.stockQuantity === "number" ? p.stockQuantity : (p.quantity || 0);
+    var statusClass = qty === 0 || qty <= 2 ? "crit" : (qty < 5 ? "warn" : "ok");
+    var statusText = p.takenDown ? "Archived" : (qty === 0 ? "Out of Stock" : (qty < 5 ? ("Low · " + qty + " left") : (qty + " in stock")));
+
+    var imgSrc = (p.image && (p.image.indexOf("http") === 0 || p.image.indexOf("/") === 0))
+      ? p.image
+      : ("/images/categories/" + (p.category || "components") + ".svg");
+
+    var priceHtml = formatMoney(p.price);
+    if (mut && mut.priceChanged) {
+      priceHtml =
+        '<span class="batch-prev-val">' + formatMoney(mut.previousPrice) + '</span> ' +
+        '<span class="batch-next-val ' + (mut.priceDelta < 0 ? 'drop' : 'gain') + '">&rarr; ' + formatMoney(mut.nextPrice) + '</span>';
+    }
+
+    var stockHtml = statusText;
+    if (mut && mut.stockChanged) {
+      stockHtml =
+        '<span class="batch-prev-val">' + mut.previousStock + 'u</span> ' +
+        '<span class="batch-next-val ' + (mut.stockDelta >= 0 ? 'gain' : 'drop') + '">&rarr; ' + mut.nextStock + 'u</span>';
+    }
+
+    html +=
+      '<article class="admin-grid-card' + (isSelected ? ' is-batch-selected' : '') + (p.takenDown ? ' is-archived' : '') + '" ' +
+      '         data-product-id="' + p.id + '" data-testid="admin-grid-card-' + p.id + '" ' +
+      '         onclick="toggleAdminProductSelection(' + p.id + ')">' +
+        '<div class="admin-grid-card-top">' +
+          '<label class="admin-card-select-wrap" onclick="event.stopPropagation()">' +
+            '<input type="checkbox" class="admin-grid-select-cb" data-product-id="' + p.id + '" ' +
+            (isSelected ? 'checked ' : '') +
+            '       aria-label="Select ' + escHtml(p.title || p.name) + '" ' +
+            '       onchange="toggleAdminProductSelection(' + p.id + ')" />' +
+            '<span class="mono">' + escHtml(p.sku) + '</span>' +
+          '</label>' +
+          '<span class="state-label ' + statusClass + '">' + stockHtml + '</span>' +
+        '</div>' +
+        '<div class="admin-grid-card-body">' +
+          '<img class="admin-grid-thumb" src="' + escHtml(imgSrc) + '" alt="' + escHtml(p.title) + '" referrerpolicy="no-referrer" onerror="this.onerror=null;this.src=\'/images/categories/components.svg\';" />' +
+          '<div class="admin-grid-info">' +
+            '<h3 class="admin-grid-title">' + escHtml(p.title || p.name) + '</h3>' +
+            '<div class="admin-grid-meta">' + escHtml(p.componentGroup || "other") + ' · ID #' + p.id + '</div>' +
+            '<div class="admin-grid-price mono">' + priceHtml + '</div>' +
+          '</div>' +
+        '</div>' +
+        '<div class="admin-grid-card-foot" onclick="event.stopPropagation()">' +
+          '<div class="stock-stepper">' +
+            '<button type="button" class="step-btn" onclick="quickAdjustStock(' + p.id + ', -1)">−1</button>' +
+            '<button type="button" class="step-btn" onclick="quickAdjustStock(' + p.id + ', 1)">+1</button>' +
+            '<button type="button" class="step-btn" onclick="quickAdjustStock(' + p.id + ', 5)">+5</button>' +
+          '</div>' +
+          '<button type="button" class="btn-secondary" onclick="openEditProductModal(' + p.id + ')">Edit</button>' +
+        '</div>' +
+      '</article>';
+  }
+  gridEl.innerHTML = html;
+}
+
+window.handleAdminRowClick = function (e, productId) {
+  if (!adminBatchModeActive) return;
+  var tag = e && e.target && e.target.tagName ? e.target.tagName.toUpperCase() : "";
+  if (tag === "BUTTON" || tag === "INPUT" || tag === "A" || tag === "SELECT") return;
+  toggleAdminProductSelection(productId);
+};
+
+window.toggleAdminBatchMode = function (forceState) {
+  if (typeof forceState === "boolean") {
+    adminBatchModeActive = forceState;
+  } else {
+    adminBatchModeActive = !adminBatchModeActive;
+  }
+  updateAdminBatchPanelUI();
+  renderProductsTable();
+  renderAdminCatalogGrid();
+};
+window.toggleAdminBatchEditMode = window.toggleAdminBatchMode;
+
+window.toggleAdminProductSelection = function (productId, forceState) {
+  var pid = Number(productId);
+  if (!pid || pid <= 0) return;
+
+  var action = typeof forceState === "boolean" ? (forceState ? "add" : "remove") : "toggle";
+  if (window.VoltboxQR && typeof window.VoltboxQR.toggleBatchSelectionIds === "function") {
+    adminSelectedProductIds = window.VoltboxQR.toggleBatchSelectionIds(adminSelectedProductIds, pid, action);
+  } else {
+    var idx = adminSelectedProductIds.indexOf(pid);
+    if (action === "add" && idx === -1) adminSelectedProductIds.push(pid);
+    else if (action === "remove" && idx !== -1) adminSelectedProductIds.splice(idx, 1);
+    else if (action === "toggle") {
+      if (idx === -1) adminSelectedProductIds.push(pid);
+      else adminSelectedProductIds.splice(idx, 1);
+    }
+  }
+
+  if (adminSelectedProductIds.length > 0 && !adminBatchModeActive) {
+    adminBatchModeActive = true;
+  }
+
+  updateAdminBatchPanelUI();
+  renderProductsTable();
+  renderAdminCatalogGrid();
+};
+window.toggleAdminProductBatchSelect = window.toggleAdminProductSelection;
+
+window.selectAllVisibleAdminProducts = function () {
+  var visibleIds = getFilteredAdminProducts().map(function (p) { return p.id; });
+  if (window.VoltboxQR && typeof window.VoltboxQR.toggleBatchSelectionIds === "function") {
+    adminSelectedProductIds = window.VoltboxQR.toggleBatchSelectionIds(adminSelectedProductIds, visibleIds, "add");
+  } else {
+    adminSelectedProductIds = visibleIds.slice();
+  }
+  adminBatchModeActive = true;
+  updateAdminBatchPanelUI();
+  renderProductsTable();
+  renderAdminCatalogGrid();
+};
+
+window.selectLowStockAdminProducts = function () {
+  var lowIds = adminProducts
+    .filter(function (p) {
+      var q = typeof p.stockQuantity === "number" ? p.stockQuantity : (p.quantity || 0);
+      return !p.takenDown && q < 5;
+    })
+    .map(function (p) { return p.id; });
+
+  if (window.VoltboxQR && typeof window.VoltboxQR.toggleBatchSelectionIds === "function") {
+    adminSelectedProductIds = window.VoltboxQR.toggleBatchSelectionIds([], lowIds, "replace");
+  } else {
+    adminSelectedProductIds = lowIds.slice();
+  }
+  adminBatchModeActive = true;
+  updateAdminBatchPanelUI();
+  renderProductsTable();
+  renderAdminCatalogGrid();
+};
+
+window.clearAdminBatchSelection = function () {
+  adminSelectedProductIds = [];
+  lastAdminBatchStatusMessage = "";
+  updateAdminBatchPanelUI();
+  renderProductsTable();
+  renderAdminCatalogGrid();
+};
+
+window.applyAdminBatchPricePreset = function (mode, val) {
+  var modeEl = document.getElementById("admin-batch-price-mode");
+  var valEl = document.getElementById("admin-batch-price-value");
+  if (modeEl) modeEl.value = mode;
+  if (valEl) {
+    valEl.disabled = (mode === "none");
+    valEl.value = String(val);
+  }
+  updateAdminBatchPanelUI();
+  renderProductsTable();
+  renderAdminCatalogGrid();
+};
+
+window.applyAdminBatchStockPreset = function (mode, val) {
+  var modeEl = document.getElementById("admin-batch-stock-mode");
+  var valEl = document.getElementById("admin-batch-stock-value");
+  if (modeEl) modeEl.value = mode;
+  if (valEl) {
+    valEl.disabled = (mode === "none");
+    valEl.value = String(val);
+  }
+  updateAdminBatchPanelUI();
+  renderProductsTable();
+  renderAdminCatalogGrid();
+};
+
+function setAdminBatchStatusMsg(text, isError) {
+  lastAdminBatchStatusMessage = text || "";
+  lastAdminBatchStatusIsError = Boolean(isError);
+  var msgEl = document.getElementById("admin-batch-status-msg");
+  if (!msgEl) return;
+  if (!lastAdminBatchStatusMessage) {
+    msgEl.hidden = true;
+    msgEl.textContent = "";
+    return;
+  }
+  msgEl.textContent = lastAdminBatchStatusMessage;
+  msgEl.className = "batch-status-msg " + (lastAdminBatchStatusIsError ? "error" : "success");
+  msgEl.hidden = false;
+}
+
+function updateAdminBatchPanelUI() {
+  var toggleBtn = document.getElementById("admin-batch-mode-toggle");
+  var toggleCountEl = document.getElementById("admin-batch-toggle-count");
+  var panelEl = document.getElementById("admin-batch-edit-panel");
+  var selCountEl = document.getElementById("admin-batch-selected-count");
+  var priceModeEl = document.getElementById("admin-batch-price-mode");
+  var priceValEl = document.getElementById("admin-batch-price-value");
+  var stockModeEl = document.getElementById("admin-batch-stock-mode");
+  var stockValEl = document.getElementById("admin-batch-stock-value");
+  var previewEl = document.getElementById("admin-batch-preview-strip");
+  var submitBtn = document.getElementById("admin-batch-submit-btn");
+
+  var count = adminSelectedProductIds.length;
+  var showPanel = adminBatchModeActive || count > 0;
+
+  if (toggleBtn) {
+    toggleBtn.classList.toggle("active", showPanel);
+    toggleBtn.setAttribute("aria-pressed", showPanel ? "true" : "false");
+  }
+  if (toggleCountEl) {
+    toggleCountEl.textContent = String(count);
+  }
+  if (panelEl) {
+    panelEl.hidden = !showPanel;
+  }
+  if (selCountEl) {
+    selCountEl.textContent = String(count);
+  }
+
+  if (priceModeEl && priceValEl) {
+    var pMode = priceModeEl.value;
+    priceValEl.disabled = (pMode === "none");
+    if (pMode === "percent") priceValEl.placeholder = "e.g. -10 (%)";
+    else if (pMode === "delta") priceValEl.placeholder = "e.g. -15.00 ($)";
+    else if (pMode === "set") priceValEl.placeholder = "e.g. 149.99 ($)";
+    else priceValEl.placeholder = "Unchanged";
+  }
+
+  if (stockModeEl && stockValEl) {
+    var sMode = stockModeEl.value;
+    stockValEl.disabled = (sMode === "none");
+    if (sMode === "delta") stockValEl.placeholder = "e.g. +5 (units)";
+    else if (sMode === "set") stockValEl.placeholder = "e.g. 20 (units)";
+    else stockValEl.placeholder = "Unchanged";
+  }
+
+  var plan = getCurrentAdminBatchPlan();
+  if (submitBtn) {
+    submitBtn.innerHTML =
+      '<span>Apply Batch Transaction' + (count > 0 ? (' (' + count + ' SKU' + (count === 1 ? '' : 's') + ')') : '') + '</span>';
+    submitBtn.disabled = isExecutingAdminBatch;
+  }
+
+  if (previewEl) {
+    if (count === 0) {
+      previewEl.innerHTML =
+        'Select one or more products in the catalog table/grid below (or click <strong>Select All Visible</strong>) to preview bulk changes.';
+    } else if (!plan || !plan.ok) {
+      previewEl.innerHTML =
+        '<span>' + escHtml((plan && plan.message) || "Configure a bulk price update or stock adjustment above to preview the transaction.") + '</span>';
+    } else {
+      var valDeltaStr = (plan.valuationDelta >= 0 ? "+" : "−") + formatMoney(Math.abs(plan.valuationDelta));
+      var stockDeltaStr = (plan.totalStockUnitsDelta >= 0 ? "+" : "") + plan.totalStockUnitsDelta + " units";
+      var sampleItems = plan.mutations.slice(0, 3).map(function (m) {
+        var parts = [escHtml(m.sku)];
+        if (m.priceChanged) parts.push(formatMoney(m.previousPrice) + " → " + formatMoney(m.nextPrice));
+        if (m.stockChanged) parts.push(m.previousStock + "u → " + m.nextStock + "u");
+        return parts.join(": ");
+      });
+      previewEl.innerHTML =
+        '<strong>Preview (' + escHtml(plan.transactionId) + '):</strong> ' +
+        plan.priceChangedCount + ' price update' + (plan.priceChangedCount === 1 ? '' : 's') + ' · ' +
+        plan.stockChangedCount + ' stock adjustment' + (plan.stockChangedCount === 1 ? '' : 's') + ' · ' +
+        'Net Stock: <strong class="mono">' + escHtml(stockDeltaStr) + '</strong> · ' +
+        'Valuation Delta: <strong class="mono">' + escHtml(valDeltaStr) + '</strong>' +
+        (sampleItems.length > 0 ? (' · <span class="mono">' + sampleItems.join(" | ") + (plan.mutations.length > 3 ? " …" : "") + '</span>') : '');
+    }
+  }
+}
+
+function submitAdminBatchTransaction(e) {
+  if (e && typeof e.preventDefault === "function") e.preventDefault();
+  if (isExecutingAdminBatch) return;
+
+  var priceModeEl = document.getElementById("admin-batch-price-mode");
+  var priceValEl = document.getElementById("admin-batch-price-value");
+  var stockModeEl = document.getElementById("admin-batch-stock-mode");
+  var stockValEl = document.getElementById("admin-batch-stock-value");
+  var reasonEl = document.getElementById("admin-batch-reason");
+
+  var priceMode = priceModeEl ? priceModeEl.value : "none";
+  var priceVal = priceValEl ? priceValEl.value : "";
+  var stockMode = stockModeEl ? stockModeEl.value : "none";
+  var stockVal = stockValEl ? stockValEl.value : "";
+  var reason = reasonEl ? reasonEl.value.trim() : "";
+
+  var plan = getCurrentAdminBatchPlan();
+  if (plan && !plan.ok) {
+    setAdminBatchStatusMsg(plan.message || "Invalid batch configuration.", true);
+    return;
+  }
+
+  isExecutingAdminBatch = true;
+  updateAdminBatchPanelUI();
+
+  adminFetch("/api/admin/products/batch-update", {
+    method: "POST",
+    body: JSON.stringify({
+      productIds: adminSelectedProductIds,
+      priceMode: priceMode,
+      priceValue: priceVal,
+      stockMode: stockMode,
+      stockValue: stockVal,
+      reason: reason
+    })
+  })
+    .then(function (r) {
+      return r.json().then(function (data) { return { ok: r.ok, data: data }; });
+    })
+    .then(function (res) {
+      isExecutingAdminBatch = false;
+      if (!res.ok || !res.data || !res.data.ok) {
+        setAdminBatchStatusMsg((res.data && res.data.message) || "Failed to execute batch update.", true);
+        updateAdminBatchPanelUI();
+        return;
+      }
+
+      var msg = res.data.message || ("Applied batch transaction " + res.data.transactionId);
+      setAdminBatchStatusMsg(msg, false);
+      showAdminToast(msg);
+      loadAllAdminData();
+    })
+    .catch(function () {
+      isExecutingAdminBatch = false;
+      setAdminBatchStatusMsg("Network error executing batch transaction.", true);
+      updateAdminBatchPanelUI();
+    });
 }
 
 window.quickAdjustStock = function (productId, delta) {
@@ -600,11 +1026,17 @@ document.addEventListener("DOMContentLoaded", function () {
   // Search & filter controls
   var searchInput = document.getElementById("admin-search-input");
   if (searchInput) {
-    searchInput.addEventListener("input", renderProductsTable);
+    searchInput.addEventListener("input", function () {
+      renderProductsTable();
+      renderAdminCatalogGrid();
+    });
   }
   var groupSelect = document.getElementById("admin-group-select");
   if (groupSelect) {
-    groupSelect.addEventListener("change", renderProductsTable);
+    groupSelect.addEventListener("change", function () {
+      renderProductsTable();
+      renderAdminCatalogGrid();
+    });
   }
   var stockFilterEl = document.getElementById("admin-stock-filter");
   if (stockFilterEl) {
@@ -617,8 +1049,82 @@ document.addEventListener("DOMContentLoaded", function () {
         allBtns[i].classList.toggle("active", allBtns[i] === btn);
       }
       renderProductsTable();
+      renderAdminCatalogGrid();
     });
   }
+
+  // Layout toggle (Table vs Catalog Grid)
+  var layoutToggleEl = document.getElementById("admin-layout-toggle");
+  if (layoutToggleEl) {
+    layoutToggleEl.addEventListener("click", function (e) {
+      var btn = e.target.closest(".seg-btn");
+      if (!btn) return;
+      adminCatalogLayout = btn.getAttribute("data-layout") || "table";
+      var allBtns = layoutToggleEl.querySelectorAll(".seg-btn");
+      for (var i = 0; i < allBtns.length; i++) {
+        allBtns[i].classList.toggle("active", allBtns[i] === btn);
+      }
+      var tableContainer = document.getElementById("admin-table-container");
+      var gridContainer = document.getElementById("admin-catalog-grid");
+      if (tableContainer) tableContainer.hidden = (adminCatalogLayout !== "table");
+      if (gridContainer) gridContainer.hidden = (adminCatalogLayout !== "grid");
+      renderProductsTable();
+      renderAdminCatalogGrid();
+    });
+  }
+
+  // Batch Edit Mode controls
+  var batchToggleBtn = document.getElementById("admin-batch-mode-toggle");
+  if (batchToggleBtn) {
+    batchToggleBtn.addEventListener("click", function () {
+      window.toggleAdminBatchMode();
+    });
+  }
+  var tableSelectAll = document.getElementById("admin-table-select-all");
+  if (tableSelectAll) {
+    tableSelectAll.addEventListener("change", function () {
+      var visibleIds = getFilteredAdminProducts().map(function (p) { return p.id; });
+      if (tableSelectAll.checked) {
+        window.selectAllVisibleAdminProducts();
+      } else {
+        if (window.VoltboxQR && typeof window.VoltboxQR.toggleBatchSelectionIds === "function") {
+          adminSelectedProductIds = window.VoltboxQR.toggleBatchSelectionIds(adminSelectedProductIds, visibleIds, "remove");
+        } else {
+          adminSelectedProductIds = [];
+        }
+        updateAdminBatchPanelUI();
+        renderProductsTable();
+        renderAdminCatalogGrid();
+      }
+    });
+  }
+  var selAllBtn = document.getElementById("admin-batch-select-all-btn");
+  if (selAllBtn) selAllBtn.addEventListener("click", window.selectAllVisibleAdminProducts);
+
+  var selLowBtn = document.getElementById("admin-batch-select-low-btn");
+  if (selLowBtn) selLowBtn.addEventListener("click", window.selectLowStockAdminProducts);
+
+  var clearSelBtn = document.getElementById("admin-batch-clear-btn");
+  if (clearSelBtn) clearSelBtn.addEventListener("click", window.clearAdminBatchSelection);
+
+  var batchPriceModeEl = document.getElementById("admin-batch-price-mode");
+  var batchPriceValEl = document.getElementById("admin-batch-price-value");
+  var batchStockModeEl = document.getElementById("admin-batch-stock-mode");
+  var batchStockValEl = document.getElementById("admin-batch-stock-value");
+  var batchReasonEl = document.getElementById("admin-batch-reason");
+  var batchFormEl = document.getElementById("admin-batch-form");
+
+  function onBatchInputChanged() {
+    updateAdminBatchPanelUI();
+    renderProductsTable();
+    renderAdminCatalogGrid();
+  }
+  if (batchPriceModeEl) batchPriceModeEl.addEventListener("change", onBatchInputChanged);
+  if (batchPriceValEl) batchPriceValEl.addEventListener("input", onBatchInputChanged);
+  if (batchStockModeEl) batchStockModeEl.addEventListener("change", onBatchInputChanged);
+  if (batchStockValEl) batchStockValEl.addEventListener("input", onBatchInputChanged);
+  if (batchReasonEl) batchReasonEl.addEventListener("input", updateAdminBatchPanelUI);
+  if (batchFormEl) batchFormEl.addEventListener("submit", submitAdminBatchTransaction);
 
   // Topbar actions
   var refreshBtn = document.getElementById("refresh-data-btn");

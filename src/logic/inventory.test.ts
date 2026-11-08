@@ -99,6 +99,41 @@ import {
   MAX_COMPARISON_ITEMS,
   getCompareAllVisibleButtonState,
   selectVisibleProductsForComparison,
+  enrichOrderForHistory,
+  computeOrderHistorySummary,
+  filterAndSortOrderHistory,
+  verifyComponentPurchaseForReview,
+  validateProductReviewSubmission,
+  computeProductReviewSummary,
+  filterAndSortProductReviews,
+  ProductReview,
+  toggleBatchSelectionIds,
+  computeBatchProductPrice,
+  computeBatchProductStock,
+  planBatchProductTransaction,
+  classifyVolatilityRegime,
+  computeAdvancedPriceTrends,
+  detectPeakVolatilityEvents,
+  normalizeVolatilitySigmaThreshold,
+  evaluateHighVolatilityThreshold,
+  normalizeD3TrendViewMode,
+  resolveD3ModeGsapTransitionProfile,
+  resolveD3LegendToggleState,
+  getD3ModeLegendItems,
+  GMP_ATTRIBUTION_ID,
+  GMP_DEFAULT_MAP_ID,
+  isGmpQuotaExceededSignal,
+  buildGmpTextSearchRequest,
+  normalizeGmpPlaceResult,
+  D3_ZOOM_MIN_SCALE,
+  D3_ZOOM_MAX_SCALE,
+  clampD3ZoomPanTransform,
+  computeD3WheelZoomTransform,
+  computeD3DragPanTransform,
+  resolveD3ZoomedVisibleWindow,
+  SPEC_DRAWER_SECTIONS,
+  resolveSpecDrawerSectionNav,
+  resolveActiveSpecSectionFromScroll,
 } from './inventory';
 
 test('LOW_STOCK_THRESHOLD is 5', () => {
@@ -1820,5 +1855,736 @@ test('Catalog Toolbar Compare All Visible: selectVisibleProductsForComparison an
   assert.deepEqual(resReplace.addedIds, [31, 32, 33, 34]);
 });
 
+test('Full Order History Page: enrichOrderForHistory, computeOrderHistorySummary, and filterAndSortOrderHistory', () => {
+  const sampleCatalog = [
+    { id: 19, title: 'Nvidia RTX 5090', category: 'gpus', price: 200, image: '/images/gpu.jpg' },
+    { id: 20, title: 'AMD RYZEN 9', category: 'cpus', price: 180, image: '/images/cpu.jpg' },
+    { id: 21, title: 'MSI MotherBoard B570', category: 'motherboards', price: 150, image: '/images/mb.jpg' },
+  ];
+
+  const rawOrders = [
+    {
+      id: 'VB-C31B',
+      placedAt: 1793623376667,
+      count: 1,
+      subtotal: 180,
+      rigDiscount: 0,
+      promoDiscount: 0,
+      discountTotal: 0,
+      promoCode: null,
+      tax: 14.85,
+      total: 194.85,
+      amountPaid: 194.85,
+      shippingName: 'Harish',
+      shippingAddress: '42 Circuit Lane, Silicon Bay',
+      paymentMethod: 'UPI QR (PhonePe)',
+      status: 'Delivered',
+      lines: [
+        { productId: 20, title: 'AMD RYZEN 9', price: 180, qty: 1 },
+      ],
+    },
+    {
+      id: 'VB-5FC8',
+      placedAt: 1793509777352,
+      count: 5,
+      subtotal: 950,
+      rigDiscount: 47.5,
+      promoDiscount: 0,
+      discountTotal: 47.5,
+      promoCode: 'BUILDER5',
+      tax: 74.46,
+      total: 976.96,
+      amountPaid: 976.96,
+      shippingName: 'Harish Ragavendran',
+      shippingAddress: '14 Tech Park, Bengaluru',
+      paymentMethod: 'Fake Pay',
+      status: 'Shipped',
+      lines: [
+        { productId: 19, title: 'Nvidia RTX 5090', price: 200, qty: 4 },
+        { productId: 21, title: 'MSI MotherBoard B570', price: 150, qty: 1 },
+      ],
+    },
+    {
+      id: 'VB-FF6D',
+      placedAt: 1785215975277,
+      count: 2,
+      subtotal: 380,
+      tax: 31.35,
+      total: 411.35,
+      amountPaid: 411.35,
+      shippingName: 'Harish',
+      shippingAddress: 'Madurai 625014',
+      paymentMethod: 'Visa •••• 4242',
+      status: 'Processing',
+      lines: [
+        { productId: 19, title: 'Nvidia RTX 5090', price: 200, qty: 1 },
+        { productId: 20, title: 'AMD RYZEN 9', price: 180, qty: 1 },
+      ],
+    },
+  ];
+
+  const enriched = rawOrders.map((ord) => enrichOrderForHistory(ord, sampleCatalog, 1793700000000));
+
+  // Verify item breakdown enrichment (SKU, lineSubtotal, sharePercent, receiptCode, timeline)
+  assert.equal(enriched[0].id, 'VB-C31B');
+  assert.equal(enriched[0].status, 'Delivered');
+  assert.equal(enriched[0].stageKey, 'delivered');
+  assert.equal(enriched[0].progressPercent, 100);
+  assert.equal(enriched[0].lines.length, 1);
+  assert.equal(enriched[0].lines[0].sku, 'VB-CPU-020');
+  assert.equal(enriched[0].lines[0].lineSubtotal, 180);
+  assert.equal(enriched[0].lines[0].sharePercent, 100);
+  assert.ok(enriched[0].receiptCode.startsWith('RCPT-VBC31B-'));
+
+  assert.equal(enriched[1].id, 'VB-5FC8');
+  assert.equal(enriched[1].status, 'Shipped');
+  assert.equal(enriched[1].stageKey, 'shipped');
+  assert.equal(enriched[1].paymentMethod, 'Voltbox Instant Pay (Verified)');
+  assert.equal(enriched[1].lines[0].sku, 'VB-GPU-019');
+  assert.equal(enriched[1].lines[0].lineSubtotal, 800);
+  assert.equal(enriched[1].lines[1].sku, 'VB-MBD-021');
+  assert.equal(enriched[1].lines[1].lineSubtotal, 150);
+
+  // Verify summary metrics
+  const summary = computeOrderHistorySummary(enriched);
+  assert.equal(summary.totalOrders, 3);
+  assert.equal(summary.totalItemsPurchased, 8);
+  assert.equal(summary.totalSpent, 1583.16);
+  assert.equal(summary.totalSavings, 47.5);
+  assert.equal(summary.statusCounts.all, 3);
+  assert.equal(summary.statusCounts.delivered, 1);
+  assert.equal(summary.statusCounts.shipped, 1);
+  assert.equal(summary.statusCounts.processing, 1);
+  assert.equal(summary.statusCounts.placed, 0);
+
+  // Verify filtering by status and search query and sorting
+  const shippedOnly = filterAndSortOrderHistory(enriched, { statusFilter: 'shipped' });
+  assert.equal(shippedOnly.length, 1);
+  assert.equal(shippedOnly[0].id, 'VB-5FC8');
+
+  const searchBySku = filterAndSortOrderHistory(enriched, { searchQuery: 'VB-MBD-021' });
+  assert.equal(searchBySku.length, 1);
+  assert.equal(searchBySku[0].id, 'VB-5FC8');
+
+  const sortedByTotalDesc = filterAndSortOrderHistory(enriched, { sortBy: 'total-desc' });
+  assert.deepEqual(sortedByTotalDesc.map((o) => o.id), ['VB-5FC8', 'VB-FF6D', 'VB-C31B']);
+});
+
+test('Verified Buyer Review & Rating System: purchase verification, submission validation, summary metrics, and filtering', () => {
+  const sampleOrders = [
+    {
+      id: 'VB-5FC8',
+      placedAt: 1793509777352,
+      status: 'Shipped',
+      lines: [
+        { productId: 19, title: 'Nvidia RTX 5090', price: 200, qty: 2 },
+        { productId: 21, title: 'MSI MotherBoard B570', price: 150, qty: 1 },
+      ],
+    },
+    {
+      id: 'VB-C31B',
+      placedAt: 1793652130392,
+      status: 'Delivered',
+      lines: [
+        { productId: 20, title: 'AMD RYZEN 9', price: 180, qty: 1 },
+      ],
+    },
+  ];
+
+  const existingReviews: ProductReview[] = [
+    {
+      id: 'REV-101',
+      productId: 19,
+      authorName: 'Harish Ragavendran',
+      authorEmail: 'harish@voltbox.test',
+      authorColor: '#ffd23f',
+      authorInitial: 'H',
+      rating: 5,
+      title: 'Whisper-quiet vapor chamber under full CUDA load',
+      comment: 'Runs stable at 61C in my ATX 3.1 workstation with zero coil whine.',
+      useCaseTag: 'AI / Workstation',
+      verifiedPurchase: true,
+      orderId: 'VB-5FC8',
+      helpfulCount: 6,
+      createdAt: 1793550000000,
+    },
+    {
+      id: 'REV-102',
+      productId: 19,
+      authorName: 'Elena Vance',
+      authorEmail: 'elena@voltbox.test',
+      authorColor: '#4dabf7',
+      authorInitial: 'E',
+      rating: 4,
+      title: 'Incredible 4K rasterization, needs a spacious case',
+      comment: 'Make sure your chassis has 340mm clearance, otherwise top-tier GPU.',
+      useCaseTag: 'Gaming Rig',
+      verifiedPurchase: true,
+      orderId: 'VB-8812',
+      helpfulCount: 11,
+      createdAt: 1793600000000,
+    },
+  ];
+
+  // 1. Verify purchase check for purchased item (#19)
+  const elig19 = verifyComponentPurchaseForReview(19, sampleOrders, existingReviews, 'harish@voltbox.test');
+  assert.equal(elig19.hasPurchased, true);
+  assert.equal(elig19.latestOrderId, 'VB-5FC8');
+  assert.equal(elig19.totalUnitsPurchased, 2);
+  assert.ok(elig19.existingReview);
+  assert.equal(elig19.existingReview?.id, 'REV-101');
+
+  // 2. Verify purchase check for unpurchased item (#99)
+  const elig99 = verifyComponentPurchaseForReview(99, sampleOrders, existingReviews, 'harish@voltbox.test');
+  assert.equal(elig99.hasPurchased, false);
+  assert.equal(elig99.latestOrderId, null);
+  assert.equal(elig99.totalUnitsPurchased, 0);
+  assert.equal(elig99.existingReview, null);
+
+  // 3. Validate review submission rejects unpurchased product
+  const blockedRes = validateProductReviewSubmission(
+    {
+      productId: 99,
+      rating: 5,
+      title: 'Great item',
+      comment: 'Trying to review without purchasing this item.',
+    },
+    elig99
+  );
+  assert.equal(blockedRes.ok, false);
+  assert.equal(blockedRes.code, 'NOT_PURCHASED');
+
+  // 4. Validate review submission enforces rating, title, and comment rules
+  const shortTitleRes = validateProductReviewSubmission(
+    { productId: 19, rating: 5, title: 'Hi', comment: 'Valid length feedback comment here.' },
+    elig19
+  );
+  assert.equal(shortTitleRes.ok, false);
+  assert.equal(shortTitleRes.code, 'TITLE_TOO_SHORT');
+
+  const validRes = validateProductReviewSubmission(
+    {
+      productId: 19,
+      rating: 5,
+      title: 'Best Blackwell flagship card',
+      comment: 'Unreal frame pacing at 4K 175Hz with DLSS 4 and PCIe 5.0 bandwidth.',
+      useCaseTag: 'Gaming Rig',
+    },
+    elig19
+  );
+  assert.equal(validRes.ok, true);
+  assert.equal(validRes.normalized?.rating, 5);
+  assert.equal(validRes.normalized?.orderId, 'VB-5FC8');
+  assert.equal(validRes.normalized?.useCaseTag, 'Gaming Rig');
+
+  // 5. Compute review summary & star distribution
+  const summary = computeProductReviewSummary(existingReviews, 19);
+  assert.equal(summary.reviewCount, 2);
+  assert.equal(summary.averageRating, 4.5);
+  assert.equal(summary.starCounts[5], 1);
+  assert.equal(summary.starCounts[4], 1);
+  assert.equal(summary.starCounts[3], 0);
+  assert.equal(summary.starPercentages[5], 50);
+  assert.equal(summary.starPercentages[4], 50);
+  assert.equal(summary.recommendPercent, 100);
+
+  // 6. Filter & sort reviews
+  const fiveStarOnly = filterAndSortProductReviews(existingReviews, { starFilter: 5 });
+  assert.equal(fiveStarOnly.length, 1);
+  assert.equal(fiveStarOnly[0].id, 'REV-101');
+
+  const mostHelpful = filterAndSortProductReviews(existingReviews, { sortBy: 'helpful' });
+  assert.equal(mostHelpful[0].id, 'REV-102');
+});
+
+test('Admin Batch Edit Mode: multi-product selection, price/stock calculations, and single-transaction planning', () => {
+  // 1. Multi-select state management
+  let sel = toggleBatchSelectionIds([], [19, 20], 'add');
+  assert.deepEqual(sel, [19, 20]);
+  sel = toggleBatchSelectionIds(sel, 20, 'toggle');
+  assert.deepEqual(sel, [19]);
+  sel = toggleBatchSelectionIds(sel, [21, 22], 'toggle');
+  assert.deepEqual(sel, [19, 21, 22]);
+  sel = toggleBatchSelectionIds(sel, [], 'clear');
+  assert.deepEqual(sel, []);
+
+  // 2. Price calculations (percent, delta, set, validation)
+  const pctDrop = computeBatchProductPrice(200, 'percent', -10);
+  assert.equal(pctDrop.ok, true);
+  assert.equal(pctDrop.nextPrice, 180);
+  assert.equal(pctDrop.delta, -20);
+  assert.equal(pctDrop.changed, true);
+
+  const deltaUp = computeBatchProductPrice(150, 'delta', 12.5);
+  assert.equal(deltaUp.ok, true);
+  assert.equal(deltaUp.nextPrice, 162.5);
+  assert.equal(deltaUp.delta, 12.5);
+
+  const setExact = computeBatchProductPrice(150, 'set', 129.99);
+  assert.equal(setExact.ok, true);
+  assert.equal(setExact.nextPrice, 129.99);
+
+  const invalidPct = computeBatchProductPrice(150, 'percent', -99);
+  assert.equal(invalidPct.ok, false);
+
+  // 3. Stock calculations (delta, set, clamping)
+  const stockAdd = computeBatchProductStock(4, 'delta', 6);
+  assert.equal(stockAdd.ok, true);
+  assert.equal(stockAdd.nextStock, 10);
+  assert.equal(stockAdd.delta, 6);
+
+  const stockSubClamp = computeBatchProductStock(3, 'delta', -10);
+  assert.equal(stockSubClamp.ok, true);
+  assert.equal(stockSubClamp.nextStock, 0);
+  assert.equal(stockSubClamp.delta, -3);
+
+  // 4. Full single-transaction batch plan across catalog products
+  const sampleCatalog = [
+    { id: 19, title: 'Nvidia RTX 5090', category: 'gpus', sku: 'VB-GPU-019', price: 200, quantity: 3 },
+    { id: 20, title: 'AMD RYZEN 9', category: 'cpus', sku: 'VB-CPU-020', price: 180, quantity: 10 },
+    { id: 21, title: 'MSI MotherBoard B570', category: 'motherboards', sku: 'VB-MBD-021', price: 150, quantity: 2 },
+  ];
+
+  const emptySelPlan = planBatchProductTransaction(sampleCatalog, {
+    productIds: [],
+    priceMode: 'percent',
+    priceValue: -5,
+  });
+  assert.equal(emptySelPlan.ok, false);
+  assert.equal(emptySelPlan.code, 'NO_PRODUCTS_SELECTED');
+
+  const noOpPlan = planBatchProductTransaction(sampleCatalog, {
+    productIds: [19, 20],
+    priceMode: 'none',
+    stockMode: 'none',
+  });
+  assert.equal(noOpPlan.ok, false);
+  assert.equal(noOpPlan.code, 'NO_OPERATION_SPECIFIED');
+
+  const validBatchPlan = planBatchProductTransaction(
+    sampleCatalog,
+    {
+      productIds: [19, 21],
+      priceMode: 'percent',
+      priceValue: -10,
+      stockMode: 'delta',
+      stockValue: 5,
+      reason: 'Q4 Flash Sale & Replenishment',
+    },
+    1793660000000
+  );
+
+  assert.equal(validBatchPlan.ok, true);
+  assert.ok(validBatchPlan.transactionId.startsWith('TX-BATCH-'));
+  assert.equal(validBatchPlan.selectedCount, 2);
+  assert.equal(validBatchPlan.updatedCount, 2);
+  assert.equal(validBatchPlan.priceChangedCount, 2);
+  assert.equal(validBatchPlan.stockChangedCount, 2);
+  assert.equal(validBatchPlan.totalStockUnitsDelta, 10);
+  assert.equal(validBatchPlan.normalizedReason, 'Q4 Flash Sale & Replenishment');
+
+  // Verify individual mutations
+  const m19 = validBatchPlan.mutations.find((m) => m.productId === 19)!;
+  assert.equal(m19.previousPrice, 200);
+  assert.equal(m19.nextPrice, 180);
+  assert.equal(m19.previousStock, 3);
+  assert.equal(m19.nextStock, 8);
+  assert.equal(m19.nextLowStock, false);
+
+  const m21 = validBatchPlan.mutations.find((m) => m.productId === 21)!;
+  assert.equal(m21.previousPrice, 150);
+  assert.equal(m21.nextPrice, 135);
+  assert.equal(m21.previousStock, 2);
+  assert.equal(m21.nextStock, 7);
+  assert.equal(m21.nextLowStock, false);
+});
+
+test('Advanced Price Trends: 6-month volatility index, rolling envelopes, Z-score, and drawdown analytics', () => {
+  // 1. Regime classifier boundaries
+  assert.equal(classifyVolatilityRegime(12).regime, 'low');
+  assert.equal(classifyVolatilityRegime(30).regime, 'moderate');
+  assert.equal(classifyVolatilityRegime(50).regime, 'elevated');
+  assert.equal(classifyVolatilityRegime(80).regime, 'high');
+
+  // 2. Standard 6-month component price history
+  const gpuHistory = generatePriceHistory({ id: 19, price: 180 });
+  const trends = computeAdvancedPriceTrends(gpuHistory);
+
+  assert.equal(trends.points.length, 6);
+  assert.equal(trends.currentPrice, 180);
+  assert.ok(trends.sixMonthLow <= trends.sixMonthMean);
+  assert.ok(trends.sixMonthHigh >= trends.sixMonthMean);
+  assert.ok(trends.standardDeviationUsd > 0);
+  assert.ok(trends.coefficientOfVariationPct > 0);
+  assert.ok(trends.sixMonthVolatilityIndex > 0 && trends.sixMonthVolatilityIndex <= 100);
+  assert.ok(trends.maxDrawdownPct > 0);
+
+  for (const pt of trends.points) {
+    assert.ok(pt.upperBand >= pt.rollingMean);
+    assert.ok(pt.lowerBand <= pt.rollingMean);
+    assert.ok(pt.volatilityIndex >= 0 && pt.volatilityIndex <= 100);
+  }
+
+  // 3. Flat price history produces 0 volatility index and 0 drawdown
+  const flatHistory = [
+    { month: 'May', price: 150, marketAvg: 160 },
+    { month: 'Jun', price: 150, marketAvg: 160 },
+    { month: 'Jul', price: 150, marketAvg: 160 },
+    { month: 'Aug', price: 150, marketAvg: 160 },
+    { month: 'Sep', price: 150, marketAvg: 160 },
+    { month: 'Oct', price: 150, marketAvg: 160 },
+  ];
+  const flatTrends = computeAdvancedPriceTrends(flatHistory);
+  assert.equal(flatTrends.standardDeviationUsd, 0);
+  assert.equal(flatTrends.sixMonthVolatilityIndex, 0);
+  assert.equal(flatTrends.maxDrawdownPct, 0);
+  assert.equal(flatTrends.volatilityRegime, 'low');
+  assert.equal(flatTrends.currentZScore, 0);
+
+  // 4. High-swing history triggers High Volatility & Strong Buy Zone when ending at deep trough
+  const volatileHistory = [
+    { month: 'May', price: 240, marketAvg: 250 },
+    { month: 'Jun', price: 190, marketAvg: 210 },
+    { month: 'Jul', price: 260, marketAvg: 265 },
+    { month: 'Aug', price: 175, marketAvg: 195 },
+    { month: 'Sep', price: 230, marketAvg: 240 },
+    { month: 'Oct', price: 150, marketAvg: 185 },
+  ];
+  const highVolTrends = computeAdvancedPriceTrends(volatileHistory);
+  assert.equal(highVolTrends.volatilityRegime, 'high');
+  assert.equal(highVolTrends.buySignalLabel, 'Strong Buy Zone');
+  assert.ok(highVolTrends.currentZScore <= -0.75);
+});
+
+test('GSAP Mode Transition Profile: directional shift, stagger timing, and reducedMotion compliance', () => {
+  // 1. Mode normalization
+  assert.equal(normalizeD3TrendViewMode('composite'), 'composite');
+  assert.equal(normalizeD3TrendViewMode('volatility-bars'), 'volatility-bars');
+  assert.equal(normalizeD3TrendViewMode('zscore'), 'zscore');
+  assert.equal(normalizeD3TrendViewMode('invalid-mode'), 'composite');
+  assert.equal(normalizeD3TrendViewMode(null), 'composite');
+
+  // 2. Forward mode switch: composite -> volatility-bars (direction +1)
+  const forwardProfile = resolveD3ModeGsapTransitionProfile('composite', 'volatility-bars');
+  assert.equal(forwardProfile.isModeSwitch, true);
+  assert.equal(forwardProfile.direction, 1);
+  assert.equal(forwardProfile.stageShiftPx, 10);
+  assert.equal(forwardProfile.stageDurationSec, 0.34);
+  assert.equal(forwardProfile.barDurationSec, 0.42);
+  assert.ok(forwardProfile.barStaggerSec > 0);
+  assert.ok(forwardProfile.pathDurationSec > 0);
+
+  // 3. Backward mode switch: zscore -> composite (direction -1)
+  const backwardProfile = resolveD3ModeGsapTransitionProfile('zscore', 'composite');
+  assert.equal(backwardProfile.isModeSwitch, true);
+  assert.equal(backwardProfile.direction, -1);
+  assert.equal(backwardProfile.stageShiftPx, -10);
+
+  // 4. Initial render or same-mode render (isModeSwitch: false, direction: 0)
+  const initialProfile = resolveD3ModeGsapTransitionProfile(null, 'composite');
+  assert.equal(initialProfile.isModeSwitch, false);
+  assert.equal(initialProfile.direction, 0);
+  assert.equal(initialProfile.stageShiftPx, 0);
+
+  // 5. Reduced motion returns zero-duration instant profile
+  const reducedProfile = resolveD3ModeGsapTransitionProfile('composite', 'zscore', {
+    reducedMotion: true,
+  });
+  assert.equal(reducedProfile.reducedMotion, true);
+  assert.equal(reducedProfile.stageDurationSec, 0);
+  assert.equal(reducedProfile.barDurationSec, 0);
+  assert.equal(reducedProfile.pathDurationSec, 0);
+  assert.equal(reducedProfile.nodeDurationSec, 0);
+});
+
+test('Peak Volatility Events Detection: flags primary peak spike, secondary swing/trough, and handles flat series', () => {
+  // 1. Standard 6M GPU price series flags primary peak volatility event
+  const gpuHistory = generatePriceHistory({ id: 19, price: 159.16 });
+  const trends = computeAdvancedPriceTrends(gpuHistory);
+
+  assert.ok(Array.isArray(trends.peakEvents));
+  assert.ok(trends.peakEvents.length >= 1 && trends.peakEvents.length <= 2);
+
+  const primaryEvent = trends.peakEvents.find((ev) => ev.isPrimaryPeak);
+  assert.ok(primaryEvent, 'Expected a primary peak volatility event');
+  assert.equal(primaryEvent.month, trends.peakVolatilityMonth);
+  assert.equal(primaryEvent.severity, 'peak-spike');
+  assert.equal(primaryEvent.volatilityIndex, trends.peakMonthlyVolatilityIndex);
+  assert.ok(primaryEvent.shortTag.includes('PEAK'));
+  assert.ok(primaryEvent.headline.includes('Peak Volatility Spike'));
+  assert.ok(primaryEvent.summary.length > 15);
+
+  // 2. Flat price series produces zero flagged volatility events
+  const flatHistory = [
+    { month: 'May', price: 150, marketAvg: 160 },
+    { month: 'Jun', price: 150, marketAvg: 160 },
+    { month: 'Jul', price: 150, marketAvg: 160 },
+    { month: 'Aug', price: 150, marketAvg: 160 },
+    { month: 'Sep', price: 150, marketAvg: 160 },
+    { month: 'Oct', price: 150, marketAvg: 160 },
+  ];
+  const flatTrends = computeAdvancedPriceTrends(flatHistory);
+  assert.equal(flatTrends.peakEvents.length, 0);
+  assert.deepEqual(detectPeakVolatilityEvents([]), []);
+});
+
+test('High Volatility Threshold Configuration: evaluates 2.0σ, 1.5σ, 1.0σ cutoffs, toggle state, and flat series', () => {
+  // 1. Sigma normalization
+  assert.equal(normalizeVolatilitySigmaThreshold(2), 2.0);
+  assert.equal(normalizeVolatilitySigmaThreshold('1.5'), 1.5);
+  assert.equal(normalizeVolatilitySigmaThreshold(1), 1.0);
+  assert.equal(normalizeVolatilitySigmaThreshold(null), 2.0);
+  assert.equal(normalizeVolatilitySigmaThreshold(-5), 2.0);
+  assert.equal(normalizeVolatilitySigmaThreshold(9), 3.5);
+
+  // 2. Default 2.0σ evaluation on GPU series
+  const gpuHistory = generatePriceHistory({ id: 19, price: 159.16 });
+  const trends2Sigma = computeAdvancedPriceTrends(gpuHistory, {
+    enabled: true,
+    sigmaThreshold: 2.0,
+  });
+  const eval2 = trends2Sigma.highVolatilityThreshold;
+  assert.equal(eval2.enabled, true);
+  assert.equal(eval2.sigmaThreshold, 2.0);
+  assert.equal(eval2.sigmaLabel, '2.0σ');
+  assert.equal(eval2.thresholdVolatilityIndex, 75);
+  assert.ok(eval2.breachCount >= 1, 'Expected at least 1 period exceeding 2.0σ on GPU series');
+  assert.ok(eval2.breachedMonths.includes('Sep'));
+  assert.ok(eval2.statusSummary.includes('Cutoff ≥75v (2.0σ)'));
+
+  // 3. Lowering threshold from 2.0σ -> 1.5σ -> 1.0σ highlights progressively more or equal periods
+  const eval15 = evaluateHighVolatilityThreshold(trends2Sigma.points, {
+    enabled: true,
+    sigmaThreshold: 1.5,
+  });
+  const eval10 = evaluateHighVolatilityThreshold(trends2Sigma.points, {
+    enabled: true,
+    sigmaThreshold: 1.0,
+  });
+  assert.equal(eval15.thresholdVolatilityIndex, 62.5);
+  assert.equal(eval10.thresholdVolatilityIndex, 50);
+  assert.ok(eval15.breachCount >= eval2.breachCount);
+  assert.ok(eval10.breachCount >= eval15.breachCount);
+
+  // 4. Toggling High Volatility Threshold OFF preserves breach metadata while marking enabled=false
+  const evalDisabled = evaluateHighVolatilityThreshold(trends2Sigma.points, {
+    enabled: false,
+    sigmaThreshold: 2.0,
+  });
+  assert.equal(evalDisabled.enabled, false);
+  assert.equal(evalDisabled.breachCount, eval2.breachCount);
+  assert.ok(evalDisabled.statusSummary.includes('Threshold markers hidden'));
+
+  // 5. Flat series has 0 breaches
+  const flatHistory = [
+    { month: 'May', price: 150, marketAvg: 160 },
+    { month: 'Jun', price: 150, marketAvg: 160 },
+    { month: 'Jul', price: 150, marketAvg: 160 },
+    { month: 'Aug', price: 150, marketAvg: 160 },
+    { month: 'Sep', price: 150, marketAvg: 160 },
+    { month: 'Oct', price: 150, marketAvg: 160 },
+  ];
+  const flatTrends = computeAdvancedPriceTrends(flatHistory, {
+    enabled: true,
+    sigmaThreshold: 2.0,
+  });
+  assert.equal(flatTrends.highVolatilityThreshold.breachCount, 0);
+  assert.deepEqual(flatTrends.highVolatilityThreshold.breachedMonths, []);
+});
+
+test('D3 Legend Visibility Toggle & Mode Legend Descriptors: resolves Hide/Show Legend toggle state and mode signal items', () => {
+  // 1. Default and explicit visible state (legendVisible = true -> button says 'Hide Legend')
+  const visibleState = resolveD3LegendToggleState(true);
+  assert.equal(visibleState.legendVisible, true);
+  assert.equal(visibleState.isHidden, false);
+  assert.equal(visibleState.buttonLabel, 'Hide Legend');
+  assert.equal(visibleState.ariaPressed, 'false');
+  assert.equal(visibleState.ariaExpanded, 'true');
+  assert.equal(visibleState.statusNote, 'Signal legend visible');
+
+  const defaultState = resolveD3LegendToggleState(undefined);
+  assert.equal(defaultState.legendVisible, true);
+  assert.equal(defaultState.buttonLabel, 'Hide Legend');
+
+  // 2. Hidden state (legendVisible = false -> button says 'Show Legend', ariaPressed = 'true', ariaExpanded = 'false')
+  const hiddenState = resolveD3LegendToggleState(false);
+  assert.equal(hiddenState.legendVisible, false);
+  assert.equal(hiddenState.isHidden, true);
+  assert.equal(hiddenState.buttonLabel, 'Show Legend');
+  assert.equal(hiddenState.ariaPressed, 'true');
+  assert.equal(hiddenState.ariaExpanded, 'false');
+  assert.equal(hiddenState.statusNote, 'Signal legend hidden for cleaner chart view');
+
+  // 3. Mode-specific legend descriptors with and without High Volatility Threshold
+  const compositeItems = getD3ModeLegendItems('composite', { enabled: true, sigmaThreshold: 2.0 });
+  assert.equal(compositeItems.length, 5);
+  assert.equal(compositeItems[0].label, '±1σ Envelope');
+  assert.equal(compositeItems[4].label, '≥2σ Threshold');
+
+  const compositeNoThresh = getD3ModeLegendItems('composite', { enabled: false, sigmaThreshold: 2.0 });
+  assert.equal(compositeNoThresh.length, 4);
+
+  const volBarsItems = getD3ModeLegendItems('volatility-bars', { enabled: true, sigmaThreshold: 1.5 });
+  assert.equal(volBarsItems.length, 5);
+  assert.equal(volBarsItems[0].label, 'Low (<25)');
+  assert.equal(volBarsItems[4].label, '≥1.5σ Threshold');
+
+  const zScoreItems = getD3ModeLegendItems('zscore', { enabled: true, sigmaThreshold: 1.0 });
+  assert.equal(zScoreItems.length, 4);
+  assert.equal(zScoreItems[0].label, 'Below Mean (-σ Buy Zone)');
+  assert.equal(zScoreItems[3].label, '≥1σ Threshold');
+});
+
+test('Google Maps Platform Pure Logic: quota detection, Places API New request builder, and Place normalization', () => {
+  // 1. Attribution ID and default Map ID constants
+  assert.equal(GMP_ATTRIBUTION_ID, 'gmp_mcp_codeassist_v1_aistudio');
+  assert.equal(GMP_DEFAULT_MAP_ID, 'DEMO_MAP_ID');
+
+  // 2. Two-tier quota detection: true for OverQuotaMapError, QuotaExceededError, 429, OVER_QUERY_LIMIT, RESOURCE_EXHAUSTED
+  assert.equal(isGmpQuotaExceededSignal('Google Maps JavaScript API error: OverQuotaMapError'), true);
+  assert.equal(isGmpQuotaExceededSignal(new Error('QuotaExceededError: daily limit reached')), true);
+  assert.equal(isGmpQuotaExceededSignal(429), true);
+  assert.equal(isGmpQuotaExceededSignal({ status: 'RESOURCE_EXHAUSTED' }), true);
+  assert.equal(isGmpQuotaExceededSignal({ error: { code: 429, status: 'OVER_QUERY_LIMIT' } }), true);
+
+  // False for empty results, 404s, or null/undefined
+  assert.equal(isGmpQuotaExceededSignal(null), false);
+  assert.equal(isGmpQuotaExceededSignal('ZERO_RESULTS'), false);
+  assert.equal(isGmpQuotaExceededSignal({ status: 404, message: 'Not Found' }), false);
+
+  // 3. Places API (New) SearchByTextRequest builder
+  const defaultReq = buildGmpTextSearchRequest('');
+  assert.equal(defaultReq.textQuery, 'computer hardware electronics store in Bengaluru');
+  assert.deepEqual(defaultReq.internalUsageAttributionIds, ['gmp_mcp_codeassist_v1_aistudio']);
+  assert.ok(defaultReq.fields.includes('displayName'));
+  assert.ok(defaultReq.fields.includes('location'));
+  assert.ok(defaultReq.fields.includes('attributions'));
+  assert.equal(defaultReq.maxResultCount, 8);
+
+  const biasedReq = buildGmpTextSearchRequest('PC repair in Indiranagar', {
+    center: { lat: 12.9716, lng: 77.5946 },
+    radiusMeters: 8000,
+    maxResultCount: 5,
+    minRating: 4.2,
+    isOpenNow: true,
+  });
+  assert.equal(biasedReq.textQuery, 'PC repair in Indiranagar');
+  assert.equal(biasedReq.maxResultCount, 5);
+  assert.equal(biasedReq.minRating, 4.2);
+  assert.equal(biasedReq.isOpenNow, true);
+  assert.deepEqual(biasedReq.locationBias, {
+    center: { lat: 12.9716, lng: 77.5946 },
+    radius: 8000,
+  });
+
+  // 4. Live Place instance normalization (supports both LatLng functions and literals, plus attributions)
+  const normalized = normalizeGmpPlaceResult(
+    {
+      id: 'place_abc_123',
+      displayName: 'SP Road Electronics Hub',
+      formattedAddress: 'SP Road, Bengaluru, Karnataka',
+      location: { lat: () => 12.9662, lng: () => 77.5794 },
+      rating: 4.64,
+      userRatingCount: 312,
+      businessStatus: 'OPERATIONAL',
+      googleMapsURI: 'https://maps.google.com/?cid=123',
+      attributions: [{ provider: 'Google Maps', providerURI: 'https://maps.google.com' }],
+    },
+    0
+  );
+  assert.ok(normalized);
+  assert.equal(normalized.id, 'place_abc_123');
+  assert.equal(normalized.badgeNumber, '1');
+  assert.equal(normalized.displayName, 'SP Road Electronics Hub');
+  assert.deepEqual(normalized.location, { lat: 12.9662, lng: 77.5794 });
+  assert.equal(normalized.rating, 4.6);
+  assert.equal(normalized.userRatingCount, 312);
+  assert.equal(normalized.attributions.length, 1);
+  assert.equal(normalized.attributions[0].provider, 'Google Maps');
+  assert.equal(normalizeGmpPlaceResult(null), null);
+});
+
+test('D3 Volatility Engine Mouse-Wheel Zoom & Drag-to-Pan: clamps bounds, computes focal wheel zoom, drag pan, and visible month window', () => {
+  const months = ['May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct'];
+  const innerW = 300;
+
+  // 1. Default 1.0x unzoomed state
+  const base = clampD3ZoomPanTransform({ k: 1, x: -45 }, innerW);
+  assert.equal(base.k, D3_ZOOM_MIN_SCALE);
+  assert.equal(base.x, 0, 'Unzoomed k=1 must lock pan x to 0');
+  assert.equal(base.isZoomed, false);
+  assert.equal(base.scaleLabel, '1.0×');
+  assert.equal(base.isAtLeftEdge, true);
+  assert.equal(base.isAtRightEdge, true);
+
+  // 2. Mouse-wheel zoom-in (negative deltaY) anchored at right half of chart
+  const zoomedIn = computeD3WheelZoomTransform({ k: 1, x: 0 }, -140, 220, innerW);
+  assert.ok(zoomedIn.k > 1.3, `Expected wheel zoom-in k > 1.3, got ${zoomedIn.k}`);
+  assert.equal(zoomedIn.isZoomed, true);
+  assert.ok(zoomedIn.x < 0, 'Zooming in anchored on right side should translate x negatively');
+  assert.ok(zoomedIn.x >= zoomedIn.minX && zoomedIn.x <= 0);
+
+  // 3. Clamping above maxScale (4.0x) and beyond left/right pan boundaries
+  const overZoomed = clampD3ZoomPanTransform({ k: 9.5, x: -5000 }, innerW);
+  assert.equal(overZoomed.k, D3_ZOOM_MAX_SCALE);
+  assert.equal(overZoomed.minX, -900);
+  assert.equal(overZoomed.x, -900);
+  assert.equal(overZoomed.isAtRightEdge, true);
+  assert.equal(overZoomed.isAtLeftEdge, false);
+
+  // 4. Drag-to-pan shifts x within [minX, 0] and respects edge clamping
+  const midZoom = clampD3ZoomPanTransform({ k: 2, x: -150 }, innerW);
+  assert.equal(midZoom.minX, -300);
+  const pannedLeft = computeD3DragPanTransform(midZoom, 80, innerW);
+  assert.equal(pannedLeft.k, 2);
+  assert.equal(pannedLeft.x, -70);
+
+  const pannedPastZero = computeD3DragPanTransform(midZoom, 500, innerW);
+  assert.equal(pannedPastZero.x, 0);
+  assert.equal(pannedPastZero.isAtLeftEdge, true);
+
+  const pannedPastRight = computeD3DragPanTransform(midZoom, -500, innerW);
+  assert.equal(pannedPastRight.x, -300);
+  assert.equal(pannedPastRight.isAtRightEdge, true);
+
+  // 5. Visible month window resolution across 1.0x and 2.5x zoomed states
+  const fullWin = resolveD3ZoomedVisibleWindow(months, innerW, { k: 1, x: 0 });
+  assert.equal(fullWin.visibleCount, 6);
+  assert.equal(fullWin.windowLabel, 'May – Oct (All 6M)');
+  assert.deepEqual(fullWin.visibleMonths, months);
+
+  const lateWin = resolveD3ZoomedVisibleWindow(months, innerW, { k: 2.4, x: -420 });
+  assert.equal(lateWin.isZoomed, true);
+  assert.ok(lateWin.visibleCount < 6, `Expected zoomed window to show < 6 months, got ${lateWin.visibleCount}`);
+  assert.equal(lateWin.endMonth, 'Oct');
+  assert.ok(lateWin.windowLabel.includes('/6M)'));
+});
+
+test('Spec Drawer Section Navigation & Scroll Spy: resolves active section tabs, badges, and scroll offsets', () => {
+  assert.equal(SPEC_DRAWER_SECTIONS.length, 4);
+
+  const navDefault = resolveSpecDrawerSectionNav(undefined, { reviewCount: 4, volatilityScore: 71.2 });
+  assert.equal(navDefault[0].id, 'overview');
+  assert.equal(navDefault[0].isActive, true);
+  assert.equal(navDefault[1].id, 'd3-volatility');
+  assert.equal(navDefault[1].badgeText, '71v');
+  assert.equal(navDefault[3].id, 'reviews');
+  assert.equal(navDefault[3].badgeText, '4');
+
+  const navD3 = resolveSpecDrawerSectionNav('d3-volatility');
+  assert.equal(navD3[0].isActive, false);
+  assert.equal(navD3[1].isActive, true);
+
+  const offsets = [
+    { id: 'overview' as const, offsetTop: 0 },
+    { id: 'd3-volatility' as const, offsetTop: 340 },
+    { id: 'tech-specs' as const, offsetTop: 920 },
+    { id: 'reviews' as const, offsetTop: 1280 },
+  ];
+  assert.equal(resolveActiveSpecSectionFromScroll(0, offsets, 80), 'overview');
+  assert.equal(resolveActiveSpecSectionFromScroll(280, offsets, 80), 'd3-volatility');
+  assert.equal(resolveActiveSpecSectionFromScroll(860, offsets, 80), 'tech-specs');
+  assert.equal(resolveActiveSpecSectionFromScroll(1240, offsets, 80), 'reviews');
+});
 
 

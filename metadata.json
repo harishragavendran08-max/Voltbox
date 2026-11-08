@@ -2,6 +2,7 @@
   "name": "Voltbox — Electronics Shop",
   "description": "Voltbox — a community price catalog and electronics shop with real-time contributor moderation, live stock tracking, and retro receipts.",
   "requestFramePermissions": [
-    "microphone"
+    "microphone",
+    "geolocation"
   ]
 }

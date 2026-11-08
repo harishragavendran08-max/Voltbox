@@ -294,6 +294,13 @@ function takeDownProduct(id) {
 
 function renderModeratorPanel() {
   adminBody.innerHTML =
+    '<div class="sheet-section tight">' +
+      '<div class="sheet-label">' + icon("sliders", 13) + ' Admin Catalog Tools</div>' +
+      '<button type="button" class="sheet-btn solid wide" id="mod-open-batch-edit-btn" onclick="if(window.toggleCatalogBatchEditMode){window.toggleCatalogBatchEditMode(true);hideSheet(adminSheet, adminBtn);}" style="margin-bottom:8px;">' +
+        icon("check", 14) + ' <span>Batch Edit Catalog Grid</span>' +
+      '</button>' +
+    '</div>' +
+    '<div class="sheet-divider"></div>' +
     // add listings (moderators contribute too)
     uploadForm() +
 
@@ -626,6 +633,18 @@ function handleLiveEvent(msg) {
   } else if (msg.type === "price-drop-alert") {
     if (typeof window.onPriceDropAlertReceived === "function") {
       window.onPriceDropAlertReceived(msg);
+    }
+  } else if (msg.type === "order-tracking-update") {
+    if (typeof window.onOrderTrackingUpdateReceived === "function") {
+      window.onOrderTrackingUpdateReceived(msg);
+    }
+  } else if (msg.type === "product-review-submitted") {
+    if (typeof window.onProductReviewSubmitted === "function") {
+      window.onProductReviewSubmitted(msg);
+    }
+  } else if (msg.type === "products-batch-updated") {
+    if (typeof window.onProductsBatchUpdated === "function") {
+      window.onProductsBatchUpdated(msg);
     }
   }
 }
