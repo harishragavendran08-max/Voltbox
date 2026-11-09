@@ -3785,6 +3785,11 @@ window.showWishlistToast = function (product, added, wishlistCount) {
   activityToastEl.classList.add(payload.added ? "toast-wishlist-added" : "toast-wishlist-removed");
   activityToastEl.setAttribute("data-toast-type", payload.actionType);
 
+  if (window.triggerHaptic) {
+    window.triggerHaptic(payload.added ? "success" : "warning", activityToastEl);
+  }
+
+
   if (iconEl) {
     iconEl.innerHTML = icon("heart", 16);
   }
@@ -6793,6 +6798,10 @@ function triggerPhysicsConfirmation(order) {
   // Play harmonic chime & scatter micro-spark particles
   playPaymentSuccessChime();
   spawnPhysicsConfetti();
+  if (window.triggerHaptic) {
+    window.triggerHaptic("success");
+  }
+
 
   var springBadge = document.getElementById("pay-spring-badge");
   if (springBadge) {
@@ -13075,6 +13084,9 @@ window.applyVoltboxColorMode = applyVoltboxColorMode;
 function toggleVoltboxColorMode() {
   var nextMode = activeVoltboxColorMode === "light" ? "dark" : "light";
   applyVoltboxColorMode(nextMode, true);
+  if (window.triggerHaptic) {
+    window.triggerHaptic("selection");
+  }
   if (typeof showWishlistToast === "function") {
     showWishlistToast(
       nextMode === "light" ? "Switched to iOS Light Mode" : "Switched to iOS Dark Mode",
@@ -13083,6 +13095,7 @@ function toggleVoltboxColorMode() {
   }
   return nextMode;
 }
+
 window.toggleVoltboxColorMode = toggleVoltboxColorMode;
 
 // Initialize iOS Color Mode on load
@@ -13099,5 +13112,131 @@ window.toggleVoltboxColorMode = toggleVoltboxColorMode;
     });
   }
 })();
+
+/* ============================================================================
+   iOS / Apple HIG Haptic Feedback Service (Taptic Engine Simulation)
+   Triggers subtle native vibrations via navigator.vibrate() on mobile/PWA
+   and delivers tactile micro-scale feedback animations on desktop browsers.
+   ============================================================================ */
+(function initVoltboxHapticService() {
+  var HAPTIC_STORAGE_KEY = "voltbox_haptics";
+  var lastHapticTimestamp = 0;
+  var MIN_HAPTIC_INTERVAL_MS = 25;
+
+  var HAPTIC_PATTERNS = {
+    selection: [10],
+    light: [15],
+    medium: [25],
+    heavy: [40],
+    success: [15, 55, 25],
+    warning: [25, 50, 25],
+    error: [35, 45, 35, 45, 40]
+  };
+
+  function isHapticsSupported() {
+    return typeof navigator !== "undefined" && typeof navigator.vibrate === "function";
+  }
+
+  function isHapticsEnabled() {
+    try {
+      var val = localStorage.getItem(HAPTIC_STORAGE_KEY);
+      if (val === "0" || val === "false" || val === "disabled") return false;
+      return true;
+    } catch (e) {
+      return true;
+    }
+  }
+
+  function setHapticsEnabled(enabled) {
+    try {
+      localStorage.setItem(HAPTIC_STORAGE_KEY, enabled ? "1" : "0");
+    } catch (e) {}
+    return isHapticsEnabled();
+  }
+
+  function triggerHaptic(type, targetEl) {
+    if (!isHapticsEnabled()) return false;
+    var now = Date.now();
+    if (now - lastHapticTimestamp < MIN_HAPTIC_INTERVAL_MS) {
+      return false;
+    }
+    lastHapticTimestamp = now;
+
+    var normalizedType = (type || "light").toLowerCase().trim();
+    var pattern = HAPTIC_PATTERNS[normalizedType] || HAPTIC_PATTERNS.light;
+
+    var executed = false;
+    if (isHapticsSupported()) {
+      try {
+        executed = navigator.vibrate(pattern);
+      } catch (err) {
+        executed = false;
+      }
+    }
+
+    // Tactile micro-animation for visual confirmation across all platforms (desktop & mobile)
+    if (targetEl && targetEl.classList) {
+      try {
+        targetEl.classList.remove("ios-haptic-tap", "ios-haptic-success");
+        void targetEl.offsetWidth; // force reflow
+        if (normalizedType === "success") {
+          targetEl.classList.add("ios-haptic-success");
+        } else {
+          targetEl.classList.add("ios-haptic-tap");
+        }
+        setTimeout(function () {
+          if (targetEl && targetEl.classList) {
+            targetEl.classList.remove("ios-haptic-tap", "ios-haptic-success");
+          }
+        }, 160);
+      } catch (e) {}
+    }
+
+    return executed;
+  }
+
+  function inferHapticTypeForElement(el) {
+    if (!el) return "light";
+    var custom = el.getAttribute("data-haptic");
+    if (custom && HAPTIC_PATTERNS[custom.toLowerCase()]) {
+      return custom.toLowerCase();
+    }
+    var cls = (el.className || "").toString().toLowerCase();
+    var role = (el.getAttribute("role") || "").toLowerCase();
+    var id = (el.id || "").toLowerCase();
+
+    if (cls.includes("checkout") || id.includes("checkout") || cls.includes("batch-apply")) {
+      return "heavy";
+    }
+    if (cls.includes("qty-btn") || cls.includes("cart") || cls.includes("wishlist") || cls.includes("notify") || cls.includes("compare")) {
+      return "medium";
+    }
+    if (role === "tab" || role === "radio" || role === "switch" || cls.includes("filter-tab") || cls.includes("chip") || cls.includes("view-toggle") || cls.includes("theme-mode")) {
+      return "selection";
+    }
+    return "light";
+  }
+
+  // Delegated listener on document for high-performance touch & click haptic response
+  document.addEventListener("pointerdown", function (ev) {
+    if (!ev || !ev.target) return;
+    var btn = ev.target.closest("button, [role='button'], [role='tab'], .filter-tab, .topbar-pill-btn, .icon-btn, .sheet-btn, .card-title-btn, [data-haptic]");
+    if (btn && !btn.disabled) {
+      var hapticType = inferHapticTypeForElement(btn);
+      triggerHaptic(hapticType, btn);
+    }
+  }, { passive: true });
+
+  window.VoltboxHaptics = {
+    trigger: triggerHaptic,
+    patterns: HAPTIC_PATTERNS,
+    isSupported: isHapticsSupported,
+    isEnabled: isHapticsEnabled,
+    setEnabled: setHapticsEnabled,
+    inferType: inferHapticTypeForElement
+  };
+  window.triggerHaptic = triggerHaptic;
+})();
+
 
 

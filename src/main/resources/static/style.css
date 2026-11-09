@@ -20979,3 +20979,212 @@ html[data-color-mode="light"] .card-ctx-item:hover {
   color: #007aff !important;
 }
 
+
+/* ============================================================================
+   iOS / Apple HIG Haptic Feedback Micro-Animations & Tactile Responses
+   ============================================================================ */
+.ios-haptic-tap {
+  transform: scale(0.96) !important;
+  transition: transform 0.08s cubic-bezier(0.25, 1, 0.5, 1) !important;
+}
+
+.ios-haptic-success {
+  animation: iosHapticPop 0.2s cubic-bezier(0.175, 0.885, 0.32, 1.275) !important;
+}
+
+@keyframes iosHapticPop {
+  0% { transform: scale(1); }
+  50% { transform: scale(0.94); }
+  100% { transform: scale(1); }
+}
+
+/* ============================================================================
+   iOS LIGHT MODE HIGH-VISIBILITY CONTRAST OVERRIDES
+   ============================================================================ */
+html[data-color-mode="light"] #search-voice-btn,
+html[data-color-mode="light"] .search-voice-btn {
+  background: #ffffff !important;
+  border: 1px solid rgba(60, 60, 67, 0.22) !important;
+  color: #007aff !important;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08) !important;
+  opacity: 1 !important;
+  visibility: visible !important;
+}
+
+html[data-color-mode="light"] #search-voice-btn:hover,
+html[data-color-mode="light"] .search-voice-btn:hover {
+  background: rgba(0, 122, 255, 0.08) !important;
+  border-color: #007aff !important;
+  color: #007aff !important;
+  box-shadow: 0 2px 6px rgba(0, 122, 255, 0.16) !important;
+}
+
+html[data-color-mode="light"] #search-voice-icon,
+html[data-color-mode="light"] .search-voice-icon,
+html[data-color-mode="light"] .search-voice-btn svg,
+html[data-color-mode="light"] .search-voice-btn [data-icon="mic"] {
+  color: #007aff !important;
+  stroke: #007aff !important;
+  fill: none !important;
+}
+
+html[data-color-mode="light"] #search-voice-btn.listening,
+html[data-color-mode="light"] .search-voice-btn.listening {
+  background: #007aff !important;
+  border-color: #007aff !important;
+  color: #ffffff !important;
+  box-shadow: 0 0 0 3px rgba(0, 122, 255, 0.25), 0 2px 10px rgba(0, 122, 255, 0.35) !important;
+}
+
+html[data-color-mode="light"] .search-voice-btn.listening .search-voice-wave span {
+  background: #ffffff !important;
+}
+
+html[data-color-mode="light"] .card-wishlist-btn,
+html[data-color-mode="light"] .card-flag {
+  background: rgba(255, 255, 255, 0.94) !important;
+  backdrop-filter: blur(12px) !important;
+  -webkit-backdrop-filter: blur(12px) !important;
+  border: 1px solid rgba(60, 60, 67, 0.18) !important;
+  color: #3a3a3c !important;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08) !important;
+}
+
+html[data-color-mode="light"] .card-wishlist-btn:hover,
+html[data-color-mode="light"] .card-flag:hover {
+  background: #ffffff !important;
+  border-color: #007aff !important;
+  color: #007aff !important;
+}
+
+html[data-color-mode="light"] .card-wishlist-btn.active,
+html[data-color-mode="light"] .card-wishlist-btn.active svg,
+html[data-color-mode="light"] .card-wishlist-btn.active path {
+  background: #ffffff !important;
+  border-color: rgba(255, 45, 85, 0.4) !important;
+  color: #ff2d55 !important;
+  fill: #ff2d55 !important;
+}
+
+html[data-color-mode="light"] .card-deal-badge {
+  background: rgba(255, 149, 0, 0.12) !important;
+  border: 1px solid rgba(255, 149, 0, 0.35) !important;
+  color: #c2410c !important;
+  font-weight: 600 !important;
+}
+
+html[data-color-mode="light"] .card-notify-btn {
+  background: rgba(255, 255, 255, 0.94) !important;
+  backdrop-filter: blur(12px) !important;
+  -webkit-backdrop-filter: blur(12px) !important;
+  border: 1px solid rgba(60, 60, 67, 0.18) !important;
+  color: #1c1c1e !important;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08) !important;
+}
+
+html[data-color-mode="light"] .card-notify-btn:hover {
+  background: #ffffff !important;
+  border-color: #007aff !important;
+  color: #007aff !important;
+}
+
+html[data-color-mode="light"] .card-notify-btn.active {
+  background: rgba(0, 122, 255, 0.12) !important;
+  border-color: #007aff !important;
+  color: #007aff !important;
+  font-weight: 600 !important;
+}
+
+html[data-color-mode="light"] .card-sku-barcode {
+  background: #f2f2f7 !important;
+  border: 1px solid rgba(60, 60, 67, 0.12) !important;
+  color: #3a3a3c !important;
+}
+
+html[data-color-mode="light"] .card-sku-barcode .sku-badge,
+html[data-color-mode="light"] .card-sku-barcode .sku-label,
+html[data-color-mode="light"] .card-sku-barcode > span:first-child,
+html[data-color-mode="light"] .card-sku-barcode .barcode-sku-tag {
+  background: rgba(60, 60, 67, 0.1) !important;
+  color: #1c1c1e !important;
+}
+
+html[data-color-mode="light"] .stock-quick-filter-strip,
+html[data-color-mode="light"] #stock-quick-filter-strip {
+  background: #ffffff !important;
+  border: 1px solid rgba(60, 60, 67, 0.14) !important;
+  color: #1c1c1e !important;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.04) !important;
+}
+
+html[data-color-mode="light"] .stock-quick-filter-strip button,
+html[data-color-mode="light"] .stock-filter-chip,
+html[data-color-mode="light"] .budget-chip,
+html[data-color-mode="light"] .budget-filter-strip button {
+  background: #f2f2f7 !important;
+  border: 1px solid rgba(60, 60, 67, 0.14) !important;
+  color: #3a3a3c !important;
+}
+
+html[data-color-mode="light"] .stock-quick-filter-strip button.active,
+html[data-color-mode="light"] .stock-filter-chip.active,
+html[data-color-mode="light"] .budget-chip.active,
+html[data-color-mode="light"] .budget-filter-strip button.active {
+  background: #007aff !important;
+  border-color: #007aff !important;
+  color: #ffffff !important;
+  box-shadow: 0 2px 6px rgba(0, 122, 255, 0.25) !important;
+}
+
+html[data-color-mode="light"] .catalog-keyboard-hint,
+html[data-color-mode="light"] #catalog-keyboard-hint {
+  background: #ffffff !important;
+  border: 1px solid rgba(60, 60, 67, 0.14) !important;
+  color: #6c6c70 !important;
+}
+
+html[data-color-mode="light"] .compare-all-visible-btn,
+html[data-color-mode="light"] #compare-all-visible-btn,
+html[data-color-mode="light"] .batch-edit-trigger-btn,
+html[data-color-mode="light"] .batch-edit-btn {
+  background: #ffffff !important;
+  border: 1px solid rgba(60, 60, 67, 0.18) !important;
+  color: #1c1c1e !important;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05) !important;
+}
+
+html[data-color-mode="light"] .studio-command-strip,
+html[data-color-mode="light"] .studio-card,
+html[data-color-mode="light"] .studio-rig-status-card,
+html[data-color-mode="light"] .studio-psu-card,
+html[data-color-mode="light"] .studio-deals-card {
+  background: #ffffff !important;
+  border: 1px solid rgba(60, 60, 67, 0.14) !important;
+  border-radius: 14px !important;
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.04) !important;
+  color: #1c1c1e !important;
+}
+
+html[data-color-mode="light"] .studio-promo-chip {
+  background: #f2f2f7 !important;
+  border: 1px solid rgba(60, 60, 67, 0.14) !important;
+  color: #1c1c1e !important;
+}
+
+html[data-color-mode="light"] .spec-drawer-section-nav {
+  background: rgba(242, 242, 247, 0.94) !important;
+  backdrop-filter: blur(16px) !important;
+  -webkit-backdrop-filter: blur(16px) !important;
+  border: 1px solid rgba(60, 60, 67, 0.16) !important;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.06) !important;
+}
+
+html[data-color-mode="light"] .spec-drawer .spec-sec-nav-btn {
+  color: #3a3a3c !important;
+}
+
+html[data-color-mode="light"] .spec-drawer .spec-sec-nav-btn.active {
+  background: #007aff !important;
+  border-color: #007aff !important;
+  color: #ffffff !important;
+}

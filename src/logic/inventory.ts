@@ -9153,4 +9153,206 @@ export function getIosColorModeTokens(rawMode?: string | null): IosColorModeToke
   };
 }
 
+/* ============================================================================
+   iOS / Apple HIG Haptic Feedback Service Pure Logic
+   Mimics UISelectionFeedbackGenerator, UIImpactFeedbackGenerator (.light, .medium, .heavy)
+   and UINotificationFeedbackGenerator (.success, .warning, .error)
+   ============================================================================ */
+
+export type HapticFeedbackType =
+  | 'selection'
+  | 'light'
+  | 'medium'
+  | 'heavy'
+  | 'success'
+  | 'warning'
+  | 'error';
+
+export interface HapticPatternDefinition {
+  type: HapticFeedbackType;
+  pattern: number[];
+  label: string;
+  higEquivalent: string;
+  description: string;
+}
+
+export const IOS_HAPTIC_PATTERNS: Record<HapticFeedbackType, HapticPatternDefinition> = {
+  selection: {
+    type: 'selection',
+    pattern: [10],
+    label: 'Selection',
+    higEquivalent: 'UISelectionFeedbackGenerator',
+    description: 'Ultra-crisp 10ms tap for filter chips, category tabs, and segmented controls.',
+  },
+  light: {
+    type: 'light',
+    pattern: [15],
+    label: 'Light Impact',
+    higEquivalent: 'UIImpactFeedbackGenerator(style: .light)',
+    description: 'Subtle 15ms impact for general buttons, sheet toggles, and modal dismissals.',
+  },
+  medium: {
+    type: 'medium',
+    pattern: [25],
+    label: 'Medium Impact',
+    higEquivalent: 'UIImpactFeedbackGenerator(style: .medium)',
+    description: 'Noticeable 25ms impact for quantity increments, cart add, and compare toggles.',
+  },
+  heavy: {
+    type: 'heavy',
+    pattern: [40],
+    label: 'Heavy Impact',
+    higEquivalent: 'UIImpactFeedbackGenerator(style: .heavy)',
+    description: 'Solid 40ms pulse for checkout initiation, rig builder completion, and batch actions.',
+  },
+  success: {
+    type: 'success',
+    pattern: [15, 55, 25],
+    label: 'Success Notification',
+    higEquivalent: 'UINotificationFeedbackGenerator(notificationType: .success)',
+    description: 'Signature iOS double-pulse for order placement, wishlist save, and coupon redemption.',
+  },
+  warning: {
+    type: 'warning',
+    pattern: [25, 50, 25],
+    label: 'Warning Notification',
+    higEquivalent: 'UINotificationFeedbackGenerator(notificationType: .warning)',
+    description: 'Two sharp pulses for backorders, removals, and stock depletion alerts.',
+  },
+  error: {
+    type: 'error',
+    pattern: [35, 45, 35, 45, 40],
+    label: 'Error Notification',
+    higEquivalent: 'UINotificationFeedbackGenerator(notificationType: .error)',
+    description: 'Three rapid warning pulses for failed validations, network disconnects, or card declines.',
+  },
+};
+
+export function resolveHapticFeedbackPattern(rawType?: string | null): number[] {
+  if (!rawType) return IOS_HAPTIC_PATTERNS.light.pattern;
+  const normalized = rawType.toLowerCase().trim() as HapticFeedbackType;
+  if (normalized in IOS_HAPTIC_PATTERNS) {
+    return IOS_HAPTIC_PATTERNS[normalized].pattern;
+  }
+  return IOS_HAPTIC_PATTERNS.light.pattern;
+}
+
+export function isHapticFeedbackSupported(navigatorLike?: { vibrate?: unknown } | null): boolean {
+  if (!navigatorLike) return false;
+  return typeof navigatorLike.vibrate === 'function';
+}
+
+export function resolveHapticFeedbackPreference(stored?: string | null): boolean {
+  if (stored === null || stored === undefined) return true;
+  const s = String(stored).trim().toLowerCase();
+  if (s === '0' || s === 'false' || s === 'off' || s === 'disabled') {
+    return false;
+  }
+  return true;
+}
+
+export function inferHapticTypeForElement(elementMetadata: {
+  tagName?: string;
+  className?: string;
+  role?: string;
+  datasetHaptic?: string;
+  isActionSuccess?: boolean;
+}): HapticFeedbackType {
+  if (elementMetadata.isActionSuccess) return 'success';
+  if (elementMetadata.datasetHaptic && elementMetadata.datasetHaptic in IOS_HAPTIC_PATTERNS) {
+    return elementMetadata.datasetHaptic as HapticFeedbackType;
+  }
+
+  const cls = (elementMetadata.className || '').toLowerCase();
+  const role = (elementMetadata.role || '').toLowerCase();
+
+  if (cls.includes('checkout') || cls.includes('batch-apply')) {
+    return 'heavy';
+  }
+  if (cls.includes('qty-btn') || cls.includes('cart') || cls.includes('wishlist') || cls.includes('notify')) {
+    return 'medium';
+  }
+  if (
+    role === 'tab' ||
+    role === 'radio' ||
+    role === 'switch' ||
+    cls.includes('filter-tab') ||
+    cls.includes('chip') ||
+    cls.includes('view-toggle') ||
+    cls.includes('theme-mode')
+  ) {
+    return 'selection';
+  }
+
+  return 'light';
+}
+
+export interface HapticExecutionResult {
+  type: HapticFeedbackType;
+  pattern: number[];
+  executed: boolean;
+  reason: 'vibrated' | 'disabled_by_user' | 'unsupported_platform';
+  higEquivalent: string;
+}
+
+export function evaluateHapticTrigger(
+  type: HapticFeedbackType,
+  options?: {
+    enabled?: boolean;
+    hasVibrateApi?: boolean;
+    lastTriggerTimestamp?: number;
+    now?: number;
+    debounceMs?: number;
+  }
+): HapticExecutionResult {
+  const enabled = options?.enabled ?? true;
+  const hasVibrate = options?.hasVibrateApi ?? true;
+  const pattern = resolveHapticFeedbackPattern(type);
+  const higEquivalent = IOS_HAPTIC_PATTERNS[type]?.higEquivalent || 'UIImpactFeedbackGenerator';
+
+  if (!enabled) {
+    return {
+      type,
+      pattern,
+      executed: false,
+      reason: 'disabled_by_user',
+      higEquivalent,
+    };
+  }
+
+  if (!hasVibrate) {
+    return {
+      type,
+      pattern,
+      executed: false,
+      reason: 'unsupported_platform',
+      higEquivalent,
+    };
+  }
+
+  const debounceMs = options?.debounceMs ?? 30;
+  if (
+    options?.lastTriggerTimestamp !== undefined &&
+    options?.now !== undefined &&
+    options.now - options.lastTriggerTimestamp < debounceMs
+  ) {
+    return {
+      type,
+      pattern,
+      executed: false,
+      reason: 'vibrated',
+      higEquivalent,
+    };
+  }
+
+  return {
+    type,
+    pattern,
+    executed: true,
+    reason: 'vibrated',
+    higEquivalent,
+  };
+}
+
+
 

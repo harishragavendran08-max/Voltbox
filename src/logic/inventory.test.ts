@@ -170,7 +170,14 @@ import {
   resolveIosColorMode,
   toggleIosColorMode,
   getIosColorModeTokens,
+  IOS_HAPTIC_PATTERNS,
+  resolveHapticFeedbackPattern,
+  isHapticFeedbackSupported,
+  resolveHapticFeedbackPreference,
+  inferHapticTypeForElement,
+  evaluateHapticTrigger,
 } from './inventory';
+
 
 test('LOW_STOCK_THRESHOLD is 5', () => {
   assert.equal(LOW_STOCK_THRESHOLD, 5);
@@ -2964,4 +2971,85 @@ test('iOS / Apple HIG Light & Dark Mode Tokens & SF Pro Typography Stack: resolv
   assert.equal(darkTokens.iosSystemBlue, '#0A84FF');
   assert.equal(darkTokens.nextMode, 'light');
 });
+
+test('iOS / Apple HIG Haptic Feedback Service: patterns, preferences, element inference, and debounce/execution', () => {
+  // 1. Apple HIG predefined pattern definitions
+  assert.deepEqual(IOS_HAPTIC_PATTERNS.selection.pattern, [10]);
+  assert.equal(IOS_HAPTIC_PATTERNS.selection.higEquivalent, 'UISelectionFeedbackGenerator');
+  assert.deepEqual(IOS_HAPTIC_PATTERNS.light.pattern, [15]);
+  assert.deepEqual(IOS_HAPTIC_PATTERNS.medium.pattern, [25]);
+  assert.deepEqual(IOS_HAPTIC_PATTERNS.heavy.pattern, [40]);
+  assert.deepEqual(IOS_HAPTIC_PATTERNS.success.pattern, [15, 55, 25]);
+  assert.equal(IOS_HAPTIC_PATTERNS.success.higEquivalent, 'UINotificationFeedbackGenerator(notificationType: .success)');
+  assert.deepEqual(IOS_HAPTIC_PATTERNS.warning.pattern, [25, 50, 25]);
+  assert.deepEqual(IOS_HAPTIC_PATTERNS.error.pattern, [35, 45, 35, 45, 40]);
+
+  // 2. Pattern resolution
+  assert.deepEqual(resolveHapticFeedbackPattern('selection'), [10]);
+  assert.deepEqual(resolveHapticFeedbackPattern('light'), [15]);
+  assert.deepEqual(resolveHapticFeedbackPattern('medium'), [25]);
+  assert.deepEqual(resolveHapticFeedbackPattern('heavy'), [40]);
+  assert.deepEqual(resolveHapticFeedbackPattern('success'), [15, 55, 25]);
+  assert.deepEqual(resolveHapticFeedbackPattern('unknown'), [15]); // default fallback
+  assert.deepEqual(resolveHapticFeedbackPattern(null), [15]);
+
+  // 3. Platform support detection
+  assert.equal(isHapticFeedbackSupported({ vibrate: () => true }), true);
+  assert.equal(isHapticFeedbackSupported({ vibrate: undefined }), false);
+  assert.equal(isHapticFeedbackSupported(null), false);
+
+  // 4. Stored preferences
+  assert.equal(resolveHapticFeedbackPreference('1'), true);
+  assert.equal(resolveHapticFeedbackPreference('true'), true);
+  assert.equal(resolveHapticFeedbackPreference(null), true); // default enabled
+  assert.equal(resolveHapticFeedbackPreference('0'), false);
+  assert.equal(resolveHapticFeedbackPreference('false'), false);
+  assert.equal(resolveHapticFeedbackPreference('disabled'), false);
+
+  // 5. Element inference
+  assert.equal(inferHapticTypeForElement({ isActionSuccess: true }), 'success');
+  assert.equal(inferHapticTypeForElement({ datasetHaptic: 'heavy' }), 'heavy');
+  assert.equal(inferHapticTypeForElement({ className: 'checkout-btn' }), 'heavy');
+  assert.equal(inferHapticTypeForElement({ className: 'card qty-btn plus' }), 'medium');
+  assert.equal(inferHapticTypeForElement({ className: 'card-wishlist-btn' }), 'medium');
+  assert.equal(inferHapticTypeForElement({ role: 'tab', className: 'filter-tab' }), 'selection');
+  assert.equal(inferHapticTypeForElement({ className: 'stock-filter-chip' }), 'selection');
+  assert.equal(inferHapticTypeForElement({ className: 'view-toggle-btn' }), 'selection');
+  assert.equal(inferHapticTypeForElement({ className: 'topbar-pill-btn' }), 'light');
+
+  // 6. Trigger evaluation and debouncing
+  const resSuccess = evaluateHapticTrigger('success', { enabled: true, hasVibrateApi: true });
+  assert.equal(resSuccess.executed, true);
+  assert.equal(resSuccess.reason, 'vibrated');
+  assert.deepEqual(resSuccess.pattern, [15, 55, 25]);
+
+  const resDisabled = evaluateHapticTrigger('light', { enabled: false, hasVibrateApi: true });
+  assert.equal(resDisabled.executed, false);
+  assert.equal(resDisabled.reason, 'disabled_by_user');
+
+  const resUnsupported = evaluateHapticTrigger('medium', { enabled: true, hasVibrateApi: false });
+  assert.equal(resUnsupported.executed, false);
+  assert.equal(resUnsupported.reason, 'unsupported_platform');
+
+  // Debouncing within 30ms window
+  const now = 1000;
+  const resDebounced = evaluateHapticTrigger('selection', {
+    enabled: true,
+    hasVibrateApi: true,
+    lastTriggerTimestamp: 985,
+    now: 1000,
+    debounceMs: 30,
+  });
+  assert.equal(resDebounced.executed, false);
+
+  const resAllowed = evaluateHapticTrigger('selection', {
+    enabled: true,
+    hasVibrateApi: true,
+    lastTriggerTimestamp: 950,
+    now: 1000,
+    debounceMs: 30,
+  });
+  assert.equal(resAllowed.executed, true);
+});
+
 
