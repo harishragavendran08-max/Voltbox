@@ -208,7 +208,10 @@ const GROUP_LABEL: Record<ComponentGroup, string> = {
   other: 'Electronics Component',
 };
 
-export function getProductSku(product: { id: number; title?: string; category?: string }): string {
+export function getProductSku(product: { id: number; sku?: string | null; title?: string; category?: string }): string {
+  if (typeof product.sku === 'string' && product.sku.trim()) {
+    return product.sku.trim();
+  }
   const group = classifyComponentGroup(product);
   const prefix = SKU_PREFIX_BY_GROUP[group] || 'PRT';
   const padded = String(product.id).padStart(3, '0');
@@ -7595,6 +7598,1559 @@ export function resolveActiveSpecSectionFromScroll(
     }
   }
   return current;
+}
+
+// ============================================================================
+// PRODUCT CARD FLOATING CONTEXT MENU & LONG-PRESS QUICK ACTIONS
+// ============================================================================
+
+export const CARD_LONG_PRESS_DURATION_MS = 480;
+export const CARD_LONG_PRESS_MOVE_TOLERANCE_PX = 10;
+
+export type ProductContextMenuActionId =
+  | 'add-to-cart'
+  | 'toggle-wishlist'
+  | 'toggle-compare'
+  | 'copy-name'
+  | 'copy-sku'
+  | 'open-specs'
+  | 'open-volatility'
+  | 'price-alert';
+
+export interface ProductContextMenuInput {
+  productId: number;
+  title: string;
+  sku?: string;
+  price: number;
+  effectiveStock: number;
+  cartQty?: number;
+  isWishlisted?: boolean;
+  isCompared?: boolean;
+  hasPriceAlert?: boolean;
+}
+
+export interface ProductContextMenuItem {
+  id: ProductContextMenuActionId;
+  label: string;
+  sublabel?: string;
+  shortcut: string;
+  icon: string;
+  section: 'primary' | 'clipboard' | 'inspect';
+  active: boolean;
+  disabled: boolean;
+  badgeText?: string;
+}
+
+export interface ProductContextMenuPosition {
+  left: number;
+  top: number;
+  placement: 'bottom-right' | 'bottom-left' | 'top-right' | 'top-left';
+  transformOrigin: string;
+}
+
+/**
+ * Clamps a floating context menu popover inside the viewport and selects the optimal transform-origin
+ * so right-clicking or long-pressing near screen edges never clips the menu.
+ */
+export function computeProductContextMenuPosition(
+  anchorX: number,
+  anchorY: number,
+  menuWidth = 256,
+  menuHeight = 328,
+  viewportWidth = 1440,
+  viewportHeight = 900,
+  margin = 12
+): ProductContextMenuPosition {
+  const safeW = Math.max(180, Number(menuWidth) || 256);
+  const safeH = Math.max(160, Number(menuHeight) || 328);
+  const vw = Math.max(safeW + margin * 2, Number(viewportWidth) || 1440);
+  const vh = Math.max(safeH + margin * 2, Number(viewportHeight) || 900);
+  const pad = Math.max(4, Number(margin) || 12);
+
+  const rawX = Number.isFinite(anchorX) ? anchorX : vw / 2;
+  const rawY = Number.isFinite(anchorY) ? anchorY : vh / 2;
+
+  const flipHoriz = rawX + safeW + pad > vw;
+  const flipVert = rawY + safeH + pad > vh;
+
+  let left = flipHoriz ? rawX - safeW : rawX;
+  let top = flipVert ? rawY - safeH : rawY;
+
+  left = Math.round(Math.max(pad, Math.min(vw - safeW - pad, left)));
+  top = Math.round(Math.max(pad, Math.min(vh - safeH - pad, top)));
+
+  let placement: ProductContextMenuPosition['placement'] = 'bottom-right';
+  let transformOrigin = 'top left';
+  if (flipHoriz && flipVert) {
+    placement = 'top-left';
+    transformOrigin = 'bottom right';
+  } else if (flipHoriz) {
+    placement = 'bottom-left';
+    transformOrigin = 'top right';
+  } else if (flipVert) {
+    placement = 'top-right';
+    transformOrigin = 'bottom left';
+  }
+
+  return {
+    left,
+    top,
+    placement,
+    transformOrigin,
+  };
+}
+
+/**
+ * Determines whether a touch/pointer movement exceeds the long-press cancellation tolerance.
+ */
+export function shouldCancelLongPressOnMove(
+  startX: number,
+  startY: number,
+  currentX: number,
+  currentY: number,
+  tolerancePx = CARD_LONG_PRESS_MOVE_TOLERANCE_PX
+): boolean {
+  const dx = (Number(currentX) || 0) - (Number(startX) || 0);
+  const dy = (Number(currentY) || 0) - (Number(startY) || 0);
+  const dist = Math.hypot(dx, dy);
+  return dist > Math.max(2, Number(tolerancePx) || CARD_LONG_PRESS_MOVE_TOLERANCE_PX);
+}
+
+/**
+ * Formats clipboard text when copying product name or SKU + price from the context menu.
+ */
+export function formatProductCopyPayload(
+  product: { id?: number; title?: string; sku?: string; price?: number },
+  mode: 'name' | 'sku-price' = 'name'
+): string {
+  const title = String(product?.title || 'Voltbox Component').trim();
+  if (mode === 'name') {
+    return title;
+  }
+  const pid = Number(product?.id) || 1;
+  const sku = String(product?.sku || `VB-PRT-${String(pid).padStart(3, '0')}`).trim();
+  const price = Math.max(0, Number(product?.price) || 0).toFixed(2);
+  return `${title} (${sku}) — $${price}`;
+}
+
+/**
+ * Builds the stateful list of quick-action items for a product card's floating context menu.
+ */
+export function buildProductContextMenuItems(
+  input: ProductContextMenuInput
+): ProductContextMenuItem[] {
+  const title = String(input?.title || 'Component').trim();
+  const pid = Number(input?.productId) || 1;
+  const sku = String(input?.sku || `VB-PRT-${String(pid).padStart(3, '0')}`).trim();
+  const price = Math.max(0, Number(input?.price) || 0);
+  const stock = Math.max(0, Math.floor(Number(input?.effectiveStock) || 0));
+  const cartQty = Math.max(0, Math.floor(Number(input?.cartQty) || 0));
+  const isWishlisted = Boolean(input?.isWishlisted);
+  const isCompared = Boolean(input?.isCompared);
+  const hasPriceAlert = Boolean(input?.hasPriceAlert);
+  const outOfStock = stock <= 0;
+
+  return [
+    {
+      id: 'add-to-cart',
+      label: outOfStock
+        ? 'Out of Stock (Backorder)'
+        : cartQty > 0
+          ? `Add to Cart (${cartQty} in cart)`
+          : 'Add to Cart',
+      sublabel: outOfStock ? '0 available' : `${stock} in stock`,
+      shortcut: '+',
+      icon: 'cart',
+      section: 'primary',
+      active: cartQty > 0,
+      disabled: outOfStock,
+      badgeText: `$${price.toFixed(2)}`,
+    },
+    {
+      id: 'toggle-wishlist',
+      label: isWishlisted ? 'Remove from Wishlist' : 'Toggle Wishlist',
+      sublabel: isWishlisted ? 'Saved to personal wishlist' : 'Save for later',
+      shortcut: 'W',
+      icon: 'heart',
+      section: 'primary',
+      active: isWishlisted,
+      disabled: false,
+    },
+    {
+      id: 'toggle-compare',
+      label: isCompared ? 'Remove from Compare' : 'Compare Side-by-Side',
+      sublabel: isCompared ? 'Active in comparison tray' : 'Add to 4-slot bench compare',
+      shortcut: 'C',
+      icon: 'sliders',
+      section: 'primary',
+      active: isCompared,
+      disabled: false,
+    },
+    {
+      id: 'copy-name',
+      label: 'Copy Name',
+      sublabel: title,
+      shortcut: '⌘C',
+      icon: 'copy',
+      section: 'clipboard',
+      active: false,
+      disabled: false,
+    },
+    {
+      id: 'copy-sku',
+      label: 'Copy SKU & Price',
+      sublabel: `${sku} · $${price.toFixed(2)}`,
+      shortcut: 'S',
+      icon: 'tag',
+      section: 'clipboard',
+      active: false,
+      disabled: false,
+    },
+    {
+      id: 'open-specs',
+      label: 'Inspect Full Specs',
+      sublabel: 'Open hardware spec drawer',
+      shortcut: 'Enter',
+      icon: 'eye',
+      section: 'inspect',
+      active: false,
+      disabled: false,
+    },
+    {
+      id: 'open-volatility',
+      label: 'D3 Volatility Chart',
+      sublabel: '6-month σ bands & zoom engine',
+      shortcut: 'V',
+      icon: 'trending-up',
+      section: 'inspect',
+      active: false,
+      disabled: false,
+    },
+    {
+      id: 'price-alert',
+      label: hasPriceAlert ? 'Manage Price Alert' : 'Set Price Drop Alert',
+      sublabel: hasPriceAlert ? 'Active threshold alert' : 'Get notified on price drop',
+      shortcut: 'A',
+      icon: hasPriceAlert ? 'bell-ring' : 'bell',
+      section: 'inspect',
+      active: hasPriceAlert,
+      disabled: false,
+    },
+  ];
+}
+
+// ── Server-Side SKU Formatting & Stock Level Validation Layer (mirrors com.voltbox.validation.ProductValidator) ──
+
+export const MIN_STOCK_QUANTITY = 0;
+export const MAX_STOCK_QUANTITY = 1000;
+export const MIN_RESTOCK_AMOUNT = 1;
+export const MAX_RESTOCK_AMOUNT = 500;
+export const MAX_STOCK_DELTA = 500;
+export const MIN_PRODUCT_PRICE = 0;
+export const MAX_PRODUCT_PRICE = 99999.99;
+
+export const VALID_SKU_PREFIXES = ['GPU', 'CPU', 'MBD', 'STR', 'AUD', 'GMG', 'PRT'] as const;
+export type ValidSkuPrefix = (typeof VALID_SKU_PREFIXES)[number];
+
+export const CANONICAL_SKU_REGEX = /^VB-(GPU|CPU|MBD|STR|AUD|GMG|PRT)-(\d{3,4})(?:-([A-Z0-9]{1,4}))?$/;
+const LOOSE_VB_SKU_REGEX = /^VB-([A-Z0-9]+)-(\d+)(?:-(.*))?$/;
+
+export interface ProductValidationViolation {
+  field: string;
+  code: string;
+  message: string;
+  rejectedValue: unknown;
+}
+
+export interface ProductValidationResult {
+  ok: boolean;
+  code: string;
+  message: string;
+  normalizedSku?: string | null;
+  normalizedStock?: number | null;
+  normalizedPrice?: number | null;
+  errors: ProductValidationViolation[];
+}
+
+export interface SkuValidationCatalogItem {
+  id: number;
+  sku?: string | null;
+  title?: string;
+  name?: string;
+  category?: string;
+  takenDown?: boolean;
+}
+
+function buildValidationResult(
+  violations: ProductValidationViolation[],
+  normalized?: {
+    sku?: string | null;
+    stock?: number | null;
+    price?: number | null;
+  }
+): ProductValidationResult {
+  const ok = violations.length === 0;
+  return {
+    ok,
+    code: ok ? 'OK' : violations[0].code,
+    message: ok ? 'Validation passed.' : violations[0].message,
+    normalizedSku: normalized?.sku ?? null,
+    normalizedStock: normalized?.stock ?? null,
+    normalizedPrice: normalized?.price ?? null,
+    errors: violations,
+  };
+}
+
+/**
+ * Validates a hardware SKU string against the canonical Voltbox format:
+ * `VB-(GPU|CPU|MBD|STR|AUD|GMG|PRT)-<001..9999>[-<optional 1-4 char alphanumeric suffix>]`
+ * and verifies uniqueness across active catalog items.
+ */
+export function validateProductSku(
+  rawSku: unknown,
+  options?: {
+    required?: boolean;
+    currentProductId?: number | null;
+    existingProducts?: SkuValidationCatalogItem[];
+  }
+): ProductValidationResult {
+  const required = Boolean(options?.required);
+  const currentProductId = options?.currentProductId ?? null;
+  const existingProducts = Array.isArray(options?.existingProducts) ? options!.existingProducts : [];
+
+  if (rawSku === undefined || rawSku === null) {
+    if (required) {
+      return buildValidationResult([
+        {
+          field: 'sku',
+          code: 'SKU_REQUIRED',
+          message: 'Product SKU is required (expected format: VB-GPU-019).',
+          rejectedValue: rawSku,
+        },
+      ]);
+    }
+    return buildValidationResult([]);
+  }
+
+  const trimmed = String(rawSku).trim();
+  if (!trimmed) {
+    if (required) {
+      return buildValidationResult([
+        {
+          field: 'sku',
+          code: 'SKU_BLANK',
+          message:
+            'Product SKU cannot be empty. Expected canonical format VB-<GRP>-<001..9999> (e.g. VB-GPU-019).',
+          rejectedValue: rawSku,
+        },
+      ]);
+    }
+    return buildValidationResult([]);
+  }
+
+  if (trimmed !== trimmed.toUpperCase()) {
+    return buildValidationResult([
+      {
+        field: 'sku',
+        code: 'SKU_LOWERCASE_NOT_ALLOWED',
+        message: `SKU '${trimmed}' must use uppercase characters (e.g. '${trimmed.toUpperCase()}').`,
+        rejectedValue: trimmed,
+      },
+    ]);
+  }
+
+  if (trimmed.length < 10 || trimmed.length > 16) {
+    return buildValidationResult([
+      {
+        field: 'sku',
+        code: 'SKU_INVALID_LENGTH',
+        message: `SKU '${trimmed}' must be between 10 and 16 characters in format VB-<GRP>-<NNN>.`,
+        rejectedValue: trimmed,
+      },
+    ]);
+  }
+
+  const canonicalMatch = trimmed.match(CANONICAL_SKU_REGEX);
+  if (!canonicalMatch) {
+    const looseMatch = trimmed.match(LOOSE_VB_SKU_REGEX);
+    if (looseMatch) {
+      const prefix = looseMatch[1];
+      const digits = looseMatch[2];
+      if (!(VALID_SKU_PREFIXES as readonly string[]).includes(prefix)) {
+        return buildValidationResult([
+          {
+            field: 'sku',
+            code: 'SKU_INVALID_PREFIX',
+            message: `Invalid SKU component group prefix '${prefix}' in '${trimmed}'. Allowed prefixes: GPU, CPU, MBD, STR, AUD, GMG, PRT.`,
+            rejectedValue: trimmed,
+          },
+        ]);
+      }
+      if (digits.length < 3 || digits.length > 4) {
+        return buildValidationResult([
+          {
+            field: 'sku',
+            code: 'SKU_INVALID_SEQUENCE_LENGTH',
+            message: `SKU sequence number '${digits}' in '${trimmed}' must be 3 to 4 digits (e.g. VB-${prefix}-019).`,
+            rejectedValue: trimmed,
+          },
+        ]);
+      }
+    }
+
+    return buildValidationResult([
+      {
+        field: 'sku',
+        code: 'SKU_INVALID_FORMAT',
+        message: `Invalid SKU format '${trimmed}'. Must match VB-(GPU|CPU|MBD|STR|AUD|GMG|PRT)-<001..9999> (e.g. VB-GPU-019).`,
+        rejectedValue: trimmed,
+      },
+    ]);
+  }
+
+  const seqDigits = canonicalMatch[2];
+  const seqNum = Number.parseInt(seqDigits, 10);
+  if (Number.isNaN(seqNum) || seqNum <= 0) {
+    return buildValidationResult([
+      {
+        field: 'sku',
+        code: 'SKU_ZERO_SEQUENCE',
+        message: `SKU sequence number in '${trimmed}' must be greater than zero (001–9999).`,
+        rejectedValue: trimmed,
+      },
+    ]);
+  }
+
+  for (const existing of existingProducts) {
+    if (!existing || existing.takenDown) continue;
+    if (currentProductId !== null && existing.id === currentProductId) continue;
+    const existingSku = getProductSku(existing);
+    if (existingSku.toUpperCase() === trimmed.toUpperCase()) {
+      const existingTitle = existing.title || existing.name || `Product #${existing.id}`;
+      return buildValidationResult([
+        {
+          field: 'sku',
+          code: 'SKU_DUPLICATE',
+          message: `SKU '${trimmed}' is already assigned to active product #${existing.id} (${existingTitle}).`,
+          rejectedValue: trimmed,
+        },
+      ]);
+    }
+  }
+
+  return buildValidationResult([], { sku: trimmed });
+}
+
+/**
+ * Validates an absolute warehouse stock quantity (whole integer in `[0, 1000]`).
+ */
+export function validateProductStockLevel(
+  rawStock: unknown,
+  options?: { required?: boolean }
+): ProductValidationResult {
+  const required = Boolean(options?.required);
+
+  if (rawStock === undefined || rawStock === null || String(rawStock).trim() === '') {
+    if (required) {
+      return buildValidationResult([
+        {
+          field: 'stockQuantity',
+          code: 'STOCK_REQUIRED',
+          message: `Stock quantity is required and must be an integer between ${MIN_STOCK_QUANTITY} and ${MAX_STOCK_QUANTITY}.`,
+          rejectedValue: rawStock,
+        },
+      ]);
+    }
+    return buildValidationResult([]);
+  }
+
+  let parsedStock: number;
+  if (typeof rawStock === 'number') {
+    if (!Number.isFinite(rawStock) || !Number.isInteger(rawStock)) {
+      return buildValidationResult([
+        {
+          field: 'stockQuantity',
+          code: 'STOCK_NOT_INTEGER',
+          message: `Stock quantity must be a whole integer (received ${rawStock}).`,
+          rejectedValue: rawStock,
+        },
+      ]);
+    }
+    parsedStock = rawStock;
+  } else {
+    const rawStr = String(rawStock).trim();
+    if (!/^[+-]?\d+$/.test(rawStr)) {
+      return buildValidationResult([
+        {
+          field: 'stockQuantity',
+          code: 'STOCK_NOT_INTEGER',
+          message: `Stock quantity must be a valid whole integer (received '${rawStr}').`,
+          rejectedValue: rawStock,
+        },
+      ]);
+    }
+    parsedStock = Number.parseInt(rawStr, 10);
+    if (!Number.isSafeInteger(parsedStock)) {
+      return buildValidationResult([
+        {
+          field: 'stockQuantity',
+          code: 'STOCK_NOT_INTEGER',
+          message: `Stock quantity is out of integer bounds (received '${rawStr}').`,
+          rejectedValue: rawStock,
+        },
+      ]);
+    }
+  }
+
+  if (parsedStock < MIN_STOCK_QUANTITY) {
+    return buildValidationResult([
+      {
+        field: 'stockQuantity',
+        code: 'STOCK_NEGATIVE',
+        message: `Stock quantity cannot be negative (received ${parsedStock}). Minimum allowed stock is ${MIN_STOCK_QUANTITY} units.`,
+        rejectedValue: parsedStock,
+      },
+    ]);
+  }
+
+  if (parsedStock > MAX_STOCK_QUANTITY) {
+    return buildValidationResult([
+      {
+        field: 'stockQuantity',
+        code: 'STOCK_EXCEEDS_MAX',
+        message: `Stock quantity cannot exceed warehouse bin capacity of ${MAX_STOCK_QUANTITY} units per SKU (received ${parsedStock}).`,
+        rejectedValue: parsedStock,
+      },
+    ]);
+  }
+
+  return buildValidationResult([], { stock: parsedStock });
+}
+
+/**
+ * Validates a stock mutation (either setting an absolute target stock level or applying a delta/restock).
+ */
+export function validateProductStockAdjustment(
+  currentStock: number,
+  options: {
+    targetStock?: unknown;
+    delta?: unknown;
+    isRestockOnly?: boolean;
+  }
+): ProductValidationResult {
+  const baseStock = Math.max(0, Math.floor(Number(currentStock) || 0));
+  const hasTarget =
+    options?.targetStock !== undefined &&
+    options?.targetStock !== null &&
+    String(options.targetStock).trim() !== '';
+
+  if (hasTarget) {
+    return validateProductStockLevel(options.targetStock, { required: true });
+  }
+
+  const rawDelta = options?.delta;
+  if (rawDelta === undefined || rawDelta === null || String(rawDelta).trim() === '') {
+    return buildValidationResult([
+      {
+        field: 'delta',
+        code: 'STOCK_MUTATION_REQUIRED',
+        message: 'Provide either a valid stockQuantity (0–1000) or an integer stock delta.',
+        rejectedValue: rawDelta,
+      },
+    ]);
+  }
+
+  let parsedDelta: number;
+  if (typeof rawDelta === 'number') {
+    if (!Number.isFinite(rawDelta) || !Number.isInteger(rawDelta)) {
+      return buildValidationResult([
+        {
+          field: 'delta',
+          code: 'DELTA_NOT_INTEGER',
+          message: `Stock adjustment delta must be a whole integer (received ${rawDelta}).`,
+          rejectedValue: rawDelta,
+        },
+      ]);
+    }
+    parsedDelta = rawDelta;
+  } else {
+    const rawStr = String(rawDelta).trim();
+    if (!/^[+-]?\d+$/.test(rawStr)) {
+      return buildValidationResult([
+        {
+          field: 'delta',
+          code: 'DELTA_NOT_INTEGER',
+          message: `Stock adjustment delta must be a valid whole integer (received '${rawStr}').`,
+          rejectedValue: rawDelta,
+        },
+      ]);
+    }
+    parsedDelta = Number.parseInt(rawStr, 10);
+  }
+
+  if (options?.isRestockOnly) {
+    if (parsedDelta < MIN_RESTOCK_AMOUNT || parsedDelta > MAX_RESTOCK_AMOUNT) {
+      return buildValidationResult([
+        {
+          field: 'amount',
+          code: 'RESTOCK_OUT_OF_RANGE',
+          message: `Restock amount must be between ${MIN_RESTOCK_AMOUNT} and ${MAX_RESTOCK_AMOUNT} units (received ${parsedDelta}).`,
+          rejectedValue: parsedDelta,
+        },
+      ]);
+    }
+  } else {
+    if (parsedDelta < -MAX_STOCK_DELTA || parsedDelta > MAX_STOCK_DELTA) {
+      return buildValidationResult([
+        {
+          field: 'delta',
+          code: 'DELTA_OUT_OF_RANGE',
+          message: `Stock adjustment delta must be between -${MAX_STOCK_DELTA} and +${MAX_STOCK_DELTA} units (received ${parsedDelta}).`,
+          rejectedValue: parsedDelta,
+        },
+      ]);
+    }
+  }
+
+  const resultingStock = baseStock + parsedDelta;
+  if (resultingStock < MIN_STOCK_QUANTITY) {
+    return buildValidationResult([
+      {
+        field: 'stockQuantity',
+        code: 'STOCK_UNDERFLOW',
+        message: `Stock adjustment of ${parsedDelta} units on current stock (${baseStock}) would result in negative stock (${resultingStock}).`,
+        rejectedValue: resultingStock,
+      },
+    ]);
+  }
+
+  if (resultingStock > MAX_STOCK_QUANTITY) {
+    return buildValidationResult([
+      {
+        field: 'stockQuantity',
+        code: 'STOCK_OVERFLOW',
+        message: `Stock adjustment of +${parsedDelta} units on current stock (${baseStock}) would exceed warehouse bin capacity of ${MAX_STOCK_QUANTITY} units (resulting in ${resultingStock}).`,
+        rejectedValue: resultingStock,
+      },
+    ]);
+  }
+
+  return buildValidationResult([], { stock: resultingStock });
+}
+
+/**
+ * Validates a full product create or modification request payload before updating the JSON data store.
+ */
+export function validateProductModificationPayload(
+  payload: Record<string, unknown> | null | undefined,
+  options?: {
+    isCreate?: boolean;
+    currentProductId?: number | null;
+    existingProducts?: SkuValidationCatalogItem[];
+  }
+): ProductValidationResult {
+  const isCreate = Boolean(options?.isCreate);
+  const currentProductId = options?.currentProductId ?? null;
+  const existingProducts = Array.isArray(options?.existingProducts) ? options!.existingProducts : [];
+  const violations: ProductValidationViolation[] = [];
+
+  if (!payload || typeof payload !== 'object') {
+    return buildValidationResult([
+      {
+        field: 'body',
+        code: 'PAYLOAD_REQUIRED',
+        message: 'Request payload is required for product modification.',
+        rejectedValue: payload,
+      },
+    ]);
+  }
+
+  const hasTitleField = 'title' in payload || 'name' in payload;
+  if (isCreate || hasTitleField) {
+    const rawTitle = 'title' in payload && payload.title !== undefined ? payload.title : payload.name;
+    const cleanTitle = rawTitle !== undefined && rawTitle !== null ? String(rawTitle).trim() : '';
+    if (!cleanTitle) {
+      violations.push({
+        field: 'title',
+        code: 'TITLE_REQUIRED',
+        message: 'Product name/title cannot be blank.',
+        rejectedValue: rawTitle,
+      });
+    } else if (cleanTitle.length > 180) {
+      violations.push({
+        field: 'title',
+        code: 'TITLE_TOO_LONG',
+        message: 'Product name/title cannot exceed 180 characters.',
+        rejectedValue: cleanTitle.length,
+      });
+    }
+  }
+
+  let normalizedSku: string | null = null;
+  if ('sku' in payload) {
+    const rawSku = payload.sku;
+    const skuStr = rawSku !== undefined && rawSku !== null ? String(rawSku).trim() : '';
+    if (skuStr !== '') {
+      const skuRes = validateProductSku(rawSku, {
+        required: true,
+        currentProductId,
+        existingProducts,
+      });
+      if (!skuRes.ok) {
+        violations.push(...skuRes.errors);
+      } else {
+        normalizedSku = skuRes.normalizedSku ?? null;
+      }
+    } else if (!isCreate && rawSku !== undefined && rawSku !== null) {
+      violations.push({
+        field: 'sku',
+        code: 'SKU_BLANK',
+        message:
+          'Product SKU cannot be cleared to an empty string. Provide a valid SKU (e.g. VB-GPU-019).',
+        rejectedValue: rawSku,
+      });
+    }
+  }
+
+  let normalizedStock: number | null = null;
+  const hasStockField = 'stockQuantity' in payload || 'quantity' in payload || 'stock' in payload;
+  if (hasStockField) {
+    const rawStock =
+      payload.stockQuantity !== undefined
+        ? payload.stockQuantity
+        : payload.quantity !== undefined
+          ? payload.quantity
+          : payload.stock;
+    const stockRes = validateProductStockLevel(rawStock, { required: true });
+    if (!stockRes.ok) {
+      violations.push(...stockRes.errors);
+    } else {
+      normalizedStock = stockRes.normalizedStock ?? null;
+    }
+  }
+
+  let normalizedPrice: number | null = null;
+  if (isCreate || 'price' in payload) {
+    const rawPrice = payload.price;
+    if (rawPrice === undefined || rawPrice === null || String(rawPrice).trim() === '') {
+      if (isCreate) {
+        violations.push({
+          field: 'price',
+          code: 'PRICE_REQUIRED',
+          message: 'Unit price is required.',
+          rejectedValue: rawPrice,
+        });
+      }
+    } else {
+      const parsedPrice = Number(rawPrice);
+      if (typeof rawPrice === 'boolean' || Number.isNaN(parsedPrice) || !Number.isFinite(parsedPrice)) {
+        violations.push({
+          field: 'price',
+          code: 'PRICE_INVALID',
+          message: `Unit price must be a valid numeric amount (received '${String(rawPrice)}').`,
+          rejectedValue: rawPrice,
+        });
+      } else if (parsedPrice < MIN_PRODUCT_PRICE || parsedPrice > MAX_PRODUCT_PRICE) {
+        violations.push({
+          field: 'price',
+          code: 'PRICE_OUT_OF_RANGE',
+          message: `Unit price must be between $${MIN_PRODUCT_PRICE.toFixed(2)} and $${MAX_PRODUCT_PRICE.toFixed(2)} (received ${parsedPrice}).`,
+          rejectedValue: parsedPrice,
+        });
+      } else {
+        normalizedPrice = roundMoney(parsedPrice);
+      }
+    }
+  }
+
+  return buildValidationResult(violations, {
+    sku: normalizedSku,
+    stock: normalizedStock,
+    price: normalizedPrice,
+  });
+}
+
+// ── Product Grid Card CSS Grid Template & Layout Consistency Engine ─────────
+
+export const CARD_IMAGE_ASPECT_RATIO_LABEL = '4 / 3';
+export const CARD_IMAGE_ASPECT_RATIO = 4 / 3;
+
+export const PRODUCT_CARD_GRID_AREAS = [
+  'media',
+  'meta',
+  'title',
+  'desc',
+  'rating',
+  'price',
+  'barcode',
+  'actions',
+] as const;
+
+export type ProductCardGridArea = (typeof PRODUCT_CARD_GRID_AREAS)[number] | 'chart';
+
+export interface ProductCardGridTemplateSpec {
+  viewMode: 'grid' | 'list';
+  columnCount: number;
+  gridTemplateColumns: string;
+  gridAutoRows: string;
+  cardDisplay: 'grid';
+  cardGridTemplateColumns: string;
+  cardGridTemplateAreas: string[];
+  cardGridTemplateRows: string;
+  imageAspectRatio: string;
+  imageAspectRatioNumeric: number;
+  footerAlignSelf: 'end' | 'center';
+}
+
+export function resolveProductCardGridTemplate(options?: {
+  viewMode?: 'grid' | 'list';
+  isChartOpen?: boolean;
+  viewportWidth?: number;
+}): ProductCardGridTemplateSpec {
+  const viewMode = options?.viewMode === 'list' ? 'list' : 'grid';
+  const isChartOpen = Boolean(options?.isChartOpen);
+  const vw =
+    typeof options?.viewportWidth === 'number' && Number.isFinite(options.viewportWidth) && options.viewportWidth > 0
+      ? options.viewportWidth
+      : 1440;
+
+  if (viewMode === 'list') {
+    return {
+      viewMode: 'list',
+      columnCount: 1,
+      gridTemplateColumns: 'minmax(0, 1fr)',
+      gridAutoRows: 'auto',
+      cardDisplay: 'grid',
+      cardGridTemplateColumns: vw <= 820 ? '110px minmax(0, 1fr)' : '150px minmax(0, 1.5fr) minmax(0, 1fr) auto',
+      cardGridTemplateAreas:
+        vw <= 820
+          ? ['"img meta"', '"img title"', '"img price"', '"actions actions"', '"chart chart"']
+          : [
+              '"img meta price actions"',
+              '"img title price actions"',
+              '"img desc barcode actions"',
+              '"chart chart chart chart"',
+            ],
+      cardGridTemplateRows: 'auto',
+      imageAspectRatio: CARD_IMAGE_ASPECT_RATIO_LABEL,
+      imageAspectRatioNumeric: CARD_IMAGE_ASPECT_RATIO,
+      footerAlignSelf: 'center',
+    };
+  }
+
+  let columnCount = 4;
+  if (vw <= 1024) {
+    columnCount = 2;
+  } else if (vw <= 1280) {
+    columnCount = 3;
+  }
+
+  const areas = isChartOpen
+    ? ['"media"', '"meta"', '"title"', '"desc"', '"rating"', '"price"', '"barcode"', '"chart"', '"actions"']
+    : ['"media"', '"meta"', '"title"', '"desc"', '"rating"', '"price"', '"barcode"', '"actions"'];
+
+  const rows = isChartOpen
+    ? 'auto 24px 22px 34px 20px 32px 28px auto minmax(40px, 1fr)'
+    : 'auto 24px 22px 34px 20px 32px 28px minmax(40px, 1fr)';
+
+  return {
+    viewMode: 'grid',
+    columnCount,
+    gridTemplateColumns: `repeat(${columnCount}, minmax(0, 1fr))`,
+    gridAutoRows: '1fr',
+    cardDisplay: 'grid',
+    cardGridTemplateColumns: 'minmax(0, 1fr)',
+    cardGridTemplateAreas: areas,
+    cardGridTemplateRows: rows,
+    imageAspectRatio: CARD_IMAGE_ASPECT_RATIO_LABEL,
+    imageAspectRatioNumeric: CARD_IMAGE_ASPECT_RATIO,
+    footerAlignSelf: 'end',
+  };
+}
+
+export interface NormalizedProductCardSlots {
+  id: number;
+  title: string;
+  description: string;
+  ratingRate: number;
+  ratingCount: number;
+  ratingLabel: string;
+  sku: string;
+  formattedPrice: string;
+  inrEstimateLabel: string;
+}
+
+export function normalizeProductCardContentSlots(product: {
+  id: number;
+  title?: string;
+  name?: string;
+  description?: string;
+  ratingRate?: number;
+  ratingCount?: number;
+  price?: number;
+  category?: string;
+  sku?: string;
+}): NormalizedProductCardSlots {
+  const id = Number(product?.id) || 0;
+  const rawTitle = String(product?.title || product?.name || `Hardware Component #${id}`).trim();
+  const title = rawTitle || `Hardware Component #${id}`;
+  const rawDesc = String(product?.description || '').trim();
+  const description =
+    rawDesc ||
+    'Precision bench-verified hardware component with full ESD validation and manufacturer warranty.';
+
+  const rawCount = Number(product?.ratingCount) || 0;
+  const ratingCount = Math.max(0, Math.floor(rawCount));
+  const rawRate = Number(product?.ratingRate);
+  const ratingRate =
+    ratingCount > 0 && Number.isFinite(rawRate) && rawRate > 0
+      ? Math.min(5, Math.max(1, Math.round(rawRate * 10) / 10))
+      : 4.8;
+  const ratingLabel = ratingCount > 0 ? `${ratingRate} (${ratingCount})` : `${ratingRate.toFixed(1)} (Verified)`;
+
+  const priceNum = Number.isFinite(Number(product?.price)) && Number(product?.price) >= 0 ? Number(product?.price) : 0;
+  const formattedPrice = `$${priceNum.toFixed(2)}`;
+  const inrEstimateLabel = `≈ ₹${Math.round(priceNum * 83.5).toLocaleString('en-IN')}`;
+  const sku = getProductSku(product);
+
+  return {
+    id,
+    title,
+    description,
+    ratingRate,
+    ratingCount,
+    ratingLabel,
+    sku,
+    formattedPrice,
+    inrEstimateLabel,
+  };
+}
+
+export interface CardLayoutMeasurement {
+  cardId: string | number;
+  cardRect: { top: number; bottom: number; width: number; height: number };
+  imageRect: { width: number; height: number };
+  footerRect: { top: number; bottom: number; height: number };
+}
+
+export interface ProductGridAlignmentAudit {
+  totalCards: number;
+  rowCount: number;
+  allImagesMatchAspectRatio: boolean;
+  maxAspectRatioVariancePct: number;
+  allFootersPinnedToBottom: boolean;
+  allRowsAligned: boolean;
+  maxFooterBottomDeltaPx: number;
+  maxCardHeightDeltaPx: number;
+}
+
+export function evaluateProductGridCardAlignment(
+  measurements: CardLayoutMeasurement[],
+  tolerancePx = 2.5
+): ProductGridAlignmentAudit {
+  const list = Array.isArray(measurements) ? measurements : [];
+  if (list.length === 0) {
+    return {
+      totalCards: 0,
+      rowCount: 0,
+      allImagesMatchAspectRatio: true,
+      maxAspectRatioVariancePct: 0,
+      allFootersPinnedToBottom: true,
+      allRowsAligned: true,
+      maxFooterBottomDeltaPx: 0,
+      maxCardHeightDeltaPx: 0,
+    };
+  }
+
+  let maxAspectRatioVariancePct = 0;
+  let allImagesMatchAspectRatio = true;
+  let allFootersPinnedToBottom = true;
+
+  for (const m of list) {
+    const imgW = Number(m.imageRect?.width) || 0;
+    const imgH = Number(m.imageRect?.height) || 0;
+    if (imgW <= 0 || imgH <= 0) {
+      allImagesMatchAspectRatio = false;
+    } else {
+      const actualRatio = imgW / imgH;
+      const variancePct = (Math.abs(actualRatio - CARD_IMAGE_ASPECT_RATIO) / CARD_IMAGE_ASPECT_RATIO) * 100;
+      if (variancePct > maxAspectRatioVariancePct) {
+        maxAspectRatioVariancePct = Math.round(variancePct * 100) / 100;
+      }
+      if (variancePct > 2.0) {
+        allImagesMatchAspectRatio = false;
+      }
+    }
+
+    // Footer bottom should sit near card bottom (within card bottom padding ~8px-20px)
+    const gapToCardBottom = (Number(m.cardRect?.bottom) || 0) - (Number(m.footerRect?.bottom) || 0);
+    if (gapToCardBottom < -tolerancePx || gapToCardBottom > 24) {
+      allFootersPinnedToBottom = false;
+    }
+  }
+
+  // Group cards into visual rows by cardRect.top (within 8px vertical threshold)
+  const rows: CardLayoutMeasurement[][] = [];
+  const sortedByTop = list.slice().sort((a, b) => a.cardRect.top - b.cardRect.top);
+  for (const item of sortedByTop) {
+    const matchingRow = rows.find((r) => Math.abs(r[0].cardRect.top - item.cardRect.top) <= 8);
+    if (matchingRow) {
+      matchingRow.push(item);
+    } else {
+      rows.push([item]);
+    }
+  }
+
+  let maxFooterBottomDeltaPx = 0;
+  let maxCardHeightDeltaPx = 0;
+  let allRowsAligned = true;
+
+  for (const row of rows) {
+    if (row.length <= 1) continue;
+    const footerBottoms = row.map((c) => Number(c.footerRect.bottom) || 0);
+    const cardHeights = row.map((c) => Number(c.cardRect.height) || 0);
+
+    const fDelta = Math.max(...footerBottoms) - Math.min(...footerBottoms);
+    const hDelta = Math.max(...cardHeights) - Math.min(...cardHeights);
+
+    if (fDelta > maxFooterBottomDeltaPx) {
+      maxFooterBottomDeltaPx = Math.round(fDelta * 100) / 100;
+    }
+    if (hDelta > maxCardHeightDeltaPx) {
+      maxCardHeightDeltaPx = Math.round(hDelta * 100) / 100;
+    }
+
+    if (fDelta > tolerancePx || hDelta > tolerancePx) {
+      allRowsAligned = false;
+    }
+  }
+
+  return {
+    totalCards: list.length,
+    rowCount: rows.length,
+    allImagesMatchAspectRatio,
+    maxAspectRatioVariancePct,
+    allFootersPinnedToBottom,
+    allRowsAligned,
+    maxFooterBottomDeltaPx,
+    maxCardHeightDeltaPx,
+  };
+}
+
+export interface CatalogFilterDrawerInput {
+  stockFilter?: string | null;
+  budgetMax?: number | null;
+  sortMode?: string | null;
+  activePromoCode?: string | null;
+  batchEditActive?: boolean;
+  isExpanded?: boolean;
+}
+
+export interface CatalogFilterDrawerSummary {
+  activeCount: number;
+  hasActiveFilters: boolean;
+  activeTags: string[];
+  buttonLabel: string;
+  ariaExpanded: 'true' | 'false';
+}
+
+/**
+ * Computes the progressive-disclosure state for the consolidated "Filters & Deals"
+ * toolbar button so secondary filters (Stock, Budget, Best Deals, Promo Codes, Batch Edit)
+ * stay neatly tucked away by default while surfacing active filter counts clearly.
+ */
+export function computeCatalogFilterDrawerSummary(
+  input: CatalogFilterDrawerInput = {}
+): CatalogFilterDrawerSummary {
+  const tags: string[] = [];
+
+  const stock = String(input.stockFilter || 'all').trim().toLowerCase();
+  if (stock === 'available-now') {
+    tags.push('In Stock');
+  } else if (stock === 'backorder') {
+    tags.push('Backorder');
+  }
+
+  const budget =
+    typeof input.budgetMax === 'number' && Number.isFinite(input.budgetMax) && input.budgetMax > 0
+      ? input.budgetMax
+      : null;
+  if (budget !== null) {
+    tags.push(`Under $${budget}`);
+  }
+
+  const sort = String(input.sortMode || 'featured').trim().toLowerCase();
+  if (sort === 'best-deal') {
+    tags.push('6M Deals');
+  }
+
+  const promo = String(input.activePromoCode || '').trim().toUpperCase();
+  if (promo.length > 0) {
+    tags.push(promo);
+  }
+
+  if (input.batchEditActive) {
+    tags.push('Batch Edit');
+  }
+
+  const activeCount = tags.length;
+  const hasActiveFilters = activeCount > 0;
+  const buttonLabel = hasActiveFilters ? `Filters & Deals (${activeCount})` : 'Filters & Deals';
+
+  return {
+    activeCount,
+    hasActiveFilters,
+    activeTags: tags,
+    buttonLabel,
+    ariaExpanded: input.isExpanded ? 'true' : 'false',
+  };
+}
+
+// ============================================================================
+// SERVER-SIDE SEARCH QUERY LOGGING & CATALOG GAP ANALYTICS (JAVA PARITY)
+// ============================================================================
+
+export interface SearchQueryLogEntry {
+  id: number;
+  rawQuery: string;
+  normalizedQuery: string;
+  categoryFilter: string;
+  resultCount: number;
+  zeroResultGap: boolean;
+  inferredComponentGroup: string;
+  source: string;
+  actorName: string;
+  timestamp: string;
+}
+
+export interface AggregatedSearchMetric {
+  query: string;
+  sampleRawQuery: string;
+  searchCount: number;
+  avgResultCount: number;
+  latestResultCount: number;
+  zeroResultCount: number;
+  inferredGroup: string;
+  recommendedSkuPrefix: string;
+  lastSearchedAt: string;
+  isCatalogGap: boolean;
+  priorityLevel: 'CRITICAL_GAP' | 'HIGH_GAP' | 'EMERGING_GAP' | 'STOCKED';
+}
+
+export interface SearchCategoryDemandMetric {
+  group: string;
+  searchVolume: number;
+  gapSearches: number;
+  recommendedSkuPrefix: string;
+}
+
+export interface SearchAnalyticsReport {
+  totalSearchesLogged: number;
+  uniqueQueriesCount: number;
+  zeroResultSearchesCount: number;
+  distinctCatalogGapsCount: number;
+  zeroResultRatePct: number;
+  popularSearches: AggregatedSearchMetric[];
+  catalogGaps: AggregatedSearchMetric[];
+  categoryDemand: SearchCategoryDemandMetric[];
+  recentSearchLogs: SearchQueryLogEntry[];
+}
+
+export function normalizeSearchQueryForLog(rawQuery?: string | null): string {
+  if (!rawQuery) return '';
+  return String(rawQuery)
+    .trim()
+    .toLowerCase()
+    .replace(/[^\p{L}\p{N}\s\-+.]/gu, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+export function inferHardwareGroupFromSearchQuery(
+  normalizedQuery?: string | null,
+  categoryFilter?: string | null
+): string {
+  const cat = String(categoryFilter || '').trim().toLowerCase();
+  if (
+    cat &&
+    cat !== 'all' &&
+    cat !== 'low-stock' &&
+    cat !== 'wishlist' &&
+    ['gpus', 'cpus', 'motherboards', 'storage', 'audio', 'gaming'].includes(cat)
+  ) {
+    return cat;
+  }
+
+  const q = normalizeSearchQueryForLog(normalizedQuery);
+  if (!q) return 'accessories';
+
+  if (
+    /\b(rtx|gtx|radeon|rx|gpu|graphics|vram|geforce|arc|quadro|4090|5090|4080|5080|7900)\b/.test(q)
+  ) {
+    return 'gpus';
+  }
+  if (/\b(ryzen|intel|core|i9|i7|i5|threadripper|xeon|cpu|processor|am5|lga1700|9800x3d|7800x3d)\b/.test(q)) {
+    return 'cpus';
+  }
+  if (/\b(motherboard|mainboard|b650|x670|x870|z790|z890|b570|atx|itx|mobo|pcie|bios|ddr5|ram|memory|ecc)\b/.test(q)) {
+    return 'motherboards';
+  }
+  if (/\b(ssd|nvme|m\.2|harddisk|hdd|storage|sata|2tb|4tb|8tb|nas|gen5)\b/.test(q)) {
+    return 'storage';
+  }
+  if (/\b(dac|amp|headphone|headset|microphone|mic|xlr|speaker|audio|soundcard|iems|earbuds)\b/.test(q)) {
+    return 'audio';
+  }
+  if (/\b(ps5|xbox|switch|steam\s*deck|controller|gamepad|vr|console|oled|monitor|keyboard|mouse|gaming)\b/.test(q)) {
+    return 'gaming';
+  }
+  return 'accessories';
+}
+
+export function recommendedSkuPrefixForSearchGroup(group?: string | null): string {
+  const g = String(group || '').trim().toLowerCase();
+  switch (g) {
+    case 'gpus':
+      return 'VB-GPU-';
+    case 'cpus':
+      return 'VB-CPU-';
+    case 'motherboards':
+      return 'VB-MBD-';
+    case 'storage':
+      return 'VB-STR-';
+    case 'audio':
+      return 'VB-AUD-';
+    case 'gaming':
+      return 'VB-GAM-';
+    default:
+      return 'VB-PRT-';
+  }
+}
+
+export function createSearchQueryLogEntry(input: {
+  id: number;
+  rawQuery: string;
+  categoryFilter?: string | null;
+  resultCount: number;
+  source?: string | null;
+  actorName?: string | null;
+  timestamp?: string | null;
+}): SearchQueryLogEntry | null {
+  const rawTrimmed = String(input.rawQuery || '').trim();
+  const normalized = normalizeSearchQueryForLog(rawTrimmed);
+  if (normalized.length < 2) {
+    return null;
+  }
+
+  const cleanCategory =
+    input.categoryFilter && String(input.categoryFilter).trim()
+      ? String(input.categoryFilter).trim().toLowerCase()
+      : 'all';
+  const safeResults = Math.max(0, Math.floor(Number(input.resultCount) || 0));
+  const inferredGroup = inferHardwareGroupFromSearchQuery(normalized, cleanCategory);
+  const cleanSource =
+    input.source && String(input.source).trim()
+      ? String(input.source).trim().toLowerCase()
+      : 'catalog-search';
+  const cleanActor =
+    input.actorName && String(input.actorName).trim()
+      ? String(input.actorName).trim()
+      : 'guest';
+
+  return {
+    id: Math.max(1, Math.floor(Number(input.id) || 1)),
+    rawQuery: rawTrimmed,
+    normalizedQuery: normalized,
+    categoryFilter: cleanCategory,
+    resultCount: safeResults,
+    zeroResultGap: safeResults === 0,
+    inferredComponentGroup: inferredGroup,
+    source: cleanSource,
+    actorName: cleanActor,
+    timestamp: input.timestamp || new Date().toISOString(),
+  };
+}
+
+export const DEFAULT_SEEDED_SEARCH_LOGS: Array<Omit<SearchQueryLogEntry, 'id'>> = [
+  // Popular matched component searches
+  { rawQuery: 'RTX 5090', normalizedQuery: 'rtx 5090', categoryFilter: 'all', resultCount: 2, zeroResultGap: false, inferredComponentGroup: 'gpus', source: 'catalog-search', actorName: 'builder_arjun', timestamp: new Date(Date.now() - 4200 * 1000).toISOString() },
+  { rawQuery: 'rtx 5090', normalizedQuery: 'rtx 5090', categoryFilter: 'gpus', resultCount: 2, zeroResultGap: false, inferredComponentGroup: 'gpus', source: 'catalog-search', actorName: 'guest', timestamp: new Date(Date.now() - 3900 * 1000).toISOString() },
+  { rawQuery: 'Nvidia RTX 5090', normalizedQuery: 'nvidia rtx 5090', categoryFilter: 'all', resultCount: 1, zeroResultGap: false, inferredComponentGroup: 'gpus', source: 'voice-search', actorName: 'kiran_oc', timestamp: new Date(Date.now() - 3500 * 1000).toISOString() },
+  { rawQuery: 'RTX 5090', normalizedQuery: 'rtx 5090', categoryFilter: 'all', resultCount: 2, zeroResultGap: false, inferredComponentGroup: 'gpus', source: 'catalog-search', actorName: 'dev_rig_lab', timestamp: new Date(Date.now() - 2900 * 1000).toISOString() },
+  { rawQuery: 'RTX 5090', normalizedQuery: 'rtx 5090', categoryFilter: 'gpus', resultCount: 2, zeroResultGap: false, inferredComponentGroup: 'gpus', source: 'catalog-search', actorName: 'ananya_render', timestamp: new Date(Date.now() - 1100 * 1000).toISOString() },
+  { rawQuery: 'Ryzen 9', normalizedQuery: 'ryzen 9', categoryFilter: 'cpus', resultCount: 2, zeroResultGap: false, inferredComponentGroup: 'cpus', source: 'catalog-search', actorName: 'guest', timestamp: new Date(Date.now() - 3400 * 1000).toISOString() },
+  { rawQuery: 'AMD Ryzen 9', normalizedQuery: 'amd ryzen 9', categoryFilter: 'all', resultCount: 2, zeroResultGap: false, inferredComponentGroup: 'cpus', source: 'catalog-search', actorName: 'meera_cad', timestamp: new Date(Date.now() - 2700 * 1000).toISOString() },
+  { rawQuery: 'Ryzen 9', normalizedQuery: 'ryzen 9', categoryFilter: 'all', resultCount: 2, zeroResultGap: false, inferredComponentGroup: 'cpus', source: 'catalog-search', actorName: 'guest', timestamp: new Date(Date.now() - 1800 * 1000).toISOString() },
+  { rawQuery: 'NVMe SSD', normalizedQuery: 'nvme ssd', categoryFilter: 'storage', resultCount: 3, zeroResultGap: false, inferredComponentGroup: 'storage', source: 'catalog-search', actorName: 'guest', timestamp: new Date(Date.now() - 3100 * 1000).toISOString() },
+  { rawQuery: 'NVMe SSD', normalizedQuery: 'nvme ssd', categoryFilter: 'all', resultCount: 3, zeroResultGap: false, inferredComponentGroup: 'storage', source: 'catalog-search', actorName: 'rohan_nas', timestamp: new Date(Date.now() - 1900 * 1000).toISOString() },
+  { rawQuery: 'OLED monitor', normalizedQuery: 'oled monitor', categoryFilter: 'gaming', resultCount: 2, zeroResultGap: false, inferredComponentGroup: 'gaming', source: 'catalog-search', actorName: 'guest', timestamp: new Date(Date.now() - 2200 * 1000).toISOString() },
+  { rawQuery: 'B570 motherboard', normalizedQuery: 'b570 motherboard', categoryFilter: 'motherboards', resultCount: 1, zeroResultGap: false, inferredComponentGroup: 'motherboards', source: 'catalog-search', actorName: 'guest', timestamp: new Date(Date.now() - 1600 * 1000).toISOString() },
+
+  // Zero-result catalog gap searches (high-demand unstocked components)
+  { rawQuery: 'DDR5 64GB ECC RAM', normalizedQuery: 'ddr5 64gb ecc ram', categoryFilter: 'motherboards', resultCount: 0, zeroResultGap: true, inferredComponentGroup: 'motherboards', source: 'catalog-search', actorName: 'ai_workstation_blr', timestamp: new Date(Date.now() - 3800 * 1000).toISOString() },
+  { rawQuery: 'ddr5 64gb ecc ram', normalizedQuery: 'ddr5 64gb ecc ram', categoryFilter: 'all', resultCount: 0, zeroResultGap: true, inferredComponentGroup: 'motherboards', source: 'catalog-search', actorName: 'guest', timestamp: new Date(Date.now() - 2600 * 1000).toISOString() },
+  { rawQuery: 'DDR5 64GB ECC RAM', normalizedQuery: 'ddr5 64gb ecc ram', categoryFilter: 'all', resultCount: 0, zeroResultGap: true, inferredComponentGroup: 'motherboards', source: 'voice-search', actorName: 'vikram_ml', timestamp: new Date(Date.now() - 1200 * 1000).toISOString() },
+  { rawQuery: 'PCIe 5.0 Riser Cable', normalizedQuery: 'pcie 5.0 riser cable', categoryFilter: 'all', resultCount: 0, zeroResultGap: true, inferredComponentGroup: 'motherboards', source: 'catalog-search', actorName: 'sff_builder', timestamp: new Date(Date.now() - 3200 * 1000).toISOString() },
+  { rawQuery: 'pcie 5.0 riser cable', normalizedQuery: 'pcie 5.0 riser cable', categoryFilter: 'all', resultCount: 0, zeroResultGap: true, inferredComponentGroup: 'motherboards', source: 'catalog-search', actorName: 'guest', timestamp: new Date(Date.now() - 1400 * 1000).toISOString() },
+  { rawQuery: '8TB NVMe Gen5', normalizedQuery: '8tb nvme gen5', categoryFilter: 'storage', resultCount: 0, zeroResultGap: true, inferredComponentGroup: 'storage', source: 'catalog-search', actorName: 'studio_edit_pro', timestamp: new Date(Date.now() - 2400 * 1000).toISOString() },
+  { rawQuery: '8tb nvme gen5', normalizedQuery: '8tb nvme gen5', categoryFilter: 'all', resultCount: 0, zeroResultGap: true, inferredComponentGroup: 'storage', source: 'catalog-search', actorName: 'guest', timestamp: new Date(Date.now() - 950 * 1000).toISOString() },
+  { rawQuery: 'Threadripper PRO 7995WX', normalizedQuery: 'threadripper pro 7995wx', categoryFilter: 'cpus', resultCount: 0, zeroResultGap: true, inferredComponentGroup: 'cpus', source: 'catalog-search', actorName: 'vfx_render_node', timestamp: new Date(Date.now() - 1500 * 1000).toISOString() },
+  { rawQuery: 'XLR Boom Arm', normalizedQuery: 'xlr boom arm', categoryFilter: 'audio', resultCount: 0, zeroResultGap: true, inferredComponentGroup: 'audio', source: 'catalog-search', actorName: 'podcaster_ind', timestamp: new Date(Date.now() - 800 * 1000).toISOString() },
+];
+
+export function computeSearchQueryAnalytics(
+  rawLogs: SearchQueryLogEntry[] = [],
+  currentCatalogProducts: Array<{ id?: number; title?: string; category?: string; sku?: string; description?: string }> = []
+): SearchAnalyticsReport {
+  const logs = Array.isArray(rawLogs) ? rawLogs.filter(Boolean) : [];
+  const totalSearches = logs.length;
+  const zeroResultSearches = logs.filter((l) => l.zeroResultGap || l.resultCount === 0).length;
+
+  interface Bucket {
+    normalizedQuery: string;
+    sampleRawQuery: string;
+    searchCount: number;
+    totalResultsAccumulated: number;
+    latestResultCount: number;
+    zeroResultCount: number;
+    inferredGroup: string;
+    lastSearchedAt: string;
+  }
+
+  const buckets = new Map<string, Bucket>();
+
+  for (const entry of logs) {
+    const norm = normalizeSearchQueryForLog(entry.normalizedQuery || entry.rawQuery);
+    if (!norm) continue;
+
+    let b = buckets.get(norm);
+    if (!b) {
+      b = {
+        normalizedQuery: norm,
+        sampleRawQuery: entry.rawQuery || norm,
+        searchCount: 0,
+        totalResultsAccumulated: 0,
+        latestResultCount: entry.resultCount,
+        zeroResultCount: 0,
+        inferredGroup:
+          entry.inferredComponentGroup ||
+          inferHardwareGroupFromSearchQuery(norm, entry.categoryFilter),
+        lastSearchedAt: entry.timestamp || '',
+      };
+      buckets.set(norm, b);
+    }
+
+    b.searchCount += 1;
+    b.totalResultsAccumulated += Math.max(0, Number(entry.resultCount) || 0);
+    if (entry.zeroResultGap || entry.resultCount === 0) {
+      b.zeroResultCount += 1;
+    }
+    if (entry.timestamp && (!b.lastSearchedAt || entry.timestamp >= b.lastSearchedAt)) {
+      b.lastSearchedAt = entry.timestamp;
+      b.latestResultCount = entry.resultCount;
+      if (entry.rawQuery) {
+        b.sampleRawQuery = entry.rawQuery;
+      }
+    }
+  }
+
+  // Re-evaluate against current live catalog so if an admin just stocked a gap item,
+  // its latestResultCount reflects the newly added SKU immediately!
+  const hasLiveCatalog = Array.isArray(currentCatalogProducts) && currentCatalogProducts.length > 0;
+
+  const allAggregated: AggregatedSearchMetric[] = Array.from(buckets.values())
+    .map((b) => {
+      let liveCount = b.latestResultCount;
+      if (hasLiveCatalog) {
+        const qLower = b.normalizedQuery.toLowerCase();
+        liveCount = currentCatalogProducts.filter((p) => {
+          const hay = `${p.title || ''} ${p.description || ''} ${p.category || ''} ${p.sku || ''}`.toLowerCase();
+          return hay.includes(qLower);
+        }).length;
+      }
+
+      const avgRes =
+        b.searchCount > 0 ? Math.round((b.totalResultsAccumulated / b.searchCount) * 10) / 10 : 0;
+      const isGap = liveCount === 0 && b.zeroResultCount > 0;
+      const priorityLevel: AggregatedSearchMetric['priorityLevel'] = isGap
+        ? b.searchCount >= 3
+          ? 'CRITICAL_GAP'
+          : b.searchCount >= 2
+          ? 'HIGH_GAP'
+          : 'EMERGING_GAP'
+        : 'STOCKED';
+
+      return {
+        query: b.normalizedQuery,
+        sampleRawQuery: b.sampleRawQuery,
+        searchCount: b.searchCount,
+        avgResultCount: avgRes,
+        latestResultCount: liveCount,
+        zeroResultCount: b.zeroResultCount,
+        inferredGroup: b.inferredGroup,
+        recommendedSkuPrefix: recommendedSkuPrefixForSearchGroup(b.inferredGroup),
+        lastSearchedAt: b.lastSearchedAt,
+        isCatalogGap: isGap,
+        priorityLevel,
+      };
+    })
+    .sort((a, b) => {
+      if (b.searchCount !== a.searchCount) return b.searchCount - a.searchCount;
+      return (b.lastSearchedAt || '').localeCompare(a.lastSearchedAt || '');
+    });
+
+  const popularSearches = allAggregated.slice(0, 12);
+  const catalogGaps = allAggregated
+    .filter((m) => m.isCatalogGap)
+    .sort((a, b) => {
+      if (b.zeroResultCount !== a.zeroResultCount) return b.zeroResultCount - a.zeroResultCount;
+      return b.searchCount - a.searchCount;
+    })
+    .slice(0, 12);
+
+  const groupMap = new Map<string, { group: string; searchVolume: number; gapSearches: number }>();
+  for (const m of allAggregated) {
+    const g = m.inferredGroup || 'accessories';
+    const curr = groupMap.get(g) || { group: g, searchVolume: 0, gapSearches: 0 };
+    curr.searchVolume += m.searchCount;
+    curr.gapSearches += m.isCatalogGap ? m.zeroResultCount : 0;
+    groupMap.set(g, curr);
+  }
+
+  const categoryDemand: SearchCategoryDemandMetric[] = Array.from(groupMap.values())
+    .map((g) => ({
+      group: g.group,
+      searchVolume: g.searchVolume,
+      gapSearches: g.gapSearches,
+      recommendedSkuPrefix: recommendedSkuPrefixForSearchGroup(g.group),
+    }))
+    .sort((a, b) => b.searchVolume - a.searchVolume);
+
+  const recentSearchLogs = [...logs]
+    .sort((a, b) => (b.timestamp || '').localeCompare(a.timestamp || ''))
+    .slice(0, 30);
+
+  const zeroResultRatePct =
+    totalSearches > 0 ? Math.round((zeroResultSearches / totalSearches) * 1000) / 10 : 0;
+
+  return {
+    totalSearchesLogged: totalSearches,
+    uniqueQueriesCount: buckets.size,
+    zeroResultSearchesCount: zeroResultSearches,
+    distinctCatalogGapsCount: catalogGaps.length,
+    zeroResultRatePct,
+    popularSearches,
+    catalogGaps,
+    categoryDemand,
+    recentSearchLogs,
+  };
+}
+
+// ============================================================================
+// iOS / APPLE HIG LIGHT MODE, DARK MODE & SF PRO TYPOGRAPHY TOKENS
+// ============================================================================
+
+export type IosColorMode = 'light' | 'dark';
+
+export const IOS_SYSTEM_FONT_STACK =
+  '-apple-system, BlinkMacSystemFont, "SF Pro Text", "SF Pro Display", "Helvetica Neue", system-ui, sans-serif';
+
+export const IOS_DISPLAY_FONT_STACK =
+  '-apple-system, BlinkMacSystemFont, "SF Pro Display", "SF Pro Text", "Helvetica Neue", system-ui, sans-serif';
+
+export const IOS_MONO_FONT_STACK =
+  '"SF Mono", ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace';
+
+export interface IosColorModeTokens {
+  mode: IosColorMode;
+  label: string;
+  shortLabel: string;
+  nextMode: IosColorMode;
+  nextModeLabel: string;
+  bgGroupedPrimary: string;
+  bgGroupedSecondary: string;
+  surfaceElevated: string;
+  surfaceFrosted: string;
+  textPrimary: string;
+  textSecondary: string;
+  textMuted: string;
+  iosSystemBlue: string;
+  iosSystemGreen: string;
+  iosSystemOrange: string;
+  iosSystemRed: string;
+  separatorHairline: string;
+  backdropFilter: string;
+  cardBorderRadiusPx: number;
+  fontSans: string;
+  fontDisplay: string;
+  fontMono: string;
+}
+
+export function resolveIosColorMode(rawMode?: string | null): IosColorMode {
+  const cleaned = String(rawMode || '').trim().toLowerCase();
+  if (cleaned === 'light' || cleaned === 'ios-light' || cleaned === 'day') {
+    return 'light';
+  }
+  return 'dark';
+}
+
+export function toggleIosColorMode(currentMode?: string | null): IosColorMode {
+  return resolveIosColorMode(currentMode) === 'light' ? 'dark' : 'light';
+}
+
+export function getIosColorModeTokens(rawMode?: string | null): IosColorModeTokens {
+  const mode = resolveIosColorMode(rawMode);
+  if (mode === 'light') {
+    return {
+      mode: 'light',
+      label: 'iOS Light Mode',
+      shortLabel: 'Light',
+      nextMode: 'dark',
+      nextModeLabel: 'Switch to Dark Mode',
+      bgGroupedPrimary: '#F2F2F7',
+      bgGroupedSecondary: '#FFFFFF',
+      surfaceElevated: '#FFFFFF',
+      surfaceFrosted: 'rgba(255, 255, 255, 0.82)',
+      textPrimary: '#1C1C1E',
+      textSecondary: '#3A3A3C',
+      textMuted: '#6C6C70',
+      iosSystemBlue: '#007AFF',
+      iosSystemGreen: '#34C759',
+      iosSystemOrange: '#FF9500',
+      iosSystemRed: '#FF3B30',
+      separatorHairline: 'rgba(60, 60, 67, 0.14)',
+      backdropFilter: 'saturate(180%) blur(20px)',
+      cardBorderRadiusPx: 16,
+      fontSans: IOS_SYSTEM_FONT_STACK,
+      fontDisplay: IOS_DISPLAY_FONT_STACK,
+      fontMono: IOS_MONO_FONT_STACK,
+    };
+  }
+
+  return {
+    mode: 'dark',
+    label: 'iOS Dark Mode',
+    shortLabel: 'Dark',
+    nextMode: 'light',
+    nextModeLabel: 'Switch to Light Mode',
+    bgGroupedPrimary: '#000000',
+    bgGroupedSecondary: '#1C1C1E',
+    surfaceElevated: '#1C1C1E',
+    surfaceFrosted: 'rgba(28, 28, 30, 0.80)',
+    textPrimary: '#F2F2F7',
+    textSecondary: '#AEAEB2',
+    textMuted: '#8E8E93',
+    iosSystemBlue: '#0A84FF',
+    iosSystemGreen: '#30D158',
+    iosSystemOrange: '#FF9F0A',
+    iosSystemRed: '#FF453A',
+    separatorHairline: 'rgba(84, 84, 88, 0.42)',
+    backdropFilter: 'saturate(180%) blur(20px)',
+    cardBorderRadiusPx: 16,
+    fontSans: IOS_SYSTEM_FONT_STACK,
+    fontDisplay: IOS_DISPLAY_FONT_STACK,
+    fontMono: IOS_MONO_FONT_STACK,
+  };
 }
 
 

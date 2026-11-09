@@ -8,15 +8,15 @@
   --text-primary: #f8fafc;
   --text-secondary: #94a3b8;
   --text-muted: #64748b;
-  --accent-amber: #38bdf8;
-  --accent-amber-hover: #0ea5e9;
-  --accent-teal: #2dd4bf;
-  --status-ok: #10b981;
-  --status-warn: #f59e0b;
-  --status-crit: #ef4444;
-  --font-display: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, sans-serif;
-  --font-body: 'DM Sans', -apple-system, BlinkMacSystemFont, sans-serif;
-  --font-mono: 'JetBrains Mono', monospace;
+  --accent-amber: #0a84ff;
+  --accent-amber-hover: #007aff;
+  --accent-teal: #30d158;
+  --status-ok: #30d158;
+  --status-warn: #ff9f0a;
+  --status-crit: #ff453a;
+  --font-display: -apple-system, BlinkMacSystemFont, "SF Pro Display", "SF Pro Text", "Helvetica Neue", system-ui, sans-serif;
+  --font-body: -apple-system, BlinkMacSystemFont, "SF Pro Text", "SF Pro Display", "Helvetica Neue", system-ui, sans-serif;
+  --font-mono: "SF Mono", ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
 }
 
 *, *::before, *::after {
@@ -1070,8 +1070,10 @@ html, body {
 /* Admin Catalog Grid View */
 .admin-catalog-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(270px, 1fr));
-  gap: 14px;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  grid-auto-rows: 1fr;
+  align-items: stretch;
+  gap: 16px;
   padding: 18px 20px;
 }
 
@@ -1083,11 +1085,14 @@ html, body {
 .admin-grid-card {
   background-color: var(--bg-canvas);
   border: 1px solid var(--border-subtle);
-  border-radius: 8px;
+  border-radius: 10px;
   padding: 14px;
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-rows: auto auto 1fr auto;
+  row-gap: 10px;
+  height: 100%;
+  box-sizing: border-box;
   cursor: pointer;
   transition: border-color 140ms ease, background-color 140ms ease;
 }
@@ -1117,25 +1122,29 @@ html, body {
   cursor: pointer;
 }
 
-.admin-grid-card-body {
-  display: flex;
-  align-items: center;
-  gap: 12px;
+.admin-grid-img-wrap {
+  width: 100%;
+  aspect-ratio: 4 / 3;
+  border-radius: 8px;
+  overflow: hidden;
+  background-color: var(--bg-surface);
+  border: 1px solid var(--border-subtle);
 }
 
 .admin-grid-thumb {
-  width: 54px;
-  height: 54px;
-  border-radius: 6px;
+  width: 100%;
+  height: 100%;
+  aspect-ratio: 4 / 3;
   object-fit: cover;
-  background-color: var(--bg-surface);
-  border: 1px solid var(--border-subtle);
-  flex-shrink: 0;
+  object-position: center center;
+  display: block;
 }
 
 .admin-grid-info {
   min-width: 0;
-  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
 }
 
 .admin-grid-title {
@@ -1151,17 +1160,18 @@ html, body {
 .admin-grid-meta {
   font-size: 11.5px;
   color: var(--text-muted);
-  margin-top: 2px;
 }
 
 .admin-grid-price {
-  margin-top: 4px;
-  font-size: 13.5px;
+  margin-top: 2px;
+  font-size: 14px;
   font-weight: 700;
   color: var(--text-primary);
 }
 
 .admin-grid-card-foot {
+  align-self: end;
+  margin-top: auto;
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -1205,4 +1215,115 @@ html, body {
     grid-template-columns: 1fr;
   }
 }
+
+/* ==========================================================================
+   Search & Catalog Gaps View + iOS Light / Dark Mode Styling
+   ========================================================================== */
+
+.search-kpi-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 16px;
+}
+
+.btn-stock-gap {
+  padding: 6px 11px;
+  font-size: 11.5px;
+  border-radius: 999px;
+}
+
+.ios-theme-mode-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border-radius: 999px;
+  padding: 7px 13px;
+}
+
+.panel-surface,
+.kpi-cell,
+.modal-dialog,
+.admin-grid-card {
+  border-radius: 14px;
+}
+
+.btn-primary {
+  background-color: var(--accent-amber);
+  color: #ffffff;
+  border-color: var(--accent-amber);
+  border-radius: 10px;
+}
+
+.btn-secondary,
+.btn-batch-toggle {
+  border-radius: 10px;
+}
+
+html[data-color-mode="light"] {
+  --bg-canvas: #f2f2f7;
+  --bg-surface: rgba(255, 255, 255, 0.92);
+  --bg-elevated: #ffffff;
+  --bg-hover: rgba(118, 118, 128, 0.12);
+  --border-subtle: rgba(60, 60, 67, 0.14);
+  --border-strong: rgba(60, 60, 67, 0.24);
+  --text-primary: #1c1c1e;
+  --text-secondary: #6c6c70;
+  --text-muted: #8e8e93;
+  --accent-amber: #007aff;
+  --accent-amber-hover: #0062cc;
+  --accent-teal: #34c759;
+  color-scheme: light;
+}
+
+html[data-color-mode="light"],
+html[data-color-mode="light"] body {
+  background-color: #f2f2f7;
+  background-image:
+    radial-gradient(1100px 540px at 50% -10%, rgba(0, 122, 255, 0.08), transparent 70%),
+    linear-gradient(180deg, #f7f7fa 0%, #f2f2f7 100%);
+  color: #1c1c1e;
+}
+
+html[data-color-mode="light"] .admin-sidebar,
+html[data-color-mode="light"] .admin-topbar,
+html[data-color-mode="light"] .panel-surface,
+html[data-color-mode="light"] .kpi-cell {
+  background-color: rgba(255, 255, 255, 0.88);
+  backdrop-filter: saturate(180%) blur(20px);
+  -webkit-backdrop-filter: saturate(180%) blur(20px);
+  box-shadow: 0 4px 18px rgba(0, 0, 0, 0.04);
+}
+
+html[data-color-mode="light"] .data-table th {
+  background-color: rgba(242, 242, 247, 0.85);
+  color: #6c6c70;
+}
+
+html[data-color-mode="light"] .data-table tbody tr:hover {
+  background-color: rgba(0, 122, 255, 0.05);
+}
+
+html[data-color-mode="light"] .batch-edit-panel {
+  background-color: rgba(242, 242, 247, 0.9);
+}
+
+html[data-color-mode="light"] .state-label.ok,
+html[data-color-mode="light"] .nav-count.ok {
+  color: #248a3d;
+}
+
+html[data-color-mode="light"] .state-label.warn,
+html[data-color-mode="light"] .nav-count.warn,
+html[data-color-mode="light"] .kpi-value.warn {
+  color: #c93400;
+}
+
+html[data-color-mode="light"] .state-label.crit {
+  color: #d70015;
+}
+
+html[data-color-mode="light"] .probe-output-wrap {
+  background-color: #1c1c1e;
+}
+
 

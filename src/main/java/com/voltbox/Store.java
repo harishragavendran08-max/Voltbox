@@ -34,6 +34,8 @@ public class Store {
     private int nextReportId = 1;
     private List<ChatMessage> messages = new ArrayList<>();
     private int nextMessageId = 1;
+    private List<SearchQueryLog> searchLogs = new ArrayList<>();
+    private int nextSearchLogId = 1;
     private Map<String, String> sessions = new LinkedHashMap<>();
 
     public static class Data {
@@ -42,12 +44,14 @@ public class Store {
         public int nextApplicationId = 1;
         public int nextReportId = 1;
         public int nextMessageId = 1;
+        public int nextSearchLogId = 1;
         public List<User> users = new ArrayList<>();
         public Map<String, String> sessions = new LinkedHashMap<>();
         public List<Product> products = new ArrayList<>();
         public List<Application> applications = new ArrayList<>();
         public List<Report> reports = new ArrayList<>();
         public List<ChatMessage> messages = new ArrayList<>();
+        public List<SearchQueryLog> searchLogs = new ArrayList<>();
     }
 
     @PostConstruct
@@ -64,11 +68,13 @@ public class Store {
             this.applications = d.applications != null ? d.applications : new ArrayList<>();
             this.reports = d.reports != null ? d.reports : new ArrayList<>();
             this.messages = d.messages != null ? d.messages : new ArrayList<>();
+            this.searchLogs = d.searchLogs != null ? d.searchLogs : new ArrayList<>();
             this.nextId = Math.max(d.nextId, 1);
             this.nextProductId = Math.max(d.nextProductId, 1);
             this.nextApplicationId = Math.max(d.nextApplicationId, 1);
             this.nextReportId = Math.max(d.nextReportId, 1);
             this.nextMessageId = Math.max(d.nextMessageId, 1);
+            this.nextSearchLogId = Math.max(d.nextSearchLogId, 1);
             ensureDefaultAccounts();
         } catch (Exception e) {
             throw new RuntimeException("Couldn't read voltbox-data.json", e);
@@ -92,7 +98,14 @@ public class Store {
         }
     }
 
+    private final com.voltbox.validation.ProductValidator productValidator = new com.voltbox.validation.ProductValidator();
+
     public synchronized void save() {
+        for (Product p : products) {
+            if (p != null && !p.takenDown) {
+                productValidator.assertValidProductEntity(p, products);
+            }
+        }
         try {
             Data d = new Data();
             d.nextId = nextId;
@@ -100,12 +113,14 @@ public class Store {
             d.nextApplicationId = nextApplicationId;
             d.nextReportId = nextReportId;
             d.nextMessageId = nextMessageId;
+            d.nextSearchLogId = nextSearchLogId;
             d.users = users;
             d.sessions = sessions;
             d.products = products;
             d.applications = applications;
             d.reports = reports;
             d.messages = messages;
+            d.searchLogs = searchLogs;
 
             File tmp = new File(DATA_FILE.getPath() + ".tmp");
             json.writerWithDefaultPrettyPrinter().writeValue(tmp, d);
@@ -187,6 +202,7 @@ public class Store {
     }
 
     public synchronized Product addProduct(Product p) {
+        productValidator.assertValidProductEntity(p, products);
         p.id = nextProductId++;
         p.createdAt = System.currentTimeMillis();
         products.add(p);
@@ -235,5 +251,66 @@ public class Store {
         messages.add(m);
         save();
         return m;
+    }
+
+    public synchronized List<SearchQueryLog> getSearchLogs() {
+        return new ArrayList<>(searchLogs);
+    }
+
+    public synchronized SearchQueryLog addSearchLog(
+            String rawQuery,
+            String normalizedQuery,
+            String categoryFilter,
+            int resultCount,
+            boolean zeroResultGap,
+            String inferredComponentGroup,
+            String source,
+            String actorName) {
+        return addSearchLogAtTimestamp(
+                rawQuery,
+                normalizedQuery,
+                categoryFilter,
+                resultCount,
+                zeroResultGap,
+                inferredComponentGroup,
+                source,
+                actorName,
+                System.currentTimeMillis()
+        );
+    }
+
+    public synchronized SearchQueryLog addSearchLogAtTimestamp(
+            String rawQuery,
+            String normalizedQuery,
+            String categoryFilter,
+            int resultCount,
+            boolean zeroResultGap,
+            String inferredComponentGroup,
+            String source,
+            String actorName,
+            long timestamp) {
+        SearchQueryLog entry = new SearchQueryLog(
+                nextSearchLogId++,
+                rawQuery,
+                normalizedQuery,
+                categoryFilter,
+                resultCount,
+                zeroResultGap,
+                inferredComponentGroup,
+                source,
+                actorName,
+                timestamp
+        );
+        searchLogs.add(entry);
+        while (searchLogs.size() > 500) {
+            searchLogs.remove(0);
+        }
+        save();
+        return entry;
+    }
+
+    public synchronized void clearSearchLogs() {
+        searchLogs.clear();
+        save();
     }
 }

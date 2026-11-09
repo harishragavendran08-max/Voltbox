@@ -8,6 +8,11 @@ import {
   PriceAlertSubscription,
   ProductReview,
   getProductSku,
+  validateProductSku,
+  validateProductStockLevel,
+  SearchQueryLogEntry,
+  DEFAULT_SEEDED_SEARCH_LOGS,
+  createSearchQueryLogEntry,
 } from './logic/inventory';
 
 export interface OrderLine {
@@ -53,6 +58,7 @@ export interface User {
 
 export interface Product {
   id: number;
+  sku?: string;
   title: string;
   price: number;
   description: string;
@@ -118,6 +124,7 @@ export interface StoreData {
   nextApplicationId: number;
   nextReportId: number;
   nextMessageId?: number;
+  nextSearchLogId?: number;
   users: User[];
   sessions: Record<string, string>;
   products: Product[];
@@ -125,6 +132,7 @@ export interface StoreData {
   reports: Report[];
   messages?: ChatMessage[];
   reviews?: ProductReview[];
+  searchLogs?: SearchQueryLogEntry[];
 }
 
 const DATA_FILE = path.resolve(process.cwd(), 'voltbox-data.json');
@@ -144,6 +152,8 @@ export class Store {
   private messages: ChatMessage[] = [];
   private nextMessageId = 1;
   private reviews: ProductReview[] = [];
+  private searchLogs: SearchQueryLogEntry[] = [];
+  private nextSearchLogId = 1;
   private sessions: Record<string, string> = {};
 
   constructor() {
@@ -165,11 +175,13 @@ export class Store {
       this.reports = Array.isArray(data.reports) ? data.reports : [];
       this.messages = Array.isArray(data.messages) ? data.messages : [];
       this.reviews = Array.isArray(data.reviews) ? data.reviews : [];
+      this.searchLogs = Array.isArray(data.searchLogs) ? data.searchLogs : [];
       this.nextId = Math.max(data.nextId || 1, 1);
       this.nextProductId = Math.max(data.nextProductId || 1, 1);
       this.nextApplicationId = Math.max(data.nextApplicationId || 1, 1);
       this.nextReportId = Math.max(data.nextReportId || 1, 1);
       this.nextMessageId = Math.max(data.nextMessageId || 1, 1);
+      this.nextSearchLogId = Math.max(data.nextSearchLogId || 1, 1);
 
       // Ensure every product has explicit quantity, stock,lowStock fields, and reliable image URLs
       let updated = false;
@@ -574,6 +586,10 @@ export class Store {
         this.seedReviews();
         updated = true;
       }
+      if (this.searchLogs.length === 0) {
+        this.seedSearchLogs();
+        updated = true;
+      }
       if (updated) {
         this.save();
       }
@@ -584,12 +600,31 @@ export class Store {
   }
 
   public save(): void {
+    for (const p of this.products) {
+      if (!p || p.takenDown) continue;
+      if (typeof p.sku === 'string' && p.sku.trim()) {
+        const skuCheck = validateProductSku(p.sku, {
+          required: true,
+          currentProductId: p.id,
+          existingProducts: this.products,
+        });
+        if (!skuCheck.ok) {
+          throw new Error(skuCheck.message);
+        }
+      }
+      const stockCheck = validateProductStockLevel(p.quantity ?? p.stock ?? 0, { required: true });
+      if (!stockCheck.ok) {
+        throw new Error(stockCheck.message);
+      }
+    }
+
     const data: StoreData = {
       nextId: this.nextId,
       nextProductId: this.nextProductId,
       nextApplicationId: this.nextApplicationId,
       nextReportId: this.nextReportId,
       nextMessageId: this.nextMessageId,
+      nextSearchLogId: this.nextSearchLogId,
       users: this.users,
       sessions: this.sessions,
       products: this.products,
@@ -597,6 +632,7 @@ export class Store {
       reports: this.reports,
       messages: this.messages,
       reviews: this.reviews,
+      searchLogs: this.searchLogs,
     };
     const tmpFile = `${DATA_FILE}.tmp`;
     fs.writeFileSync(tmpFile, JSON.stringify(data, null, 2), 'utf-8');
@@ -611,11 +647,13 @@ export class Store {
     this.reports = [];
     this.messages = [];
     this.reviews = [];
+    this.searchLogs = [];
     this.nextId = 1;
     this.nextProductId = 1;
     this.nextApplicationId = 1;
     this.nextReportId = 1;
     this.nextMessageId = 1;
+    this.nextSearchLogId = 1;
 
     const harish = this.add('Harish', 'harish@voltbox.test', 'Harish123');
     harish.role = 'moderator';
@@ -630,6 +668,52 @@ export class Store {
     this.seedProducts();
     this.seedMessages();
     this.seedReviews();
+    this.seedSearchLogs();
+    this.save();
+  }
+
+  private seedSearchLogs(): void {
+    this.searchLogs = [];
+    this.nextSearchLogId = 1;
+    for (const item of DEFAULT_SEEDED_SEARCH_LOGS) {
+      this.searchLogs.push({
+        ...item,
+        id: this.nextSearchLogId++,
+      });
+    }
+  }
+
+  public getSearchLogs(): SearchQueryLogEntry[] {
+    return this.searchLogs;
+  }
+
+  public addSearchLog(input: {
+    rawQuery: string;
+    categoryFilter?: string | null;
+    resultCount: number;
+    source?: string | null;
+    actorName?: string | null;
+  }): SearchQueryLogEntry | null {
+    const entry = createSearchQueryLogEntry({
+      id: this.nextSearchLogId,
+      rawQuery: input.rawQuery,
+      categoryFilter: input.categoryFilter,
+      resultCount: input.resultCount,
+      source: input.source,
+      actorName: input.actorName,
+    });
+    if (!entry) return null;
+    this.nextSearchLogId += 1;
+    this.searchLogs.push(entry);
+    if (this.searchLogs.length > 500) {
+      this.searchLogs = this.searchLogs.slice(-500);
+    }
+    this.save();
+    return entry;
+  }
+
+  public clearSearchLogs(): void {
+    this.searchLogs = [];
     this.save();
   }
 

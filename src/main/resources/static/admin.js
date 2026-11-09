@@ -6,6 +6,7 @@
 var adminProducts = [];
 var adminMetrics = null;
 var adminInventorySummary = null;
+var adminSearchAnalytics = null;
 var activeAdminView = "catalog";
 var activeStockFilter = "all";
 var adminCatalogLayout = "table";
@@ -15,6 +16,34 @@ var isExecutingAdminBatch = false;
 var lastAdminBatchStatusMessage = "";
 var lastAdminBatchStatusIsError = false;
 var toastTimeout = null;
+var adminColorMode = localStorage.getItem("voltbox_color_mode") || "dark";
+
+function applyAdminColorMode(mode) {
+  var resolved = (mode === "light" || mode === "dark") ? mode : "dark";
+  adminColorMode = resolved;
+  localStorage.setItem("voltbox_color_mode", resolved);
+  document.documentElement.setAttribute("data-color-mode", resolved);
+  document.documentElement.classList.toggle("light-mode", resolved === "light");
+  document.documentElement.classList.toggle("dark-mode", resolved === "dark");
+
+  var iconEl = document.getElementById("admin-theme-mode-icon");
+  var labelEl = document.getElementById("admin-theme-mode-label");
+  var btnEl = document.getElementById("admin-theme-mode-btn");
+  if (iconEl) iconEl.textContent = resolved === "light" ? "☾" : "☀";
+  if (labelEl) labelEl.textContent = resolved === "light" ? "Dark" : "Light";
+  if (btnEl) {
+    btnEl.setAttribute(
+      "title",
+      resolved === "light" ? "Switch to iOS Dark Mode" : "Switch to iOS Light Mode"
+    );
+  }
+}
+
+window.toggleAdminColorMode = function () {
+  var next = adminColorMode === "dark" ? "light" : "dark";
+  applyAdminColorMode(next);
+  showAdminToast("Switched to iOS " + (next === "light" ? "Light" : "Dark") + " Mode");
+};
 
 function getToken() {
   return localStorage.getItem("voltbox_token") || "";
@@ -74,7 +103,8 @@ function loadAllAdminData(retriedWithDemoToken) {
         r.ok ? r.json() : null,
         adminFetch("/api/admin/products?includeTakenDown=true").then(function (res) { return res.ok ? res.json() : []; }),
         adminFetch("/api/admin/metrics").then(function (res) { return res.ok ? res.json() : null; }),
-        adminFetch("/api/inventory").then(function (res) { return res.ok ? res.json() : null; })
+        adminFetch("/api/inventory").then(function (res) { return res.ok ? res.json() : null; }),
+        adminFetch("/api/admin/search-analytics").then(function (res) { return res.ok ? res.json() : null; })
       ]);
     })
     .then(function (results) {
@@ -83,6 +113,7 @@ function loadAllAdminData(retriedWithDemoToken) {
       adminProducts = Array.isArray(results[1]) ? results[1] : [];
       adminMetrics = results[2];
       adminInventorySummary = results[3];
+      adminSearchAnalytics = results[4] || (adminMetrics && adminMetrics.searchAnalytics) || null;
 
       if (me && me.name) {
         document.getElementById("admin-operator-name").textContent = me.name;
@@ -111,6 +142,7 @@ function loadAllAdminData(retriedWithDemoToken) {
       renderAdminCatalogGrid();
       updateAdminBatchPanelUI();
       renderInventoryView();
+      renderSearchAnalyticsView();
       renderHealthView();
     })
     .catch(function (err) {
@@ -142,6 +174,11 @@ function renderKpiStrip() {
   document.getElementById("nav-count-catalog").textContent = String(cat.activeProducts);
   document.getElementById("nav-count-lowstock").textContent = String(cat.lowStockCount);
   document.getElementById("nav-status-health").textContent = adminMetrics.status || "UP";
+
+  var gapBadgeEl = document.getElementById("nav-count-search-gaps");
+  if (gapBadgeEl && adminSearchAnalytics) {
+    gapBadgeEl.textContent = String(adminSearchAnalytics.distinctCatalogGapsCount || 0);
+  }
 }
 
 function getFilteredAdminProducts() {
@@ -376,13 +413,13 @@ function renderAdminCatalogGrid() {
           '</label>' +
           '<span class="state-label ' + statusClass + '">' + stockHtml + '</span>' +
         '</div>' +
-        '<div class="admin-grid-card-body">' +
+        '<div class="admin-grid-img-wrap">' +
           '<img class="admin-grid-thumb" src="' + escHtml(imgSrc) + '" alt="' + escHtml(p.title) + '" referrerpolicy="no-referrer" onerror="this.onerror=null;this.src=\'/images/categories/components.svg\';" />' +
-          '<div class="admin-grid-info">' +
-            '<h3 class="admin-grid-title">' + escHtml(p.title || p.name) + '</h3>' +
-            '<div class="admin-grid-meta">' + escHtml(p.componentGroup || "other") + ' · ID #' + p.id + '</div>' +
-            '<div class="admin-grid-price mono">' + priceHtml + '</div>' +
-          '</div>' +
+        '</div>' +
+        '<div class="admin-grid-info">' +
+          '<h3 class="admin-grid-title">' + escHtml(p.title || p.name) + '</h3>' +
+          '<div class="admin-grid-meta">' + escHtml(p.componentGroup || "other") + ' · ID #' + p.id + '</div>' +
+          '<div class="admin-grid-price mono">' + priceHtml + '</div>' +
         '</div>' +
         '<div class="admin-grid-card-foot" onclick="event.stopPropagation()">' +
           '<div class="stock-stepper">' +
@@ -672,10 +709,16 @@ window.quickAdjustStock = function (productId, delta) {
       reason: "Admin Console Quick Stock Adjust (" + (delta > 0 ? "+" + delta : delta) + ")"
     })
   })
-    .then(function (r) { return r.json(); })
+    .then(function (r) {
+      return r.json().then(function (data) { return { ok: r.ok, data: data }; });
+    })
     .then(function (res) {
-      if (res && res.product) {
-        showAdminToast("Updated " + res.product.sku + " stock to " + res.product.stockQuantity + " units.");
+      if (!res.ok) {
+        showAdminToast((res.data && res.data.message) || "Stock adjustment rejected by validation layer.");
+        return;
+      }
+      if (res.data && res.data.product) {
+        showAdminToast("Updated " + res.data.product.sku + " stock to " + res.data.product.stockQuantity + " units.");
         loadAllAdminData();
       }
     });
@@ -789,6 +832,227 @@ function renderInventoryView() {
   }
 }
 
+function renderSearchAnalyticsView() {
+  var sa = adminSearchAnalytics || (adminMetrics && adminMetrics.searchAnalytics);
+  if (!sa) return;
+
+  var totalEl = document.getElementById("sa-kpi-total");
+  var uniqueEl = document.getElementById("sa-kpi-unique");
+  var gapsEl = document.getElementById("sa-kpi-gaps");
+  var gapsSubEl = document.getElementById("sa-kpi-gaps-sub");
+  var rateEl = document.getElementById("sa-kpi-rate");
+  var navBadgeEl = document.getElementById("nav-count-search-gaps");
+
+  if (totalEl) totalEl.textContent = String(sa.totalSearchesLogged || 0);
+  if (uniqueEl) uniqueEl.textContent = String(sa.uniqueQueriesCount || 0);
+  if (gapsEl) gapsEl.textContent = String(sa.distinctCatalogGapsCount || 0);
+  if (gapsSubEl) {
+    gapsSubEl.textContent = (sa.zeroResultSearchesCount || 0) + " zero-result search events";
+  }
+  if (rateEl) rateEl.textContent = (sa.zeroResultRatePercent || 0) + "%";
+  if (navBadgeEl) navBadgeEl.textContent = String(sa.distinctCatalogGapsCount || 0);
+
+  // 1. Identified Catalog Gaps Table
+  var gapsTbody = document.getElementById("search-gaps-tbody");
+  var gapsList = Array.isArray(sa.catalogGaps) ? sa.catalogGaps : [];
+  if (gapsTbody) {
+    if (gapsList.length === 0) {
+      gapsTbody.innerHTML =
+        '<tr><td colspan="6" class="empty-cell">No zero-result catalog gaps detected — all logged component searches match active SKUs!</td></tr>';
+    } else {
+      var gHtml = "";
+      for (var i = 0; i < gapsList.length; i++) {
+        var gap = gapsList[i];
+        var prioClass = gap.gapPriority === "CRITICAL_GAP" ? "crit" : (gap.gapPriority === "HIGH_GAP" ? "warn" : "ok");
+        gHtml +=
+          '<tr data-gap-query="' + escHtml(gap.normalizedQuery) + '">' +
+            '<td>' +
+              '<div class="prod-title">' + escHtml(gap.sampleRawQuery || gap.normalizedQuery) + '</div>' +
+              '<div class="prod-meta">Normalized: <span class="mono">' + escHtml(gap.normalizedQuery) + '</span></div>' +
+            '</td>' +
+            '<td class="num-col"><strong>' + (gap.searchCount || 0) + '</strong></td>' +
+            '<td><span class="mono">' + escHtml(gap.inferredCategory || "other") + '</span></td>' +
+            '<td class="mono">' + escHtml(gap.recommendedSkuPrefix || "VB-PRT-") + '050</td>' +
+            '<td><span class="state-label ' + prioClass + '">' + escHtml(gap.gapPriority || "EMERGING_GAP") + '</span></td>' +
+            '<td class="actions-col">' +
+              '<button type="button" class="btn-primary btn-stock-gap" ' +
+              '        data-testid="stock-gap-btn-' + i + '" ' +
+              '        onclick="stockCatalogGapItem(' +
+              "'" + escHtml(String(gap.sampleRawQuery || gap.normalizedQuery).replace(/'/g, "\\'")) + "', " +
+              "'" + escHtml(String(gap.inferredCategory || "components")) + "', " +
+              "'" + escHtml(String(gap.recommendedSkuPrefix || "VB-PRT-")) + "'" +
+              ')">+ Stock This Item</button>' +
+            '</td>' +
+          '</tr>';
+      }
+      gapsTbody.innerHTML = gHtml;
+    }
+  }
+
+  // 2. Popular Component Searches Leaderboard
+  var popTbody = document.getElementById("popular-searches-tbody");
+  var popList = Array.isArray(sa.popularSearches) ? sa.popularSearches : [];
+  if (popTbody) {
+    if (popList.length === 0) {
+      popTbody.innerHTML =
+        '<tr><td colspan="6" class="empty-cell">No component searches logged yet.</td></tr>';
+    } else {
+      var pHtml = "";
+      for (var p = 0; p < popList.length; p++) {
+        var row = popList[p];
+        var isGap = Boolean(row.catalogGap);
+        pHtml +=
+          '<tr>' +
+            '<td class="mono">#' + (p + 1) + '</td>' +
+            '<td><strong>' + escHtml(row.sampleRawQuery || row.normalizedQuery) + '</strong></td>' +
+            '<td class="num-col">' + (row.searchCount || 0) + '</td>' +
+            '<td class="num-col">' + (row.latestResultCount || 0) + '</td>' +
+            '<td class="mono">' + escHtml(row.inferredCategory || "other") + '</td>' +
+            '<td>' +
+              '<span class="state-label ' + (isGap ? 'warn' : 'ok') + '">' +
+                (isGap ? 'CATALOG GAP (0 SKUs)' : ('STOCKED (' + row.latestResultCount + ' SKUs)')) +
+              '</span>' +
+            '</td>' +
+          '</tr>';
+      }
+      popTbody.innerHTML = pHtml;
+    }
+  }
+
+  // 3. Search Demand by Hardware Group
+  var catTbody = document.getElementById("search-category-demand-tbody");
+  var catList = Array.isArray(sa.categoryDemand) ? sa.categoryDemand : [];
+  if (catTbody) {
+    if (catList.length === 0) {
+      catTbody.innerHTML =
+        '<tr><td colspan="4" class="empty-cell">No category demand data available.</td></tr>';
+    } else {
+      var cHtml = "";
+      for (var c = 0; c < catList.length; c++) {
+        var cRow = catList[c];
+        cHtml +=
+          '<tr>' +
+            '<td><strong class="mono">' + escHtml(String(cRow.category || "other").toUpperCase()) + '</strong></td>' +
+            '<td class="num-col">' + (cRow.totalSearches || 0) + '</td>' +
+            '<td class="num-col"><span class="state-label ' + ((cRow.zeroResultSearches || 0) > 0 ? 'warn' : 'ok') + '">' + (cRow.zeroResultSearches || 0) + '</span></td>' +
+            '<td class="num-col">' + (cRow.distinctQueries || 0) + '</td>' +
+          '</tr>';
+      }
+      catTbody.innerHTML = cHtml;
+    }
+  }
+
+  // 4. Recent Server Controller Search Log Stream
+  var logsTbody = document.getElementById("recent-search-logs-tbody");
+  var logsList = Array.isArray(sa.recentLogs) ? sa.recentLogs : [];
+  if (logsTbody) {
+    if (logsList.length === 0) {
+      logsTbody.innerHTML =
+        '<tr><td colspan="6" class="empty-cell">No search query logs recorded yet.</td></tr>';
+    } else {
+      var lHtml = "";
+      for (var l = 0; l < logsList.length; l++) {
+        var entry = logsList[l];
+        var tStr = new Date(entry.timestamp || Date.now()).toLocaleTimeString([], {
+          hour: "2-digit",
+          minute: "2-digit",
+          second: "2-digit"
+        });
+        var matches = typeof entry.resultCount === "number" ? entry.resultCount : 0;
+        lHtml +=
+          '<tr>' +
+            '<td class="mono">#' + escHtml(entry.id) + '</td>' +
+            '<td class="mono">' + escHtml(tStr) + '</td>' +
+            '<td><strong>' + escHtml(entry.query || entry.normalizedQuery) + '</strong></td>' +
+            '<td class="mono">' + escHtml(entry.source || "catalog-search") + '</td>' +
+            '<td class="num-col"><span class="state-label ' + (matches === 0 ? 'warn' : 'ok') + '">' + matches + '</span></td>' +
+            '<td>' + escHtml(entry.actorName || "Guest Shopper") + '</td>' +
+          '</tr>';
+      }
+      logsTbody.innerHTML = lHtml;
+    }
+  }
+}
+
+window.stockCatalogGapItem = function (rawQuery, inferredGroup, skuPrefix) {
+  openCreateProductModal();
+  var titleEl = document.getElementById("form-product-title");
+  var catEl = document.getElementById("form-product-category");
+  var skuEl = document.getElementById("form-product-sku");
+  var priceEl = document.getElementById("form-product-price");
+  var stockEl = document.getElementById("form-product-stock");
+  var descEl = document.getElementById("form-product-desc");
+
+  var groupToCategory = {
+    gpus: "gpus",
+    cpus: "cpus",
+    motherboards: "motherboards",
+    storage: "storage",
+    audio: "peripherals",
+    gaming: "peripherals",
+    other: "components"
+  };
+  var resolvedCategory = groupToCategory[String(inferredGroup || "").toLowerCase()] || "components";
+  if (String(rawQuery || "").toLowerCase().indexOf("ddr") !== -1 || String(rawQuery || "").toLowerCase().indexOf("ram") !== -1) {
+    resolvedCategory = "memory";
+  }
+
+  var nextNum = Math.min(999, Math.max(50, adminProducts.length + 25));
+  var suggestedSku = (skuPrefix || "VB-PRT-") + String(nextNum).padStart(3, "0");
+
+  if (titleEl) titleEl.value = rawQuery || "";
+  if (catEl) catEl.value = resolvedCategory;
+  if (skuEl) skuEl.value = suggestedSku;
+  if (priceEl) priceEl.value = "249.00";
+  if (stockEl) stockEl.value = "12";
+  if (descEl) {
+    descEl.value = "Added to Voltbox catalog to fulfill high-intent shopper search demand for \"" + (rawQuery || "") + "\".";
+  }
+  showAdminToast("Pre-filled New Product modal from Catalog Gap \"" + rawQuery + "\".");
+};
+
+function submitAdminTestSearchLog(e) {
+  if (e && typeof e.preventDefault === "function") e.preventDefault();
+  var inputEl = document.getElementById("admin-test-search-input");
+  if (!inputEl) return;
+  var q = inputEl.value.trim();
+  if (q.length < 2) {
+    showAdminToast("Enter at least 2 characters to log a search query.");
+    return;
+  }
+
+  adminFetch("/api/products/search-log", {
+    method: "POST",
+    body: JSON.stringify({
+      query: q,
+      category: "all",
+      source: "admin-simulator"
+    })
+  })
+    .then(function (r) { return r.json(); })
+    .then(function (res) {
+      inputEl.value = "";
+      if (res && res.entry) {
+        var count = res.entry.resultCount || 0;
+        showAdminToast(
+          count === 0
+            ? ("Logged \"" + q + "\" — 0 matches (Added to Catalog Gaps)")
+            : ("Logged \"" + q + "\" — " + count + " matching SKU(s) in catalog")
+        );
+      }
+      loadAllAdminData();
+    });
+}
+
+function clearAdminSearchLogs() {
+  adminFetch("/api/admin/search-analytics", { method: "DELETE" })
+    .then(function (r) { return r.json(); })
+    .then(function () {
+      showAdminToast("Cleared search query logs in Store.java.");
+      loadAllAdminData();
+    });
+}
+
 function renderHealthView() {
   if (!adminMetrics) return;
   var jvm = adminMetrics.jvm || {};
@@ -871,6 +1135,8 @@ function openCreateProductModal() {
   document.getElementById("product-modal-submit").textContent = "Create Product Entity";
   document.getElementById("form-product-title").value = "";
   document.getElementById("form-product-category").value = "gpus";
+  var skuEl = document.getElementById("form-product-sku");
+  if (skuEl) skuEl.value = "";
   document.getElementById("form-product-price").value = "199.00";
   document.getElementById("form-product-stock").value = "8";
   document.getElementById("form-product-image").value = "/src/assets/images/product_ddr5_ram_kit_1793511150356.jpg";
@@ -899,6 +1165,8 @@ window.openEditProductModal = function (productId) {
     document.getElementById("product-modal-submit").textContent = "Save Changes";
     document.getElementById("form-product-title").value = prod.title || prod.name || "";
     document.getElementById("form-product-category").value = prod.category || "components";
+    var skuEl = document.getElementById("form-product-sku");
+    if (skuEl) skuEl.value = prod.sku || "";
     document.getElementById("form-product-price").value = Number(prod.price || 0).toFixed(2);
     document.getElementById("form-product-stock").value = String(typeof prod.stockQuantity === "number" ? prod.stockQuantity : (prod.quantity || 0));
     document.getElementById("form-product-image").value = prod.image || "";
@@ -907,20 +1175,12 @@ window.openEditProductModal = function (productId) {
   }
 
   applyProductToForm(p);
-  document.getElementById("form-error-msg").hidden = true;
+  var errEl = document.getElementById("form-error-msg");
+  if (errEl) errEl.hidden = true;
 
   var backdrop = document.getElementById("product-modal-backdrop");
   backdrop.hidden = false;
   backdrop.setAttribute("aria-hidden", "false");
-
-  adminFetch("/api/products/" + productId)
-    .then(function (r) { return r.ok ? r.json() : null; })
-    .then(function (fresh) {
-      if (fresh && fresh.id === productId) {
-        applyProductToForm(fresh);
-      }
-    })
-    .catch(function () {});
 };
 
 function closeProductModal() {
@@ -934,8 +1194,12 @@ function submitProductForm(e) {
   var idVal = document.getElementById("form-product-id").value.trim();
   var title = document.getElementById("form-product-title").value.trim();
   var category = document.getElementById("form-product-category").value.trim();
-  var price = parseFloat(document.getElementById("form-product-price").value);
-  var stockQuantity = parseInt(document.getElementById("form-product-stock").value, 10);
+  var skuEl = document.getElementById("form-product-sku");
+  var sku = skuEl ? skuEl.value.trim() : "";
+  var priceRaw = document.getElementById("form-product-price").value.trim();
+  var price = parseFloat(priceRaw);
+  var stockRaw = document.getElementById("form-product-stock").value.trim();
+  var stockQuantity = Number(stockRaw);
   var image = document.getElementById("form-product-image").value.trim();
   var description = document.getElementById("form-product-desc").value.trim();
   var official = document.getElementById("form-product-official").checked;
@@ -947,19 +1211,23 @@ function submitProductForm(e) {
     return;
   }
 
+  var isEdit = idVal !== "";
   var payload = {
     name: title,
     title: title,
     category: category,
     price: isNaN(price) ? 0 : price,
-    stockQuantity: isNaN(stockQuantity) ? 0 : stockQuantity,
-    quantity: isNaN(stockQuantity) ? 0 : stockQuantity,
+    stockQuantity: stockRaw === "" ? NaN : stockQuantity,
+    quantity: stockRaw === "" ? NaN : stockQuantity,
     image: image || ("/images/categories/" + category + ".svg"),
     description: description,
     official: official
   };
 
-  var isEdit = idVal !== "";
+  if (sku !== "" || isEdit) {
+    payload.sku = sku;
+  }
+
   var url = isEdit ? ("/api/admin/products/" + idVal) : "/api/admin/products";
   var method = isEdit ? "PUT" : "POST";
 
@@ -972,7 +1240,14 @@ function submitProductForm(e) {
     })
     .then(function (res) {
       if (!res.ok) {
-        errEl.textContent = (res.data && res.data.message) || "Failed to save product.";
+        var msg = (res.data && res.data.message) || "Failed to save product.";
+        if (res.data && Array.isArray(res.data.errors) && res.data.errors.length > 0) {
+          var firstErr = res.data.errors[0];
+          if (firstErr && firstErr.code && msg.indexOf(firstErr.code) === -1) {
+            msg = "[" + firstErr.code + "] " + msg;
+          }
+        }
+        errEl.textContent = msg;
         errEl.hidden = false;
         return;
       }
@@ -989,10 +1264,11 @@ function submitProductForm(e) {
 
 function switchAdminView(viewName) {
   activeAdminView = viewName;
-  var views = ["catalog", "inventory", "health"];
+  var views = ["catalog", "inventory", "search-analytics", "health"];
   var labels = {
     catalog: "Product CRUD",
     inventory: "Inventory Levels",
+    "search-analytics": "Search & Catalog Gaps",
     health: "System Health & JPA"
   };
 
@@ -1007,12 +1283,31 @@ function switchAdminView(viewName) {
   var crumbEl = document.getElementById("breadcrumb-current");
   if (crumbEl) crumbEl.textContent = labels[viewName] || "Admin Console";
 
-  if (viewName === "health") {
+  if (viewName === "search-analytics") {
+    renderSearchAnalyticsView();
+  } else if (viewName === "health") {
     window.probeEndpoint("/api/admin/metrics");
   }
 }
 
 document.addEventListener("DOMContentLoaded", function () {
+  applyAdminColorMode(adminColorMode);
+
+  var themeBtn = document.getElementById("admin-theme-mode-btn");
+  if (themeBtn) {
+    themeBtn.addEventListener("click", function () {
+      window.toggleAdminColorMode();
+    });
+  }
+
+  var testSearchForm = document.getElementById("admin-test-search-form");
+  if (testSearchForm) {
+    testSearchForm.addEventListener("submit", submitAdminTestSearchLog);
+  }
+  var clearSearchBtn = document.getElementById("admin-clear-search-logs-btn");
+  if (clearSearchBtn) {
+    clearSearchBtn.addEventListener("click", clearAdminSearchLogs);
+  }
   // Sidebar navigation
   var navEl = document.getElementById("sidebar-nav");
   if (navEl) {
@@ -1168,9 +1463,10 @@ document.addEventListener("DOMContentLoaded", function () {
   if (applyLedgerBtn) {
     applyLedgerBtn.addEventListener("click", function () {
       var pid = parseInt(document.getElementById("ledger-product-select").value, 10);
-      var nextQty = parseInt(document.getElementById("ledger-qty-input").value, 10);
+      var rawVal = document.getElementById("ledger-qty-input").value.trim();
+      var nextQty = Number(rawVal);
       var reason = document.getElementById("ledger-reason-input").value.trim() || "Manual warehouse audit";
-      if (isNaN(pid) || isNaN(nextQty) || nextQty < 0) return;
+      if (isNaN(pid) || rawVal === "" || isNaN(nextQty)) return;
 
       adminFetch("/api/products/" + pid + "/inventory", {
         method: "POST",
@@ -1180,11 +1476,17 @@ document.addEventListener("DOMContentLoaded", function () {
           reason: reason
         })
       })
-        .then(function (r) { return r.json(); })
+        .then(function (r) {
+          return r.json().then(function (data) { return { ok: r.ok, data: data }; });
+        })
         .then(function (res) {
-          if (res && res.product) {
+          if (!res.ok) {
+            showAdminToast((res.data && res.data.message) || "Stock level rejected by server validation.");
+            return;
+          }
+          if (res.data && res.data.product) {
             document.getElementById("ledger-reason-input").value = "";
-            showAdminToast("Set " + res.product.sku + " stock to " + res.product.stockQuantity + " units.");
+            showAdminToast("Set " + res.data.product.sku + " stock to " + res.data.product.stockQuantity + " units.");
             loadAllAdminData();
           }
         });

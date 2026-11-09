@@ -11,6 +11,8 @@ import com.voltbox.model.User;
 import com.voltbox.repository.ProductRepository;
 import com.voltbox.service.InventoryService;
 import com.voltbox.service.ProductService;
+import com.voltbox.service.SearchAnalyticsService;
+import com.voltbox.validation.ProductValidationException;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -22,8 +24,9 @@ import java.util.stream.Collectors;
 
 /**
  * Spring Boot REST Controller mapped to {@code /api/admin} providing administrative
- * CRUD operations on products, batch warehouse inventory management, and real-time
- * system health & Spring Data JPA telemetry for the dedicated {@code /admin} view.
+ * CRUD operations on products, batch warehouse inventory management, search query
+ * &amp; catalog gap analysis, and real-time system health &amp; Spring Data JPA telemetry
+ * for the dedicated {@code /admin} view.
  */
 @RestController
 @RequestMapping("/api/admin")
@@ -33,6 +36,7 @@ public class AdminController {
     private final ProductRepository productRepository;
     private final ProductService productService;
     private final InventoryService inventoryService;
+    private final SearchAnalyticsService searchAnalyticsService;
     private final CommunitySocket socket;
 
     @Autowired
@@ -41,17 +45,24 @@ public class AdminController {
             @Autowired(required = false) ProductRepository productRepository,
             ProductService productService,
             InventoryService inventoryService,
+            SearchAnalyticsService searchAnalyticsService,
             CommunitySocket socket) {
         this.store = store;
         this.productRepository = productRepository;
         this.productService = productService;
         this.inventoryService = inventoryService;
+        this.searchAnalyticsService = searchAnalyticsService;
         this.socket = socket;
     }
 
     private User authUser(String authHeader) {
         if (authHeader == null || !authHeader.startsWith("Bearer ")) return null;
         return store.findByToken(authHeader.substring("Bearer ".length()).trim());
+    }
+
+    @ExceptionHandler(ProductValidationException.class)
+    public ResponseEntity<Map<String, Object>> handleProductValidationException(ProductValidationException ex) {
+        return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(ex.toResponsePayload());
     }
 
     /**
@@ -177,6 +188,7 @@ public class AdminController {
 
         List<Map<String, String>> endpoints = List.of(
                 Map.of("method", "GET", "path", "/api/products", "controller", "ProductController#getProducts", "status", "ACTIVE"),
+                Map.of("method", "POST", "path", "/api/products/search-log", "controller", "ProductController#logUserSearchQuery", "status", "ACTIVE"),
                 Map.of("method", "POST", "path", "/api/products", "controller", "ProductController#createProduct", "status", "ACTIVE"),
                 Map.of("method", "PUT", "path", "/api/products/{id}", "controller", "ProductController#updateProduct", "status", "ACTIVE"),
                 Map.of("method", "POST", "path", "/api/products/{id}/inventory", "controller", "ProductController#updateProductInventoryPost", "status", "ACTIVE"),
@@ -184,8 +196,11 @@ public class AdminController {
                 Map.of("method", "GET", "path", "/api/inventory", "controller", "InventoryController#getInventorySummary", "status", "ACTIVE"),
                 Map.of("method", "GET", "path", "/api/cart", "controller", "CartController#getCart", "status", "ACTIVE"),
                 Map.of("method", "GET", "path", "/api/admin/metrics", "controller", "AdminController#getSystemMetrics", "status", "ACTIVE"),
+                Map.of("method", "GET", "path", "/api/admin/search-analytics", "controller", "AdminController#getSearchAnalytics", "status", "ACTIVE"),
                 Map.of("method", "POST", "path", "/api/admin/inventory/restock-low-stock", "controller", "AdminController#restockAllLowStock", "status", "ACTIVE")
         );
+
+        Map<String, Object> searchAnalytics = searchAnalyticsService.getSearchAnalyticsReport();
 
         Map<String, Object> response = new LinkedHashMap<>();
         response.put("ok", true);
@@ -196,8 +211,34 @@ public class AdminController {
         response.put("jvm", jvm);
         response.put("catalog", catalog);
         response.put("commerce", commerce);
+        response.put("searchAnalytics", searchAnalytics);
         response.put("endpoints", endpoints);
         return ResponseEntity.ok(response);
+    }
+
+    /**
+     * GET /api/admin/search-analytics
+     * Returns popular component searches, zero-result catalog gaps, and recent server-side search logs.
+     */
+    @GetMapping("/search-analytics")
+    public ResponseEntity<Map<String, Object>> getSearchAnalytics() {
+        return ResponseEntity.ok(searchAnalyticsService.getSearchAnalyticsReport());
+    }
+
+    /**
+     * DELETE /api/admin/search-analytics
+     * Clears recorded user search query logs.
+     */
+    @DeleteMapping("/search-analytics")
+    public ResponseEntity<Map<String, Object>> clearSearchAnalytics(
+            @RequestHeader(value = "Authorization", required = false) String auth) {
+        User u = authUser(auth);
+        if (u == null) {
+            return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
+                    .body(Map.of("ok", false, "message", "You're not signed in."));
+        }
+        store.clearSearchLogs();
+        return ResponseEntity.ok(searchAnalyticsService.getSearchAnalyticsReport());
     }
 
     /**
@@ -271,10 +312,13 @@ public class AdminController {
             return ResponseEntity.status(HttpStatus.NOT_FOUND)
                     .body(Map.of("ok", false, "message", "Product not found."));
         }
-        if (body.containsKey("takenDown")) {
-            existing.takenDown = Boolean.parseBoolean(String.valueOf(body.get("takenDown")));
-        }
+        // Validate SKU formatting, SKU uniqueness, stock level bounds, and price BEFORE mutating existing product
         ProductEntity updated = productService.updateProduct(id, u, body);
+        if (body != null && body.containsKey("takenDown")) {
+            existing.takenDown = Boolean.parseBoolean(String.valueOf(body.get("takenDown")));
+            store.save();
+            updated = productService.syncProductToRepository(existing);
+        }
         socket.broadcastToAll(Map.of("type", "product-restocked", "product", updated, "actor", u.name));
         return ResponseEntity.ok(Map.of("ok", true, "product", updated));
     }

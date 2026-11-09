@@ -5,10 +5,16 @@ import com.voltbox.Store;
 import com.voltbox.entity.InventoryItem;
 import com.voltbox.entity.ProductEntity;
 import com.voltbox.model.Product;
+import com.voltbox.model.SearchQueryLog;
 import com.voltbox.model.User;
 import com.voltbox.repository.ProductRepository;
 import com.voltbox.service.InventoryService;
 import com.voltbox.service.ProductService;
+import com.voltbox.service.SearchAnalyticsService;
+import com.voltbox.validation.ProductValidationException;
+import com.voltbox.validation.ProductValidator;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -23,17 +29,21 @@ import java.util.stream.Collectors;
 /**
  * Spring Boot REST Controller mapped to {@code /api/products} for handling GET,
  * POST, PUT, PATCH, and DELETE requests for retrieving all products, individual
- * product details by ID or SKU, and real-time inventory updates backed by
- * {@link ProductRepository}, {@link ProductService}, and {@link InventoryService}.
+ * product details by ID or SKU, server-side search query logging, and real-time
+ * inventory updates backed by {@link ProductRepository}, {@link ProductService},
+ * {@link SearchAnalyticsService}, and {@link InventoryService}.
  */
 @RestController
 @RequestMapping("/api/products")
 @CrossOrigin(origins = "*")
 public class ProductController {
+    private static final Logger log = LoggerFactory.getLogger(ProductController.class);
+
     private final Store store;
     private final ProductRepository productRepository;
     private final ProductService productService;
     private final InventoryService inventoryService;
+    private final SearchAnalyticsService searchAnalyticsService;
     private final CommunitySocket socket;
 
     @Autowired
@@ -42,11 +52,13 @@ public class ProductController {
             @Autowired(required = false) ProductRepository productRepository,
             ProductService productService,
             InventoryService inventoryService,
+            SearchAnalyticsService searchAnalyticsService,
             CommunitySocket socket) {
         this.store = store;
         this.productRepository = productRepository;
         this.productService = productService;
         this.inventoryService = inventoryService;
+        this.searchAnalyticsService = searchAnalyticsService;
         this.socket = socket;
     }
 
@@ -59,13 +71,89 @@ public class ProductController {
         return u != null && ("contributor".equals(u.role) || "moderator".equals(u.role));
     }
 
+    @ExceptionHandler(ProductValidationException.class)
+    public ResponseEntity<Map<String, Object>> handleProductValidationException(ProductValidationException ex) {
+        return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(ex.toResponsePayload());
+    }
+
+    /**
+     * POST /api/products/validate
+     * Validates SKU formatting, SKU uniqueness, stock quantity bounds, and unit price
+     * without mutating the underlying JSON data store.
+     */
+    @PostMapping("/validate")
+    public ResponseEntity<Map<String, Object>> validateProductPayload(
+            @RequestBody Map<String, Object> body) {
+        Integer productId = null;
+        if (body != null && body.get("productId") != null) {
+            try {
+                productId = Integer.parseInt(String.valueOf(body.get("productId")));
+            } catch (NumberFormatException ignored) {}
+        }
+        boolean isCreate = body == null || !Boolean.FALSE.equals(body.get("isCreate")) && productId == null;
+        ProductValidator.ValidationResult result = productService.getProductValidator()
+                .validateProductModification(body, isCreate, productId, store.getProducts());
+        HttpStatus status = result.isValid() ? HttpStatus.OK : HttpStatus.BAD_REQUEST;
+        return ResponseEntity.status(status).body(result.toMap());
+    }
+
+    /**
+     * POST /api/products/search-log
+     * Server-side logging endpoint for user component searches from the storefront
+     * search bar and Web Speech API voice search. Captures matched result count and
+     * flags zero-result catalog gaps for the /admin dashboard.
+     */
+    @PostMapping("/search-log")
+    public ResponseEntity<Map<String, Object>> logUserSearchQuery(
+            @RequestHeader(value = "Authorization", required = false) String auth,
+            @RequestBody(required = false) Map<String, Object> body) {
+        if (body == null) {
+            return ResponseEntity.badRequest()
+                    .body(Map.of("ok", false, "message", "Search query payload is required."));
+        }
+        String rawQuery = String.valueOf(body.getOrDefault("query", body.getOrDefault("q", ""))).trim();
+        if (rawQuery.length() < 2) {
+            return ResponseEntity.ok(Map.of("ok", true, "skipped", true, "reason", "Query shorter than 2 characters"));
+        }
+        String category = String.valueOf(body.getOrDefault("category", "all")).trim();
+        String source = String.valueOf(body.getOrDefault("source", "searchbar")).trim();
+        Integer resultCount = null;
+        if (body.get("resultCount") != null) {
+            try {
+                resultCount = Math.max(0, Integer.parseInt(String.valueOf(body.get("resultCount"))));
+            } catch (NumberFormatException ignored) {}
+        }
+        User u = authUser(auth);
+        String actorName = u != null ? u.name : "Guest Shopper";
+
+        SearchQueryLog entry = searchAnalyticsService.recordSearchQuery(
+                rawQuery,
+                category,
+                resultCount,
+                source,
+                actorName
+        );
+        if (entry == null) {
+            return ResponseEntity.ok(Map.of("ok", true, "skipped", true));
+        }
+        log.info("[ProductController#logUserSearchQuery] Logged search query=\"{}\" results={} zeroResultGap={}",
+                entry.rawQuery, entry.resultCount, entry.zeroResultGap);
+
+        Map<String, Object> res = new LinkedHashMap<>();
+        res.put("ok", true);
+        res.put("entry", entry);
+        return ResponseEntity.ok(res);
+    }
+
     /**
      * GET /api/products
      * Retrieves all active products from the JPA repository / catalog with optional
      * category, component group, keyword search, and low-stock filtering.
+     * Automatically logs non-empty user search queries for catalog gap analysis.
      */
     @GetMapping
     public ResponseEntity<List<ProductEntity>> getAllProducts(
+            @RequestHeader(value = "Authorization", required = false) String auth,
             @RequestParam(value = "category", required = false) String category,
             @RequestParam(value = "group", required = false) String group,
             @RequestParam(value = "search", required = false) String search,
@@ -84,6 +172,19 @@ public class ProductController {
         }
 
         List<ProductEntity> products = productService.listActiveProducts(category, group, search, lowStock);
+        if (search != null && search.trim().length() >= 2) {
+            User u = authUser(auth);
+            String filterCat = (category != null && !category.isBlank()) ? category : (group != null ? group : "all");
+            searchAnalyticsService.recordSearchQuery(
+                    search,
+                    filterCat,
+                    products.size(),
+                    "api-get",
+                    u != null ? u.name : "Guest Shopper"
+            );
+            log.info("[ProductController#getAllProducts] Logged GET search=\"{}\" category=\"{}\" matched={}",
+                    search.trim(), filterCat, products.size());
+        }
         return ResponseEntity.ok(products);
     }
 
@@ -167,6 +268,31 @@ public class ProductController {
         return ResponseEntity.ok(payload);
     }
 
+    @GetMapping("/{id}/quick-actions")
+    public ResponseEntity<?> getProductQuickActions(
+            @PathVariable("id") Integer id,
+            @RequestParam(value = "cartQty", defaultValue = "0") int cartQty,
+            @RequestParam(value = "wishlisted", defaultValue = "false") boolean wishlisted,
+            @RequestParam(value = "compared", defaultValue = "false") boolean compared,
+            @RequestParam(value = "hasAlert", defaultValue = "false") boolean hasAlert) {
+        if (id == null || id <= 0) {
+            return ResponseEntity.badRequest()
+                    .body(Map.of("ok", false, "message", "Invalid product ID."));
+        }
+        Map<String, Object> summary = productService.buildQuickActionSummary(
+                id,
+                Math.max(0, cartQty),
+                wishlisted,
+                compared,
+                hasAlert
+        );
+        if (summary == null) {
+            return ResponseEntity.status(HttpStatus.NOT_FOUND)
+                    .body(Map.of("ok", false, "message", "Product not found."));
+        }
+        return ResponseEntity.ok(summary);
+    }
+
     /**
      * POST /api/products
      * Creates and persists a new ProductEntity in the JPA repository and Store,
@@ -230,32 +356,25 @@ public class ProductController {
                     .body(Map.of("ok", false, "message", "You're not signed in."));
         }
 
-        Integer targetQty = null;
-        Integer delta = null;
+        Object rawTarget = null;
+        Object rawDelta = null;
         if (body != null) {
-            Object rawTarget = body.containsKey("stockQuantity")
-                    ? body.get("stockQuantity")
-                    : (body.containsKey("quantity") ? body.get("quantity") : body.get("stock"));
-            if (rawTarget != null) {
-                try {
-                    targetQty = Math.max(0, Integer.parseInt(String.valueOf(rawTarget)));
-                } catch (NumberFormatException ignored) {}
-            }
-            Object rawDelta = body.containsKey("delta") ? body.get("delta") : body.get("amount");
-            if (rawDelta != null) {
-                try {
-                    delta = Integer.parseInt(String.valueOf(rawDelta));
-                } catch (NumberFormatException ignored) {}
-            }
+            if (body.containsKey("stockQuantity")) rawTarget = body.get("stockQuantity");
+            else if (body.containsKey("quantity")) rawTarget = body.get("quantity");
+            else if (body.containsKey("stock")) rawTarget = body.get("stock");
+
+            if (body.containsKey("delta")) rawDelta = body.get("delta");
+            else if (body.containsKey("amount")) rawDelta = body.get("amount");
         }
-        if (targetQty == null && delta == null) {
-            delta = 3;
+        if (rawTarget == null && rawDelta == null) {
+            rawDelta = Integer.valueOf(3);
         }
         String reason = (body != null && body.get("reason") != null)
                 ? String.valueOf(body.get("reason"))
                 : "Inventory update via ProductController";
 
-        InventoryItem updatedItem = inventoryService.adjustStock(id, targetQty, delta, u.name, reason);
+        int prevQty = existingProductQty(id);
+        InventoryItem updatedItem = inventoryService.adjustStock(id, rawTarget, rawDelta, u.name, reason);
         if (updatedItem == null) {
             return ResponseEntity.status(HttpStatus.NOT_FOUND)
                     .body(Map.of("ok", false, "message", "Product not found."));
@@ -271,7 +390,7 @@ public class ProductController {
         socket.broadcastToAll(Map.of(
                 "type", "product-restocked",
                 "product", enriched,
-                "added", delta != null ? delta : 0,
+                "added", enriched != null ? (enriched.getStockQuantity() - prevQty) : 0,
                 "actor", u.name
         ));
 
@@ -280,6 +399,12 @@ public class ProductController {
         res.put("product", enriched);
         res.put("inventory", updatedItem);
         return ResponseEntity.ok(res);
+    }
+
+    private int existingProductQty(Integer id) {
+        if (id == null) return 0;
+        Product p = store.findProduct(id);
+        return p != null ? productService.resolveQuantity(p) : 0;
     }
 
     /**
@@ -298,19 +423,16 @@ public class ProductController {
                     .body(Map.of("ok", false, "message", "You're not signed in."));
         }
 
-        int amount = 3;
-        if (body != null && body.get("amount") != null) {
-            try {
-                amount = Math.max(1, Math.min(20, Integer.parseInt(String.valueOf(body.get("amount")))));
-            } catch (NumberFormatException ignored) {}
-        }
+        Object rawAmount = (body != null && body.containsKey("amount")) ? body.get("amount") : Integer.valueOf(3);
         String reason = body != null && body.get("reason") != null ? String.valueOf(body.get("reason")) : "Catalog restock";
+        int prevQty = existingProductQty(id);
 
-        ProductEntity enriched = inventoryService.restockProduct(id, amount, u.name, reason);
+        ProductEntity enriched = inventoryService.restockProduct(id, rawAmount, u.name, reason);
         if (enriched == null) {
             return ResponseEntity.status(HttpStatus.NOT_FOUND)
                     .body(Map.of("ok", false, "message", "Couldn't find that listing."));
         }
+        int added = enriched.getStockQuantity() - prevQty;
         if (productRepository != null) {
             try {
                 productRepository.save(enriched);
@@ -320,12 +442,12 @@ public class ProductController {
         socket.broadcastToAll(Map.of(
                 "type", "product-restocked",
                 "product", enriched,
-                "added", amount,
+                "added", added,
                 "actor", u.name
         ));
         socket.broadcastToAll(Map.of(
                 "type", "activity-feed",
-                "message", String.format("%s restocked +%d units of %s", u.name, amount, enriched.getTitle()),
+                "message", String.format("%s restocked +%d units of %s", u.name, added, enriched.getTitle()),
                 "timestamp", System.currentTimeMillis()
         ));
         return ResponseEntity.ok(enriched);
@@ -333,7 +455,7 @@ public class ProductController {
 
     /**
      * PUT /api/products/{id}
-     * Updates product metadata and stock quantity, persisting changes to ProductRepository.
+     * Updates product metadata, SKU, and stock quantity after server-side validation.
      */
     @PutMapping("/{id}")
     public ResponseEntity<?> updateProduct(
@@ -365,7 +487,7 @@ public class ProductController {
 
     /**
      * PATCH /api/products/{id}/stock
-     * Updates stockQuantity directly and persists to ProductRepository.
+     * Validates and updates stockQuantity directly and persists to ProductRepository.
      */
     @PatchMapping("/{id}/stock")
     public ResponseEntity<?> updateProductStock(
@@ -378,23 +500,11 @@ public class ProductController {
                     .body(Map.of("ok", false, "message", "You're not signed in."));
         }
 
-        Object rawStock = body.containsKey("stockQuantity")
+        Object rawStock = body != null && body.containsKey("stockQuantity")
                 ? body.get("stockQuantity")
-                : body.getOrDefault("quantity", body.get("stock"));
-        if (rawStock == null) {
-            return ResponseEntity.badRequest()
-                    .body(Map.of("ok", false, "message", "Provide stockQuantity or quantity."));
-        }
+                : (body != null ? body.getOrDefault("quantity", body.get("stock")) : null);
 
-        int nextStock;
-        try {
-            nextStock = Math.max(0, Integer.parseInt(String.valueOf(rawStock)));
-        } catch (NumberFormatException e) {
-            return ResponseEntity.badRequest()
-                    .body(Map.of("ok", false, "message", "stockQuantity must be a valid integer."));
-        }
-
-        ProductEntity updated = productService.updateProductStock(id, nextStock, u.name);
+        ProductEntity updated = productService.updateProductStock(id, rawStock, u.name);
         if (updated == null) {
             return ResponseEntity.status(HttpStatus.NOT_FOUND)
                     .body(Map.of("ok", false, "message", "Product not found."));

@@ -116,13 +116,18 @@ public class InventoryService {
         return summary;
     }
 
-    public synchronized ProductEntity restockProduct(int productId, int amount, String actorName, String reason) {
+    public synchronized ProductEntity restockProduct(int productId, Object rawAmount, String actorName, String reason) {
         Product p = store.findProduct(productId);
         if (p == null || p.takenDown) return null;
 
-        int addQty = Math.max(1, Math.min(50, amount > 0 ? amount : 3));
         int prevQty = productService.resolveQuantity(p);
-        int nextQty = prevQty + addQty;
+        Object effectiveAmount = rawAmount != null ? rawAmount : Integer.valueOf(3);
+        var validation = productService.getProductValidator()
+                .validateStockAdjustment(prevQty, null, effectiveAmount, true);
+        validation.throwIfInvalid();
+
+        int nextQty = validation.getNormalizedStock();
+        int addQty = nextQty - prevQty;
         long now = System.currentTimeMillis();
 
         p.setStockQuantity(nextQty);
@@ -136,20 +141,26 @@ public class InventoryService {
         return productService.syncProductToRepository(p);
     }
 
-    public synchronized InventoryItem adjustStock(int productId, Integer targetQuantity, Integer delta, String actorName, String reason) {
+    public synchronized ProductEntity restockProduct(int productId, int amount, String actorName, String reason) {
+        return restockProduct(productId, Integer.valueOf(amount), actorName, reason);
+    }
+
+    public synchronized InventoryItem adjustStock(
+            int productId,
+            Object rawTargetQuantity,
+            Object rawDelta,
+            String actorName,
+            String reason) {
         Product p = store.findProduct(productId);
         if (p == null || p.takenDown) return null;
 
         int prevQty = productService.resolveQuantity(p);
-        int nextQty;
-        if (targetQuantity != null) {
-            nextQty = Math.max(0, targetQuantity);
-        } else if (delta != null) {
-            nextQty = Math.max(0, prevQty + delta);
-        } else {
-            nextQty = prevQty;
-        }
+        Object effectiveDelta = (rawTargetQuantity == null && rawDelta == null) ? Integer.valueOf(3) : rawDelta;
+        var validation = productService.getProductValidator()
+                .validateStockAdjustment(prevQty, rawTargetQuantity, effectiveDelta, false);
+        validation.throwIfInvalid();
 
+        int nextQty = validation.getNormalizedStock();
         long now = System.currentTimeMillis();
         p.setStockQuantity(nextQty);
         p.lastRestockedAt = now;
@@ -161,6 +172,15 @@ public class InventoryService {
                 reason != null && !reason.isBlank() ? reason : "Inventory stock adjustment");
 
         return toInventoryItem(p);
+    }
+
+    public synchronized InventoryItem adjustStock(
+            int productId,
+            Integer targetQuantity,
+            Integer delta,
+            String actorName,
+            String reason) {
+        return adjustStock(productId, (Object) targetQuantity, (Object) delta, actorName, reason);
     }
 
     public synchronized void deductStockForOrder(Product p, int qty, String buyerName, String orderId) {

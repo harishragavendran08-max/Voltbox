@@ -1657,7 +1657,7 @@ function renderAllCards() {
       : '';
 
     var card = document.createElement("article");
-    card.className = "card" + (lowStock ? " is-low-stock" : "") + (isBackorder ? " is-backorder" : "") + (dealMetrics.isDeal ? " has-deal-drop" : "");
+    card.className = "card" + (lowStock ? " is-low-stock" : "") + (isBackorder ? " is-backorder" : "") + (dealMetrics.isDeal ? " has-deal-drop" : "") + (isChartOpen ? " has-open-chart" : "");
     card.id = "card-" + p.id;
     card.setAttribute("tabindex", "0");
     card.setAttribute("role", "article");
@@ -1670,12 +1670,21 @@ function renderAllCards() {
     card.setAttribute("data-group", getComponentGroup(p));
     card.style.setProperty("--stagger-idx", String(i));
 
-    var ratingRow = p.ratingCount > 0
-      ? '<div class="card-rating">' +
-          starRating(p.ratingRate) +
-          '<span>' + p.ratingRate + ' (' + p.ratingCount + ')</span>' +
-        '</div>'
-      : '';
+    var normalizedSlots = (window.VoltboxQR && typeof window.VoltboxQR.normalizeProductCardContentSlots === "function")
+      ? window.VoltboxQR.normalizeProductCardContentSlots(p)
+      : {
+          title: p.title || ("Hardware Component #" + p.id),
+          description: p.description || "Precision bench-verified hardware component with full ESD validation and manufacturer warranty.",
+          ratingRate: p.ratingCount > 0 ? p.ratingRate : 4.8,
+          ratingCount: p.ratingCount || 0,
+          ratingLabel: p.ratingCount > 0 ? (p.ratingRate + " (" + p.ratingCount + ")") : "4.8 (Verified)"
+        };
+
+    var ratingRow =
+      '<div class="card-rating">' +
+        starRating(normalizedSlots.ratingRate) +
+        '<span>' + esc(normalizedSlots.ratingLabel) + '</span>' +
+      '</div>';
 
     var tag = cardTag(p);
 
@@ -1766,8 +1775,8 @@ function renderAllCards() {
           '<button class="card-specs-link" type="button" onclick="openSpecDrawer(' + p.id + ')" aria-label="Specs for ' + esc(p.title) + '">Specs &rarr;</button>' +
         '</div>' +
       '</div>' +
-      '<h3 class="card-title"><button type="button" class="card-title-btn" onclick="handleCardTitleAreaClick(event, ' + p.id + ')">' + esc(p.title) + '</button></h3>' +
-      (p.description ? '<p class="card-desc">' + esc(p.description) + '</p>' : '') +
+      '<h3 class="card-title"><button type="button" class="card-title-btn" onclick="handleCardTitleAreaClick(event, ' + p.id + ')">' + esc(normalizedSlots.title) + '</button></h3>' +
+      '<p class="card-desc">' + esc(normalizedSlots.description) + '</p>' +
       ratingRow +
       '<div class="card-price-row">' +
         '<p class="card-price" id="card-price-text-' + p.id + '">$' + p.price.toFixed(2) + '<span class="card-price-inr-sub">≈ ₹' + Math.round(p.price * 83.5).toLocaleString("en-IN") + '</span><span class="card-batch-price-preview" id="card-batch-price-preview-' + p.id + '" hidden></span></p>' +
@@ -1788,14 +1797,25 @@ function renderAllCards() {
         '<div class="card-chart-mount" id="card-chart-mount-' + p.id + '" data-testid="card-price-chart"></div>' +
       '</div>' +
       '<div class="card-footer-actions">' +
-        '<button type="button" class="card-compare-btn' + (isProductInCompare(p.id) ? ' active' : '') + '" ' +
-        '        id="card-compare-btn-' + p.id + '" ' +
-        '        onclick="event.stopPropagation(); toggleCompareItem(' + p.id + ')" ' +
-        '        title="' + (isProductInCompare(p.id) ? 'Remove from comparison' : 'Compare with other components') + '" ' +
-        '        aria-pressed="' + (isProductInCompare(p.id) ? 'true' : 'false') + '">' +
-          icon(isProductInCompare(p.id) ? "check" : "sliders", 13) +
-          ' <span>' + (isProductInCompare(p.id) ? 'Comparing' : 'Compare') + '</span>' +
-        '</button>' +
+        '<div class="card-footer-left">' +
+          '<button type="button" class="card-compare-btn' + (isProductInCompare(p.id) ? ' active' : '') + '" ' +
+          '        id="card-compare-btn-' + p.id + '" ' +
+          '        onclick="event.stopPropagation(); toggleCompareItem(' + p.id + ')" ' +
+          '        title="' + (isProductInCompare(p.id) ? 'Remove from comparison' : 'Compare with other components') + '" ' +
+          '        aria-pressed="' + (isProductInCompare(p.id) ? 'true' : 'false') + '">' +
+            icon(isProductInCompare(p.id) ? "check" : "sliders", 13) +
+            ' <span>' + (isProductInCompare(p.id) ? 'Comparing' : 'Compare') + '</span>' +
+          '</button>' +
+          '<button type="button" class="card-quick-actions-btn" ' +
+          '        id="card-quick-actions-btn-' + p.id + '" ' +
+          '        data-testid="card-quick-actions-btn-' + p.id + '" ' +
+          '        onclick="openCardQuickActionsFromButton(event, ' + p.id + ')" ' +
+          '        title="Quick Actions (Right-click or long-press card)" ' +
+          '        aria-haspopup="menu" ' +
+          '        aria-label="Quick actions for ' + esc(p.title) + '">' +
+            icon("more-horizontal", 14) +
+          '</button>' +
+        '</div>' +
         '<div class="qty">' +
           '<button class="qty-btn" id="dec-' + p.id + '"' +
           '        onclick="dec(' + p.id + ')"' +
@@ -1808,6 +1828,8 @@ function renderAllCards() {
           '        aria-label="Increase quantity for ' + esc(p.title) + '">+</button>' +
         '</div>' +
       '</div>';
+
+    bindCardContextMenuInteractions(card, p.id);
 
     // Release stagger-in class once entrance finishes so 3D hover transform is unrestricted
     card.addEventListener("animationend", function (ev) {
@@ -1900,8 +1922,12 @@ function toggleCardChart(productId) {
   var nextState = !expandedCharts[productId];
   expandedCharts[productId] = nextState;
 
+  var cardEl = document.getElementById("card-" + productId);
   var panel = document.getElementById("card-chart-panel-" + productId);
   var btn = document.getElementById("chart-toggle-" + productId);
+  if (cardEl) {
+    cardEl.classList.toggle("has-open-chart", nextState);
+  }
   if (btn) {
     btn.classList.toggle("active", nextState);
     btn.setAttribute("aria-expanded", nextState ? "true" : "false");
@@ -3891,6 +3917,12 @@ function applyFiltersAndSearch(explicitQuery) {
   }
 
   syncCompareAllVisibleButtonUI();
+  if (typeof syncCatalogFiltersToggleUI === "function") {
+    syncCatalogFiltersToggleUI();
+  }
+  if (typeof scheduleServerSearchQueryLog === "function") {
+    scheduleServerSearchQueryLog(query, shown, "catalog-search");
+  }
 }
 
 function resetAllCatalogFilters() {
@@ -4090,6 +4122,9 @@ function applyVoiceSearchTranscript(rawText, isFinal) {
       " · " + matchCount + (matchCount === 1 ? " match" : " matches");
     updateVoiceSearchUiState(false, "Voice Search Complete", summary, false);
     showActivityToast('Voice search: "' + (parsed.query || parsed.rawTranscript) + '" (' + matchCount + ' found)');
+    if (typeof dispatchServerSearchQueryLog === "function" && parsed.query && parsed.query.length >= 2) {
+      dispatchServerSearchQueryLog(parsed.query, matchCount, "voice-search");
+    }
   } else {
     updateVoiceSearchUiState(true, "Listening — Recognizing…", 'Hearing: "' + parsed.rawTranscript + '"', false);
   }
@@ -4617,29 +4652,58 @@ function updateFilterTabCounts() {
     gaming: "Gaming",
     "low-stock": "Low Stock"
   };
-  var catIcons = {
-    all: "cat-all",
-    gpus: "cat-gpus",
-    cpus: "cat-cpus",
-    motherboards: "cat-motherboards",
-    storage: "cat-storage",
-    audio: "cat-audio",
-    gaming: "cat-gaming",
-    "low-stock": "cat-low-stock"
-  };
   var tabs = filterBarEl.querySelectorAll(".filter-tab");
   for (var t = 0; t < tabs.length; t++) {
     var key = tabs[t].getAttribute("data-filter") || "all";
     if (key === "wishlist") {
-      tabs[t].innerHTML = icon("heart", 13) + '<span class="filter-tab-label">Wishlist</span><span class="filter-count" id="wishlist-filter-count">' + wishlist.length + '</span>';
+      tabs[t].innerHTML = icon("heart", 12) + '<span class="filter-tab-label">Wishlist</span><span class="filter-count" id="wishlist-filter-count">' + wishlist.length + '</span>';
       continue;
     }
     var baseLabel = labels[key] || key;
-    var icName = catIcons[key] || "cat-all";
     var c = counts[key] !== undefined ? counts[key] : 0;
-    tabs[t].innerHTML = icon(icName, 13) + '<span class="filter-tab-label">' + esc(baseLabel) + '</span><span class="filter-count">' + c + '</span>';
+    tabs[t].innerHTML = '<span class="filter-tab-label">' + esc(baseLabel) + '</span><span class="filter-count">' + c + '</span>';
   }
 }
+
+function syncCatalogFiltersToggleUI() {
+  var toggleBtn = document.getElementById("catalog-filters-toggle-btn");
+  var badgeEl = document.getElementById("catalog-filters-active-badge");
+  var drawerEl = document.getElementById("catalog-expandable-drawer");
+  if (!toggleBtn) return;
+
+  var isExpanded = Boolean(drawerEl && !drawerEl.hidden);
+  var summary = (window.VoltboxQR && typeof window.VoltboxQR.computeCatalogFilterDrawerSummary === "function")
+    ? window.VoltboxQR.computeCatalogFilterDrawerSummary({
+        stockFilter: activeStockFilter,
+        budgetMax: activeBudgetMax,
+        sortMode: activeSortMode,
+        activePromoCode: activePromoCode,
+        batchEditActive: typeof isCatalogBatchEditActive !== "undefined" ? Boolean(isCatalogBatchEditActive) : false,
+        isExpanded: isExpanded
+      })
+    : {
+        activeCount: (activeStockFilter !== "all" ? 1 : 0) + (activeBudgetMax !== null ? 1 : 0) + (activeSortMode === "best-deal" ? 1 : 0) + (activePromoCode ? 1 : 0),
+        hasActiveFilters: activeStockFilter !== "all" || activeBudgetMax !== null || activeSortMode === "best-deal" || Boolean(activePromoCode),
+        ariaExpanded: isExpanded ? "true" : "false"
+      };
+
+  toggleBtn.setAttribute("aria-expanded", summary.ariaExpanded);
+  toggleBtn.classList.toggle("is-open", isExpanded);
+  toggleBtn.classList.toggle("has-active-filters", summary.hasActiveFilters);
+  if (badgeEl) {
+    badgeEl.textContent = String(summary.activeCount);
+    badgeEl.hidden = !summary.hasActiveFilters;
+  }
+}
+
+function toggleCatalogFiltersDrawer(forceState) {
+  var drawerEl = document.getElementById("catalog-expandable-drawer");
+  if (!drawerEl) return;
+  var nextOpen = typeof forceState === "boolean" ? forceState : drawerEl.hidden;
+  drawerEl.hidden = !nextOpen;
+  syncCatalogFiltersToggleUI();
+}
+window.toggleCatalogFiltersDrawer = toggleCatalogFiltersDrawer;
 
 // ── Odometer Digit Roll & Totals Calculation ──
 
@@ -5199,6 +5263,12 @@ function wireUpButtons() {
   var catalogResetBtnEl = document.getElementById("catalog-reset-filters-btn");
   if (catalogResetBtnEl) {
     catalogResetBtnEl.addEventListener("click", resetAllCatalogFilters);
+  }
+  var catalogFiltersToggleBtnEl = document.getElementById("catalog-filters-toggle-btn");
+  if (catalogFiltersToggleBtnEl) {
+    catalogFiltersToggleBtnEl.addEventListener("click", function () {
+      toggleCatalogFiltersDrawer();
+    });
   }
 
   // Grid / Compact Spec List view toggle
@@ -8031,6 +8101,9 @@ function updateStudioCommandStrip() {
       dealStatusEl.textContent = "Tap to apply";
       dealStatusEl.classList.remove("active");
     }
+  }
+  if (typeof syncCatalogFiltersToggleUI === "function") {
+    syncCatalogFiltersToggleUI();
   }
 }
 
@@ -12464,3 +12537,567 @@ function closeVoltboxMapsModal() {
   overlay.setAttribute("aria-hidden", "true");
 }
 window.closeVoltboxMapsModal = closeVoltboxMapsModal;
+
+// ── Product Card Floating Context Menu (Right-Click, Long-Press & Quick-Action Button) ──
+var activeContextMenuProductId = null;
+var activeContextMenuAnchor = { x: 0, y: 0 };
+var cardLongPressTimer = null;
+var cardLongPressStart = { x: 0, y: 0, productId: null, triggered: false };
+var contextMenuGlobalListenersBound = false;
+
+function clearCardLongPressTimer() {
+  if (cardLongPressTimer) {
+    clearTimeout(cardLongPressTimer);
+    cardLongPressTimer = null;
+  }
+}
+
+function bindCardContextMenuInteractions(cardEl, productId) {
+  if (!cardEl || !productId) return;
+
+  // 1. Desktop Right-Click (contextmenu)
+  cardEl.addEventListener("contextmenu", function (ev) {
+    ev.preventDefault();
+    ev.stopPropagation();
+    var cx = typeof ev.clientX === "number" && ev.clientX > 0 ? ev.clientX : 0;
+    var cy = typeof ev.clientY === "number" && ev.clientY > 0 ? ev.clientY : 0;
+    if (!cx && !cy) {
+      var r = cardEl.getBoundingClientRect();
+      cx = Math.round(r.left + r.width * 0.5);
+      cy = Math.round(r.top + r.height * 0.38);
+    }
+    openProductCardContextMenu(productId, cx, cy, "contextmenu");
+  });
+
+  // 2. Touch & Pointer Long-Press (480ms hold)
+  cardEl.addEventListener("pointerdown", function (ev) {
+    if (ev.button && ev.button !== 0) return;
+    if (ev.target && ev.target.closest("button, a, input, select")) return;
+
+    clearCardLongPressTimer();
+    cardLongPressStart = {
+      x: ev.clientX || 0,
+      y: ev.clientY || 0,
+      productId: productId,
+      triggered: false
+    };
+    var holdMs = (window.VoltboxQR && window.VoltboxQR.CARD_LONG_PRESS_DURATION_MS) || 480;
+    cardLongPressTimer = setTimeout(function () {
+      cardLongPressTimer = null;
+      cardLongPressStart.triggered = true;
+      cardEl.classList.add("is-long-press-active");
+      setTimeout(function () {
+        cardEl.classList.remove("is-long-press-active");
+      }, 240);
+      openProductCardContextMenu(productId, cardLongPressStart.x, cardLongPressStart.y, "longpress");
+    }, holdMs);
+  });
+
+  cardEl.addEventListener("pointermove", function (ev) {
+    if (!cardLongPressTimer) return;
+    var movedTooFar = (window.VoltboxQR && typeof window.VoltboxQR.shouldCancelLongPressOnMove === "function")
+      ? window.VoltboxQR.shouldCancelLongPressOnMove(cardLongPressStart.x, cardLongPressStart.y, ev.clientX || 0, ev.clientY || 0)
+      : (Math.hypot((ev.clientX || 0) - cardLongPressStart.x, (ev.clientY || 0) - cardLongPressStart.y) > 10);
+    if (movedTooFar) {
+      clearCardLongPressTimer();
+    }
+  });
+
+  cardEl.addEventListener("pointerup", clearCardLongPressTimer);
+  cardEl.addEventListener("pointercancel", clearCardLongPressTimer);
+  cardEl.addEventListener("pointerleave", clearCardLongPressTimer);
+}
+
+function openCardQuickActionsFromButton(ev, productId) {
+  if (ev) {
+    ev.preventDefault();
+    ev.stopPropagation();
+  }
+  var btnEl = document.getElementById("card-quick-actions-btn-" + productId);
+  var cx = ev && ev.clientX ? ev.clientX : 0;
+  var cy = ev && ev.clientY ? ev.clientY : 0;
+  if (btnEl) {
+    var rect = btnEl.getBoundingClientRect();
+    cx = Math.round(rect.left);
+    cy = Math.round(rect.bottom + 6);
+  }
+  openProductCardContextMenu(productId, cx, cy, "button");
+}
+window.openCardQuickActionsFromButton = openCardQuickActionsFromButton;
+
+function copyTextToClipboardWithFallback(text) {
+  if (navigator.clipboard && typeof navigator.clipboard.writeText === "function") {
+    return navigator.clipboard.writeText(text).catch(function () {
+      return fallbackCopyText(text);
+    });
+  }
+  return Promise.resolve(fallbackCopyText(text));
+}
+
+function fallbackCopyText(text) {
+  try {
+    var ta = document.createElement("textarea");
+    ta.value = String(text || "");
+    ta.setAttribute("readonly", "readonly");
+    ta.style.position = "fixed";
+    ta.style.left = "-9999px";
+    document.body.appendChild(ta);
+    ta.select();
+    document.execCommand("copy");
+    document.body.removeChild(ta);
+    return true;
+  } catch (_e) {
+    return false;
+  }
+}
+
+function renderContextMenuItemsMarkup(product, items) {
+  var sections = [
+    { key: "primary", title: "Quick Actions" },
+    { key: "clipboard", title: "Clipboard" },
+    { key: "inspect", title: "Hardware Telemetry" }
+  ];
+  var html = "";
+  for (var s = 0; s < sections.length; s++) {
+    var sec = sections[s];
+    var groupItems = items.filter(function (it) { return it.section === sec.key; });
+    if (!groupItems.length) continue;
+    if (s > 0) {
+      html += '<div class="card-ctx-divider" role="separator"></div>';
+    }
+    html += '<div class="card-ctx-section-label">' + esc(sec.title) + '</div>';
+    for (var i = 0; i < groupItems.length; i++) {
+      var item = groupItems[i];
+      var iconName = item.icon || "bolt";
+      var btnClass = "card-ctx-item" + (item.active ? " is-active" : "") + (item.disabled ? " is-disabled" : "");
+      html +=
+        '<button type="button" class="' + btnClass + '"' +
+        '        id="ctx-action-' + esc(item.id) + '"' +
+        '        role="menuitem"' +
+        '        data-ctx-action="' + esc(item.id) + '"' +
+        '        data-testid="ctx-action-' + esc(item.id) + '"' +
+        (item.disabled ? ' disabled' : '') +
+        '        onclick="executeProductCardContextAction(\'' + esc(item.id) + '\', ' + product.id + ')">' +
+          '<span class="card-ctx-item-icon">' + icon(iconName, 14) + '</span>' +
+          '<span class="card-ctx-item-body">' +
+            '<span class="card-ctx-item-label">' + esc(item.label) + '</span>' +
+            (item.sublabel ? '<span class="card-ctx-item-sub">' + esc(item.sublabel) + '</span>' : '') +
+          '</span>' +
+          '<span class="card-ctx-item-right">' +
+            (item.badgeText ? '<span class="card-ctx-item-badge">' + esc(item.badgeText) + '</span>' : '') +
+            (item.shortcut ? '<kbd class="card-ctx-kbd">' + esc(item.shortcut) + '</kbd>' : '') +
+          '</span>' +
+        '</button>';
+    }
+  }
+  return html;
+}
+
+function hydrateContextMenuBackendTelemetry(product) {
+  var telemetryEl = document.getElementById("card-ctx-telemetry-bar");
+  if (!telemetryEl || !product) return;
+  var q = cart[product.id] || 0;
+  var wish = isProductInWishlist(product.id);
+  var comp = isProductInCompare(product.id);
+  var alertSub = Boolean(getPriceAlertForProduct(product.id));
+  var url = "/api/products/" + product.id + "/quick-actions?cartQty=" + q +
+    "&wishlisted=" + wish + "&compared=" + comp + "&hasAlert=" + alertSub;
+
+  fetch(url)
+    .then(function (r) { return r.ok ? r.json() : null; })
+    .then(function (data) {
+      if (!data || !data.ok || activeContextMenuProductId !== product.id) return;
+      var parts = [];
+      if (data.rigBundleEligible) {
+        parts.push('<span class="ctx-tele-pill is-teal">5% Rig Bundle Eligible</span>');
+      }
+      if (typeof data.sixMonthAvgPrice === "number" && data.sixMonthAvgPrice > 0) {
+        parts.push('<span class="ctx-tele-stat">6M Avg: <strong>$' + Number(data.sixMonthAvgPrice).toFixed(2) + '</strong></span>');
+      }
+      if (parts.length > 0) {
+        telemetryEl.innerHTML = parts.join('<span class="ctx-tele-sep">·</span>');
+        telemetryEl.hidden = false;
+      }
+    })
+    .catch(function () {});
+}
+
+function openProductCardContextMenu(productId, clientX, clientY, _source) {
+  var pid = Number(productId);
+  var p = findProductById(pid);
+  var popover = document.getElementById("card-context-menu-popover");
+  if (!p || !popover) return;
+
+  activeContextMenuProductId = pid;
+  activeContextMenuAnchor = { x: Number(clientX) || 240, y: Number(clientY) || 200 };
+
+  var prevHighlight = document.querySelectorAll(".card.is-context-menu-open");
+  for (var h = 0; h < prevHighlight.length; h++) {
+    prevHighlight[h].classList.remove("is-context-menu-open");
+  }
+  var cardEl = document.querySelector('.card[data-product-id="' + pid + '"]');
+  if (cardEl) {
+    cardEl.classList.add("is-context-menu-open");
+  }
+
+  var sku = getSkuFor(p);
+  var stockQty = getEffectiveStock(p);
+  var lowStock = isLowStockItem(p);
+  var q = cart[pid] || 0;
+  var isWish = isProductInWishlist(pid);
+  var isComp = isProductInCompare(pid);
+  var hasAlert = Boolean(getPriceAlertForProduct(pid));
+
+  var thumbEl = document.getElementById("card-ctx-thumb");
+  if (thumbEl) {
+    var hasRealPhoto = p.image && (p.image.indexOf("http") === 0 || p.image.indexOf("/") === 0);
+    thumbEl.src = hasRealPhoto ? p.image : tileFor(p.category);
+    thumbEl.alt = p.title;
+  }
+  var skuEl = document.getElementById("card-ctx-sku");
+  if (skuEl) skuEl.textContent = sku;
+
+  var stockEl = document.getElementById("card-ctx-stock");
+  if (stockEl) {
+    stockEl.textContent = stockQty <= 0 ? "Backorder" : (lowStock ? (stockQty + " left") : (stockQty + " in stock"));
+    stockEl.className = "card-ctx-stock" + (stockQty <= 0 ? " is-out" : (lowStock ? " is-low" : ""));
+  }
+
+  var titleEl = document.getElementById("card-ctx-title");
+  if (titleEl) titleEl.textContent = p.title;
+
+  var items = (window.VoltboxQR && typeof window.VoltboxQR.buildProductContextMenuItems === "function")
+    ? window.VoltboxQR.buildProductContextMenuItems({
+        productId: pid,
+        title: p.title,
+        sku: sku,
+        price: p.price,
+        effectiveStock: stockQty,
+        cartQty: q,
+        isWishlisted: isWish,
+        isCompared: isComp,
+        hasPriceAlert: hasAlert
+      })
+    : [];
+
+  var itemsContainer = document.getElementById("card-ctx-items");
+  if (itemsContainer) {
+    itemsContainer.innerHTML = renderContextMenuItemsMarkup(p, items);
+  }
+
+  var telemetryEl = document.getElementById("card-ctx-telemetry-bar");
+  if (telemetryEl) {
+    telemetryEl.hidden = true;
+    telemetryEl.innerHTML = "";
+  }
+
+  popover.hidden = false;
+  popover.classList.add("open");
+
+  var menuRect = popover.getBoundingClientRect();
+  var menuW = Math.max(256, Math.round(menuRect.width || 268));
+  var menuH = Math.max(280, Math.round(menuRect.height || 360));
+  var pos = (window.VoltboxQR && typeof window.VoltboxQR.computeProductContextMenuPosition === "function")
+    ? window.VoltboxQR.computeProductContextMenuPosition(
+        activeContextMenuAnchor.x,
+        activeContextMenuAnchor.y,
+        menuW,
+        menuH,
+        window.innerWidth || 1440,
+        window.innerHeight || 900,
+        12
+      )
+    : { left: Math.max(12, activeContextMenuAnchor.x), top: Math.max(12, activeContextMenuAnchor.y), transformOrigin: "top left" };
+
+  popover.style.left = pos.left + "px";
+  popover.style.top = pos.top + "px";
+  popover.style.transformOrigin = pos.transformOrigin;
+
+  hydrateContextMenuBackendTelemetry(p);
+  ensureContextMenuGlobalListeners();
+}
+window.openProductCardContextMenu = openProductCardContextMenu;
+
+function closeProductCardContextMenu() {
+  activeContextMenuProductId = null;
+  var popover = document.getElementById("card-context-menu-popover");
+  if (popover) {
+    popover.classList.remove("open");
+    popover.hidden = true;
+  }
+  var highlighted = document.querySelectorAll(".card.is-context-menu-open");
+  for (var i = 0; i < highlighted.length; i++) {
+    highlighted[i].classList.remove("is-context-menu-open");
+  }
+}
+window.closeProductCardContextMenu = closeProductCardContextMenu;
+
+function executeProductCardContextAction(actionId, productId) {
+  var pid = Number(productId || activeContextMenuProductId);
+  var p = findProductById(pid);
+  if (!p) {
+    closeProductCardContextMenu();
+    return;
+  }
+  var sku = getSkuFor(p);
+
+  if (actionId === "add-to-cart") {
+    inc(pid);
+    if (typeof showWishlistToast === "function") {
+      showWishlistToast("Added " + p.title + " ($" + p.price.toFixed(2) + ") to cart", "added");
+    }
+    closeProductCardContextMenu();
+    return;
+  }
+
+  if (actionId === "toggle-wishlist") {
+    var fakeEv = { stopPropagation: function () {}, preventDefault: function () {} };
+    toggleWishlist(fakeEv, pid);
+    closeProductCardContextMenu();
+    return;
+  }
+
+  if (actionId === "toggle-compare") {
+    toggleCompareItem(pid);
+    closeProductCardContextMenu();
+    return;
+  }
+
+  if (actionId === "copy-name") {
+    var namePayload = (window.VoltboxQR && typeof window.VoltboxQR.formatProductCopyPayload === "function")
+      ? window.VoltboxQR.formatProductCopyPayload({ id: p.id, title: p.title, sku: sku, price: p.price }, "name")
+      : p.title;
+    copyTextToClipboardWithFallback(namePayload).then(function () {
+      if (typeof showWishlistToast === "function") {
+        showWishlistToast('Copied "' + namePayload + '" to clipboard', "added");
+      }
+    });
+    closeProductCardContextMenu();
+    return;
+  }
+
+  if (actionId === "copy-sku") {
+    var skuPayload = (window.VoltboxQR && typeof window.VoltboxQR.formatProductCopyPayload === "function")
+      ? window.VoltboxQR.formatProductCopyPayload({ id: p.id, title: p.title, sku: sku, price: p.price }, "sku-price")
+      : (p.title + " (" + sku + ") — $" + p.price.toFixed(2));
+    copyTextToClipboardWithFallback(skuPayload).then(function () {
+      if (typeof showWishlistToast === "function") {
+        showWishlistToast("Copied SKU & price: " + skuPayload, "added");
+      }
+    });
+    closeProductCardContextMenu();
+    return;
+  }
+
+  if (actionId === "open-specs") {
+    closeProductCardContextMenu();
+    openSpecDrawer(pid);
+    return;
+  }
+
+  if (actionId === "open-volatility") {
+    closeProductCardContextMenu();
+    openSpecDrawer(pid);
+    setTimeout(function () {
+      if (typeof window.scrollSpecDrawerToSection === "function") {
+        window.scrollSpecDrawerToSection("d3-volatility");
+      }
+    }, 180);
+    return;
+  }
+
+  if (actionId === "price-alert") {
+    closeProductCardContextMenu();
+    var alertEv = { stopPropagation: function () {}, preventDefault: function () {} };
+    openPriceAlertModal(alertEv, pid);
+    return;
+  }
+}
+window.executeProductCardContextAction = executeProductCardContextAction;
+
+function ensureContextMenuGlobalListeners() {
+  if (contextMenuGlobalListenersBound) return;
+  contextMenuGlobalListenersBound = true;
+
+  document.addEventListener("pointerdown", function (ev) {
+    if (!activeContextMenuProductId) return;
+    var popover = document.getElementById("card-context-menu-popover");
+    if (popover && !popover.hidden && !popover.contains(ev.target)) {
+      if (ev.target && ev.target.closest(".card-quick-actions-btn")) return;
+      closeProductCardContextMenu();
+    }
+  });
+
+  window.addEventListener("scroll", function () {
+    if (activeContextMenuProductId) {
+      closeProductCardContextMenu();
+    }
+  }, { passive: true });
+
+  window.addEventListener("resize", function () {
+    if (activeContextMenuProductId) {
+      closeProductCardContextMenu();
+    }
+  });
+
+  document.addEventListener("keydown", function (ev) {
+    if (!activeContextMenuProductId) return;
+    if (ev.key === "Escape") {
+      ev.preventDefault();
+      closeProductCardContextMenu();
+      return;
+    }
+    var popover = document.getElementById("card-context-menu-popover");
+    if (!popover || popover.hidden) return;
+    var enabledBtns = Array.prototype.slice.call(
+      popover.querySelectorAll(".card-ctx-item:not([disabled])")
+    );
+    if (!enabledBtns.length) return;
+    var currentIdx = enabledBtns.indexOf(document.activeElement);
+    if (ev.key === "ArrowDown") {
+      ev.preventDefault();
+      var nextIdx = currentIdx < enabledBtns.length - 1 ? currentIdx + 1 : 0;
+      enabledBtns[nextIdx].focus();
+    } else if (ev.key === "ArrowUp") {
+      ev.preventDefault();
+      var prevIdx = currentIdx > 0 ? currentIdx - 1 : enabledBtns.length - 1;
+      enabledBtns[prevIdx].focus();
+    }
+  });
+}
+
+// ============================================================================
+// SERVER-SIDE SEARCH QUERY LOGGING (Posts debounced catalog searches to Java/Node controller)
+// ============================================================================
+var searchLogDebounceTimer = null;
+var lastLoggedSearchSignature = "";
+
+function dispatchServerSearchQueryLog(rawQuery, resultCount, source) {
+  var cleaned = String(rawQuery || "").trim();
+  if (cleaned.length < 2) return;
+  var category = typeof activeCategoryFilter === "string" && activeCategoryFilter ? activeCategoryFilter : "all";
+  var safeResults = Math.max(0, Math.floor(Number(resultCount) || 0));
+  var sig = cleaned.toLowerCase() + "::" + category + "::" + safeResults + "::" + (source || "catalog-search");
+  if (sig === lastLoggedSearchSignature) return;
+  lastLoggedSearchSignature = sig;
+
+  var headers = { "Content-Type": "application/json" };
+  var tok = localStorage.getItem("voltbox_token");
+  if (tok) {
+    headers["Authorization"] = "Bearer " + tok;
+  }
+
+  fetch("/api/products/search-log", {
+    method: "POST",
+    headers: headers,
+    body: JSON.stringify({
+      query: cleaned,
+      category: category,
+      resultCount: safeResults,
+      source: source || "catalog-search",
+      actorName: localStorage.getItem("voltbox_user") || "guest"
+    })
+  }).catch(function () {});
+}
+window.dispatchServerSearchQueryLog = dispatchServerSearchQueryLog;
+
+function scheduleServerSearchQueryLog(rawQuery, resultCount, source) {
+  if (searchLogDebounceTimer) {
+    clearTimeout(searchLogDebounceTimer);
+    searchLogDebounceTimer = null;
+  }
+  var cleaned = String(rawQuery || "").trim();
+  if (cleaned.length < 2) return;
+  searchLogDebounceTimer = setTimeout(function () {
+    searchLogDebounceTimer = null;
+    dispatchServerSearchQueryLog(cleaned, resultCount, source || "catalog-search");
+  }, 450);
+}
+window.scheduleServerSearchQueryLog = scheduleServerSearchQueryLog;
+
+// ============================================================================
+// iOS / APPLE HIG LIGHT MODE & DARK MODE CONTROLLER
+// ============================================================================
+var activeVoltboxColorMode = "dark";
+
+function resolveCurrentColorMode() {
+  var saved = localStorage.getItem("voltbox_color_mode");
+  if (window.VoltboxQR && typeof window.VoltboxQR.resolveIosColorMode === "function") {
+    return window.VoltboxQR.resolveIosColorMode(saved);
+  }
+  return saved === "light" ? "light" : "dark";
+}
+
+function applyVoltboxColorMode(modeInput, persist) {
+  var mode = (String(modeInput || "").toLowerCase() === "light") ? "light" : "dark";
+  activeVoltboxColorMode = mode;
+
+  document.documentElement.setAttribute("data-color-mode", mode);
+  if (document.body) {
+    document.body.setAttribute("data-color-mode", mode);
+    document.body.classList.toggle("ios-light-mode", mode === "light");
+    document.body.classList.toggle("ios-dark-mode", mode === "dark");
+  }
+
+  var metaTheme = document.querySelector('meta[name="theme-color"]');
+  if (metaTheme) {
+    metaTheme.setAttribute("content", mode === "light" ? "#F2F2F7" : "#000000");
+  }
+
+  if (persist !== false) {
+    try {
+      localStorage.setItem("voltbox_color_mode", mode);
+    } catch (_e) {}
+  }
+
+  var btnEl = document.getElementById("topbar-theme-mode-btn");
+  var iconEl = document.getElementById("topbar-theme-mode-icon");
+  var textEl = document.getElementById("topbar-theme-mode-text");
+  if (btnEl) {
+    btnEl.setAttribute("data-active-mode", mode);
+    btnEl.setAttribute("aria-pressed", mode === "light" ? "true" : "false");
+    btnEl.setAttribute(
+      "title",
+      mode === "light"
+        ? "iOS Light Mode active — Click to switch to Dark Mode"
+        : "iOS Dark Mode active — Click to switch to Light Mode"
+    );
+  }
+  if (iconEl) {
+    iconEl.textContent = mode === "light" ? "☾" : "☀";
+  }
+  if (textEl) {
+    textEl.textContent = mode === "light" ? "Dark" : "Light";
+  }
+}
+window.applyVoltboxColorMode = applyVoltboxColorMode;
+
+function toggleVoltboxColorMode() {
+  var nextMode = activeVoltboxColorMode === "light" ? "dark" : "light";
+  applyVoltboxColorMode(nextMode, true);
+  if (typeof showWishlistToast === "function") {
+    showWishlistToast(
+      nextMode === "light" ? "Switched to iOS Light Mode" : "Switched to iOS Dark Mode",
+      "added"
+    );
+  }
+  return nextMode;
+}
+window.toggleVoltboxColorMode = toggleVoltboxColorMode;
+
+// Initialize iOS Color Mode on load
+(function initVoltboxColorModeOnReady() {
+  var initialMode = resolveCurrentColorMode();
+  applyVoltboxColorMode(initialMode, false);
+  if (searchEl) {
+    searchEl.addEventListener("keydown", function (ev) {
+      if (ev.key === "Enter" && searchEl.value && searchEl.value.trim().length >= 2) {
+        var visibleCountEl = document.getElementById("catalog-visible-count");
+        var shown = visibleCountEl ? Number(visibleCountEl.textContent || 0) : 0;
+        dispatchServerSearchQueryLog(searchEl.value.trim(), shown, "catalog-search-enter");
+      }
+    });
+  }
+})();
+
+

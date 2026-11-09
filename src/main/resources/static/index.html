@@ -24,6 +24,11 @@
   <link rel="stylesheet" href="style.css" />
 
   <script>
+    (function () {
+      var savedColorMode = localStorage.getItem("voltbox_color_mode");
+      var mode = (savedColorMode === "light" || savedColorMode === "dark") ? savedColorMode : "dark";
+      document.documentElement.setAttribute("data-color-mode", mode);
+    })();
     if (!localStorage.getItem("voltbox_token")) {
       if (sessionStorage.getItem("voltbox_signed_out") === "1") {
         window.location.replace("login.html");
@@ -34,7 +39,7 @@
     }
   </script>
 </head>
-<body data-ui-theme="obsidian" data-bg-mode="quantum">
+<body data-ui-theme="obsidian" data-bg-mode="quantum" class="ios-theme-ready">
 
   <!-- Google Maps Platform Demo Quota Notification Banner (Tier 1 & Tier 2 Listener Target) -->
   <div class="gmp-quota-banner" id="gmp-quota-banner" data-testid="gmp-quota-banner" role="alert" hidden>
@@ -176,6 +181,14 @@
                 aria-label="Open Bench Messenger" title="Bench Messenger (Live Chat)">
           <span data-icon="message"></span>
           <span class="badge messenger-badge" id="messenger-badge" hidden>0</span>
+        </button>
+
+        <!-- iOS Light / Dark Mode Switcher Button -->
+        <button class="topbar-pill-btn ios-theme-mode-btn" id="topbar-theme-mode-btn" data-testid="topbar-theme-mode-btn" type="button"
+                onclick="toggleVoltboxColorMode()"
+                aria-label="Toggle Light or Dark Mode" title="Switch between iOS Light Mode and Dark Mode">
+          <span class="ios-theme-mode-icon" id="topbar-theme-mode-icon" aria-hidden="true">☀</span>
+          <span class="ios-theme-mode-text" id="topbar-theme-mode-text">Light</span>
         </button>
 
         <!-- Advanced Storefront Settings Button -->
@@ -392,77 +405,10 @@
       </div>
     </header>
 
-    <!-- Hardware Studio Command Strip: Unified Obsidian Studio Telemetry, Live PSU Wattage Estimator & Instant Offers -->
-    <section class="studio-command-strip" id="studio-command-strip" data-testid="studio-command-strip" aria-label="Hardware Studio Controls &amp; Live Power Telemetry">
-      <!-- 1. Rig Compatibility & 4-Slot Architecture Status -->
-      <div class="studio-card studio-rig-status-card" id="studio-rig-status-card" data-testid="studio-rig-status-card">
-        <div class="studio-card-head">
-          <span class="studio-kicker">RIG COMPATIBILITY</span>
-          <span class="studio-theme-active-name" id="studio-rig-slot-summary">0 / 4 Core Slots</span>
-        </div>
-        <div class="studio-theme-swatches" id="studio-slot-pills" role="group" aria-label="Core PC rig component slots">
-          <button type="button" class="studio-swatch-btn" data-slot-filter="gpus" title="Filter GPUs">
-            <span class="swatch-dot slot-dot" id="slot-dot-gpus"></span>
-            <span>GPU</span>
-          </button>
-          <button type="button" class="studio-swatch-btn" data-slot-filter="cpus" title="Filter CPUs">
-            <span class="swatch-dot slot-dot" id="slot-dot-cpus"></span>
-            <span>CPU</span>
-          </button>
-          <button type="button" class="studio-swatch-btn" data-slot-filter="motherboards" title="Filter Motherboards">
-            <span class="swatch-dot slot-dot" id="slot-dot-motherboards"></span>
-            <span>Board</span>
-          </button>
-          <button type="button" class="studio-swatch-btn" data-slot-filter="storage" title="Filter NVMe Storage">
-            <span class="swatch-dot slot-dot" id="slot-dot-storage"></span>
-            <span>NVMe</span>
-          </button>
-        </div>
-      </div>
-
-      <!-- 2. Live System Power & ATX 3.1 PSU Wattage Estimator (Java Backend + Client Sync) -->
-      <div class="studio-card studio-psu-card" id="psu-estimator-widget" data-testid="psu-estimator-widget">
-        <div class="studio-psu-top">
-          <div class="studio-psu-metrics">
-            <span class="studio-kicker">LIVE RIG POWER &amp; PSU</span>
-            <div class="studio-psu-readout">
-              <strong class="psu-watts-val" id="psu-peak-watts">0W Peak</strong>
-              <span class="psu-sep">·</span>
-              <span class="psu-tier-badge" id="psu-recommended-tier">650W ATX 3.1 Ready</span>
-            </div>
-          </div>
-          <button type="button" class="studio-starter-rig-btn" id="quick-starter-rig-btn" data-testid="quick-starter-rig-btn" title="Auto-load 4-part Starter Rig Bundle (GPU + CPU + Board + SSD) with 5% discount">
-            <span data-icon="bolt" data-icon-size="13"></span>
-            <span>+ Starter Rig</span>
-          </button>
-        </div>
-        <div class="studio-psu-meter-track" aria-hidden="true">
-          <div class="studio-psu-meter-fill" id="psu-load-bar" style="width: 12%"></div>
-        </div>
-      </div>
-
-      <!-- 3. Instant Promo & Bundle Offer Activator -->
-      <div class="studio-card studio-deals-card">
-        <div class="studio-card-head">
-          <span class="studio-kicker">INSTANT OFFERS</span>
-          <span class="studio-deal-status" id="studio-deal-status">Tap to apply</span>
-        </div>
-        <div class="studio-promo-pills" id="studio-promo-strip">
-          <button type="button" class="studio-promo-chip" data-promo-code="VOLT10" data-testid="quick-promo-volt10" title="Apply VOLT10 for 10% off your entire order">
-            <span class="promo-chip-code">VOLT10</span>
-            <span class="promo-chip-save">10% OFF</span>
-          </button>
-          <button type="button" class="studio-promo-chip" data-promo-code="BUILDER5" data-testid="quick-promo-builder5" title="Apply BUILDER5 for 5% off">
-            <span class="promo-chip-code">BUILDER5</span>
-            <span class="promo-chip-save">5% OFF</span>
-          </button>
-        </div>
-      </div>
-    </section>
-
-    <!-- Category Filter Bar, Sort Controls, View Mode Toggle & Quick Budget Strip -->
+    <!-- Unified Single-Bar Catalog Header with Progressive Disclosure Drawer -->
     <section class="catalog-toolbar" id="catalog-toolbar-section" aria-label="Catalog filters and tools">
-      <div class="catalog-toolbar-top">
+      <!-- Primary Single-Line Bar: Category Tabs (Left) + Sort, View, Filters Toggle & Rig Builder (Right) -->
+      <div class="catalog-primary-bar" id="catalog-primary-bar">
         <div class="filter-bar" id="category-filters" role="tablist" aria-label="Filter by category">
           <button class="filter-tab active" data-filter="all" role="tab" aria-selected="true">All</button>
           <button class="filter-tab" data-filter="gpus" role="tab" aria-selected="false">GPUs</button>
@@ -478,25 +424,14 @@
         </div>
 
         <div class="catalog-control-bar">
-          <div class="catalog-results-meta" id="catalog-results-meta" data-testid="catalog-results-meta">
+          <div class="catalog-results-meta" id="catalog-results-meta" data-testid="catalog-results-meta" title="Visible components matching current filters">
             <span class="results-dot"></span>
-            <span>Showing <strong id="catalog-visible-count">0</strong> of <strong id="catalog-total-count">0</strong> components</span>
-            <div class="catalog-keyboard-hint" id="catalog-keyboard-hint" title="Use Arrow keys to navigate cards, Enter/Space to view specs, +/- for cart, C to compare">
-              <span class="kbd-label">Keys:</span>
-              <kbd class="kbd-key">&larr;&rarr;&uarr;&darr;</kbd>
-              <span class="kbd-action">Move</span>
-              <span class="kbd-sep">&middot;</span>
-              <kbd class="kbd-key">Enter</kbd>
-              <span class="kbd-action">Select</span>
-              <span class="kbd-sep">&middot;</span>
-              <kbd class="kbd-key">&plus;</kbd>
-              <span class="kbd-action">Cart</span>
-            </div>
+            <span class="results-count-compact"><strong id="catalog-visible-count">0</strong><span class="results-count-sep">/</span><strong id="catalog-total-count">0</strong> <span class="results-count-unit">items</span></span>
           </div>
 
           <div class="toolbar-actions">
             <label class="sort-wrap" for="sort-select">
-              <span class="sort-label" data-icon="sliders" data-icon-size="14"></span>
+              <span class="sort-label" data-icon="sliders" data-icon-size="13"></span>
               <select id="sort-select" aria-label="Sort products">
                 <option value="featured">Sort: Featured</option>
                 <option value="best-deal">Discount: Best Deals (6M Drop)</option>
@@ -530,64 +465,161 @@
               </button>
             </div>
 
-            <button type="button" class="compare-all-visible-btn" id="compare-all-visible-btn" data-testid="compare-all-visible-btn" aria-label="Compare all visible products" title="Add all currently filtered products (up to 4) to the comparison tool">
-              <span data-icon="sliders" data-icon-size="14"></span>
-              <span class="compare-all-visible-label" id="compare-all-visible-label">Compare All Visible</span>
-              <span class="compare-all-visible-badge" id="compare-all-visible-badge">4/4</span>
+            <button type="button" class="catalog-filters-toggle-btn" id="catalog-filters-toggle-btn" data-testid="catalog-filters-toggle-btn" aria-expanded="false" aria-controls="catalog-expandable-drawer" title="Toggle Stock, Budget, Deals, Promo Codes &amp; Bulk Tools">
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"></polygon>
+              </svg>
+              <span id="catalog-filters-toggle-label">Filters &amp; Deals</span>
+              <span class="catalog-filters-active-badge" id="catalog-filters-active-badge" hidden>0</span>
+              <svg class="catalog-filters-chevron" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <polyline points="6 9 12 15 18 9"></polyline>
+              </svg>
             </button>
 
-            <button type="button" class="catalog-batch-edit-btn" id="catalog-batch-edit-btn" data-testid="catalog-batch-edit-btn" aria-pressed="false" aria-label="Toggle Admin Batch Edit Mode" title="Select multiple products in the catalog grid and apply bulk price updates or stock adjustments in a single transaction">
-              <span data-icon="check" data-icon-size="14"></span>
-              <span class="batch-edit-btn-label">Batch Edit</span>
-              <span class="batch-edit-btn-count" id="catalog-batch-edit-count">0</span>
+            <button type="button" class="catalog-reset-btn" id="catalog-reset-filters-btn" hidden aria-label="Reset all catalog filters" title="Reset active filters">
+              Reset ✕
             </button>
 
-            <button class="rig-trigger-btn" id="rig-builder-btn" aria-label="Open Rig Builder">
-              <span data-icon="cpu" data-icon-size="15"></span>
-              <span>Build a Rig</span>
+            <button class="rig-trigger-btn" id="rig-builder-btn" aria-label="Open Rig Builder" title="Open 4-Slot PC Rig Builder">
+              <span data-icon="cpu" data-icon-size="14"></span>
+              <span>Rig</span>
               <span class="rig-progress-text" id="rig-builder-count">0/4</span>
             </button>
           </div>
         </div>
       </div>
 
-      <div class="catalog-subbar" id="catalog-subbar" aria-label="Quick stock, budget filters and result count">
-        <div class="catalog-quick-filters-wrap">
-          <button type="button" class="catalog-best-deal-pill" id="catalog-best-deal-pill" data-testid="catalog-best-deal-pill" aria-pressed="false" title="Sort components by highest percentage drop relative to 6-month historical average">
-            <span class="deal-fire-icon" aria-hidden="true">🔥</span>
-            <span class="deal-pill-text">Best Deals</span>
-            <span class="deal-chip-badge">6M Drop</span>
-          </button>
+      <!-- Collapsible Secondary Drawer: Stock & Budget Filters, Promo Codes, Rig Telemetry & Bulk Tools -->
+      <div class="catalog-expandable-drawer" id="catalog-expandable-drawer" data-testid="catalog-expandable-drawer" hidden>
+        <!-- Row 1: Quick Stock, Budget & Best Deals Filter Strip -->
+        <div class="catalog-subbar" id="catalog-subbar" aria-label="Quick stock, budget filters and bulk actions">
+          <div class="catalog-quick-filters-wrap">
+            <div class="catalog-filter-group">
+              <button type="button" class="catalog-best-deal-pill" id="catalog-best-deal-pill" data-testid="catalog-best-deal-pill" aria-pressed="false" title="Sort components by highest percentage drop relative to 6-month historical average">
+                <span class="deal-fire-icon" aria-hidden="true">🔥</span>
+                <span class="deal-pill-text">Best Deals</span>
+                <span class="deal-chip-badge">6M Drop</span>
+              </button>
 
-          <div class="stock-quick-filter-strip" id="stock-quick-filter-strip" data-testid="stock-quick-filter-strip" role="group" aria-label="Quick filter by stock availability">
-            <span class="budget-strip-label">Stock:</span>
-            <button type="button" class="stock-filter-chip active" data-stock-filter="all" aria-pressed="true">
-              <span>All Stock</span>
-              <span class="stock-chip-count" id="stock-count-all">0</span>
-            </button>
-            <button type="button" class="stock-filter-chip available" data-stock-filter="available-now" aria-pressed="false">
-              <span class="stock-status-dot available"></span>
-              <span>Available Now</span>
-              <span class="stock-chip-count" id="stock-count-available">0</span>
-            </button>
-            <button type="button" class="stock-filter-chip backorder" data-stock-filter="backorder" aria-pressed="false">
-              <span class="stock-status-dot backorder"></span>
-              <span>Backorder</span>
-              <span class="stock-chip-count" id="stock-count-backorder">0</span>
-            </button>
-          </div>
+              <div class="stock-quick-filter-strip" id="stock-quick-filter-strip" data-testid="stock-quick-filter-strip" role="group" aria-label="Quick filter by stock availability">
+                <span class="budget-strip-label">Stock:</span>
+                <button type="button" class="stock-filter-chip active" data-stock-filter="all" aria-pressed="true">
+                  <span>All</span>
+                  <span class="stock-chip-count" id="stock-count-all">0</span>
+                </button>
+                <button type="button" class="stock-filter-chip available" data-stock-filter="available-now" aria-pressed="false">
+                  <span class="stock-status-dot available"></span>
+                  <span>In Stock</span>
+                  <span class="stock-chip-count" id="stock-count-available">0</span>
+                </button>
+                <button type="button" class="stock-filter-chip backorder" data-stock-filter="backorder" aria-pressed="false">
+                  <span class="stock-status-dot backorder"></span>
+                  <span>Backorder</span>
+                  <span class="stock-chip-count" id="stock-count-backorder">0</span>
+                </button>
+              </div>
 
-          <div class="budget-filter-strip" id="budget-filter-strip" role="group" aria-label="Filter by maximum price">
-            <span class="budget-strip-label">Budget:</span>
-            <button type="button" class="budget-chip active" data-budget="all" aria-pressed="true">All Prices</button>
-            <button type="button" class="budget-chip" data-budget="100" aria-pressed="false">Under $100</button>
-            <button type="button" class="budget-chip" data-budget="150" aria-pressed="false">Under $150</button>
-            <button type="button" class="budget-chip" data-budget="200" aria-pressed="false">Under $200</button>
-            <button type="button" class="catalog-reset-btn" id="catalog-reset-filters-btn" hidden aria-label="Reset all catalog filters">
-              Reset Filters ✕
-            </button>
+              <div class="budget-filter-strip" id="budget-filter-strip" role="group" aria-label="Filter by maximum price">
+                <span class="budget-strip-label">Budget:</span>
+                <button type="button" class="budget-chip active" data-budget="all" aria-pressed="true">All</button>
+                <button type="button" class="budget-chip" data-budget="100" aria-pressed="false">&lt; $100</button>
+                <button type="button" class="budget-chip" data-budget="150" aria-pressed="false">&lt; $150</button>
+                <button type="button" class="budget-chip" data-budget="200" aria-pressed="false">&lt; $200</button>
+              </div>
+            </div>
+
+            <div class="catalog-drawer-tools-group">
+              <button type="button" class="compare-all-visible-btn" id="compare-all-visible-btn" data-testid="compare-all-visible-btn" aria-label="Compare all visible products" title="Add all currently filtered products (up to 4) to the comparison tool">
+                <span data-icon="sliders" data-icon-size="13"></span>
+                <span class="compare-all-visible-label" id="compare-all-visible-label">Compare Visible</span>
+                <span class="compare-all-visible-badge" id="compare-all-visible-badge">4/4</span>
+              </button>
+
+              <button type="button" class="catalog-batch-edit-btn" id="catalog-batch-edit-btn" data-testid="catalog-batch-edit-btn" aria-pressed="false" aria-label="Toggle Admin Batch Edit Mode" title="Select multiple products in the catalog grid and apply bulk price updates or stock adjustments in a single transaction">
+                <span data-icon="check" data-icon-size="13"></span>
+                <span class="batch-edit-btn-label">Batch Edit</span>
+                <span class="batch-edit-btn-count" id="catalog-batch-edit-count">0</span>
+              </button>
+
+              <div class="catalog-keyboard-hint" id="catalog-keyboard-hint" title="Use Arrow keys to navigate cards, Enter/Space to view specs, +/- for cart, C to compare">
+                <span class="kbd-label">Keys:</span>
+                <kbd class="kbd-key">&larr;&rarr;&uarr;&darr;</kbd>
+                <span class="kbd-action">Move</span>
+                <span class="kbd-sep">&middot;</span>
+                <kbd class="kbd-key">Enter</kbd>
+                <span class="kbd-action">Specs</span>
+              </div>
+            </div>
           </div>
         </div>
+
+        <!-- Row 2 inside Drawer: Rig Compatibility, Live PSU Wattage Estimator & Instant Promo Codes -->
+        <section class="studio-command-strip" id="studio-command-strip" data-testid="studio-command-strip" aria-label="Hardware Studio Controls &amp; Live Power Telemetry">
+          <!-- 1. Rig Compatibility & 4-Slot Architecture Status -->
+          <div class="studio-card studio-rig-status-card" id="studio-rig-status-card" data-testid="studio-rig-status-card">
+            <div class="studio-card-head">
+              <span class="studio-kicker">RIG COMPATIBILITY</span>
+              <span class="studio-theme-active-name" id="studio-rig-slot-summary">0 / 4 Core Slots</span>
+            </div>
+            <div class="studio-theme-swatches" id="studio-slot-pills" role="group" aria-label="Core PC rig component slots">
+              <button type="button" class="studio-swatch-btn" data-slot-filter="gpus" title="Filter GPUs">
+                <span class="swatch-dot slot-dot" id="slot-dot-gpus"></span>
+                <span>GPU</span>
+              </button>
+              <button type="button" class="studio-swatch-btn" data-slot-filter="cpus" title="Filter CPUs">
+                <span class="swatch-dot slot-dot" id="slot-dot-cpus"></span>
+                <span>CPU</span>
+              </button>
+              <button type="button" class="studio-swatch-btn" data-slot-filter="motherboards" title="Filter Motherboards">
+                <span class="swatch-dot slot-dot" id="slot-dot-motherboards"></span>
+                <span>Board</span>
+              </button>
+              <button type="button" class="studio-swatch-btn" data-slot-filter="storage" title="Filter NVMe Storage">
+                <span class="swatch-dot slot-dot" id="slot-dot-storage"></span>
+                <span>NVMe</span>
+              </button>
+            </div>
+          </div>
+
+          <!-- 2. Live System Power & ATX 3.1 PSU Wattage Estimator -->
+          <div class="studio-card studio-psu-card" id="psu-estimator-widget" data-testid="psu-estimator-widget">
+            <div class="studio-psu-top">
+              <div class="studio-psu-metrics">
+                <span class="studio-kicker">LIVE RIG POWER &amp; PSU</span>
+                <div class="studio-psu-readout">
+                  <strong class="psu-watts-val" id="psu-peak-watts">0W Peak</strong>
+                  <span class="psu-sep">·</span>
+                  <span class="psu-tier-badge" id="psu-recommended-tier">650W ATX 3.1 Ready</span>
+                </div>
+              </div>
+              <button type="button" class="studio-starter-rig-btn" id="quick-starter-rig-btn" data-testid="quick-starter-rig-btn" title="Auto-load 4-part Starter Rig Bundle (GPU + CPU + Board + SSD) with 5% discount">
+                <span data-icon="bolt" data-icon-size="13"></span>
+                <span>+ Starter Rig</span>
+              </button>
+            </div>
+            <div class="studio-psu-meter-track" aria-hidden="true">
+              <div class="studio-psu-meter-fill" id="psu-load-bar" style="width: 12%"></div>
+            </div>
+          </div>
+
+          <!-- 3. Instant Promo & Bundle Offer Activator -->
+          <div class="studio-card studio-deals-card">
+            <div class="studio-card-head">
+              <span class="studio-kicker">INSTANT OFFERS</span>
+              <span class="studio-deal-status" id="studio-deal-status">Tap to apply</span>
+            </div>
+            <div class="studio-promo-pills" id="studio-promo-strip">
+              <button type="button" class="studio-promo-chip" data-promo-code="VOLT10" data-testid="quick-promo-volt10" title="Apply VOLT10 for 10% off your entire order">
+                <span class="promo-chip-code">VOLT10</span>
+                <span class="promo-chip-save">10% OFF</span>
+              </button>
+              <button type="button" class="studio-promo-chip" data-promo-code="BUILDER5" data-testid="quick-promo-builder5" title="Apply BUILDER5 for 5% off">
+                <span class="promo-chip-code">BUILDER5</span>
+                <span class="promo-chip-save">5% OFF</span>
+              </button>
+            </div>
+          </div>
+        </section>
       </div>
     </section>
 
@@ -2588,6 +2620,42 @@
     </div>
   </div>
 
+  <!-- Product Card Floating Quick-Actions Context Menu Popover (Right-Click / Long-Press / Quick Menu) -->
+  <div
+    class="card-context-menu-popover"
+    id="card-context-menu-popover"
+    data-testid="card-context-menu-popover"
+    role="menu"
+    aria-label="Product Quick Actions"
+    hidden
+  >
+    <div class="card-ctx-header" id="card-ctx-header">
+      <img class="card-ctx-thumb" id="card-ctx-thumb" src="" alt="" />
+      <div class="card-ctx-meta">
+        <div class="card-ctx-sku-row">
+          <span class="card-ctx-sku" id="card-ctx-sku">VB-PRT-001</span>
+          <span class="card-ctx-stock" id="card-ctx-stock">In Stock</span>
+        </div>
+        <strong class="card-ctx-title" id="card-ctx-title">Component</strong>
+      </div>
+      <button
+        type="button"
+        class="card-ctx-close-btn"
+        id="card-ctx-close-btn"
+        onclick="closeProductCardContextMenu()"
+        aria-label="Close quick actions menu"
+      >
+        <span data-icon="x" data-icon-size="14"></span>
+      </button>
+    </div>
+    <div class="card-ctx-telemetry-bar" id="card-ctx-telemetry-bar" hidden></div>
+    <div class="card-ctx-items" id="card-ctx-items" role="none"></div>
+    <div class="card-ctx-footer">
+      <span>Right-click or long-press any card</span>
+      <kbd>Esc</kbd>
+    </div>
+  </div>
+
 
   <script src="icons.js"></script>
   <script src="recharts-bundle.js"></script>
@@ -2596,3 +2664,4 @@
   <script src="community.js"></script>
 </body>
 </html>
+

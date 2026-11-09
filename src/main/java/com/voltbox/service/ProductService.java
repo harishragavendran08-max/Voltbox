@@ -5,6 +5,7 @@ import com.voltbox.entity.ProductEntity;
 import com.voltbox.model.Product;
 import com.voltbox.model.User;
 import com.voltbox.repository.ProductRepository;
+import com.voltbox.validation.ProductValidator;
 import jakarta.annotation.PostConstruct;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
@@ -48,15 +49,28 @@ public class ProductService {
 
     private final Store store;
     private final ProductRepository productRepository;
+    private final ProductValidator productValidator;
 
     public ProductService(Store store) {
-        this(store, null);
+        this(store, null, new ProductValidator());
+    }
+
+    public ProductService(Store store, ProductRepository productRepository) {
+        this(store, productRepository, new ProductValidator());
     }
 
     @Autowired
-    public ProductService(Store store, @Autowired(required = false) ProductRepository productRepository) {
+    public ProductService(
+            Store store,
+            @Autowired(required = false) ProductRepository productRepository,
+            @Autowired(required = false) ProductValidator productValidator) {
         this.store = store;
         this.productRepository = productRepository;
+        this.productValidator = productValidator != null ? productValidator : new ProductValidator();
+    }
+
+    public ProductValidator getProductValidator() {
+        return productValidator;
     }
 
     @PostConstruct
@@ -390,18 +404,22 @@ public class ProductService {
     }
 
     public ProductEntity createProduct(User actor, Map<String, Object> body) {
+        ProductValidator.ValidationResult validation = productValidator.validateProductModification(
+                body, true, null, store.getProducts()
+        );
+        validation.throwIfInvalid();
+
         String rawTitle = String.valueOf(body.getOrDefault("title", body.getOrDefault("name", ""))).trim();
         String category = String.valueOf(body.getOrDefault("category", "components")).trim();
         String description = String.valueOf(body.getOrDefault("description", "")).trim();
         String image = String.valueOf(body.getOrDefault("image", "")).trim();
-        double price = Double.parseDouble(String.valueOf(body.getOrDefault("price", "0")));
-        int quantity = 8;
-        try {
-            Object rawQty = body.containsKey("stockQuantity") ? body.get("stockQuantity") : body.getOrDefault("quantity", "8");
-            quantity = Math.max(0, Integer.parseInt(String.valueOf(rawQty)));
-        } catch (NumberFormatException ignored) {}
+        double price = validation.getNormalizedPrice() != null ? validation.getNormalizedPrice() : 0.0;
+        int quantity = validation.getNormalizedStock() != null ? validation.getNormalizedStock() : 8;
 
         Product p = new Product();
+        if (validation.getNormalizedSku() != null) {
+            p.sku = validation.getNormalizedSku();
+        }
         p.name = rawTitle;
         p.title = rawTitle;
         p.price = price;
@@ -412,14 +430,18 @@ public class ProductService {
         p.quantity = quantity;
         p.stock = quantity;
         p.lowStock = quantity < LOW_STOCK_THRESHOLD;
-        p.addedByName = actor.name;
-        p.addedByColor = actor.avatarColor;
-        p.addedByEmail = actor.email;
-        p.official = false;
+        p.addedByName = actor != null ? actor.name : "Voltbox";
+        p.addedByColor = actor != null ? actor.avatarColor : "#ffd23f";
+        p.addedByEmail = actor != null ? actor.email : null;
+        p.official = body.containsKey("official") ? Boolean.parseBoolean(String.valueOf(body.get("official"))) : false;
         p.lastRestockedAt = System.currentTimeMillis();
-        p.lastUpdatedBy = actor.name;
+        p.lastUpdatedBy = actor != null ? actor.name : "Voltbox";
 
         Product created = store.addProduct(p);
+        if (created.sku == null || created.sku.isBlank()) {
+            created.sku = computeSku(created);
+            store.save();
+        }
         return syncProductToRepository(created);
     }
 
@@ -427,6 +449,14 @@ public class ProductService {
         Product p = store.findProduct(id);
         if (p == null || p.takenDown) return null;
 
+        ProductValidator.ValidationResult validation = productValidator.validateProductModification(
+                body, false, id, store.getProducts()
+        );
+        validation.throwIfInvalid();
+
+        if (validation.getNormalizedSku() != null) {
+            p.setSku(validation.getNormalizedSku());
+        }
         if (body.containsKey("name") || body.containsKey("title")) {
             String nextName = String.valueOf(body.getOrDefault("name", body.getOrDefault("title", p.title))).trim();
             if (!nextName.isEmpty()) {
@@ -448,22 +478,11 @@ public class ProductService {
                 p.setImage(nextImage);
             }
         }
-        if (body.containsKey("price")) {
-            try {
-                double nextPrice = Double.parseDouble(String.valueOf(body.get("price")));
-                if (nextPrice > 0) {
-                    p.setPrice(roundMoney(nextPrice));
-                }
-            } catch (NumberFormatException ignored) {}
+        if (validation.getNormalizedPrice() != null) {
+            p.setPrice(roundMoney(validation.getNormalizedPrice()));
         }
-        if (body.containsKey("stockQuantity") || body.containsKey("quantity") || body.containsKey("stock")) {
-            Object rawQty = body.containsKey("stockQuantity")
-                    ? body.get("stockQuantity")
-                    : (body.containsKey("quantity") ? body.get("quantity") : body.get("stock"));
-            try {
-                int nextQty = Math.max(0, Integer.parseInt(String.valueOf(rawQty)));
-                p.setStockQuantity(nextQty);
-            } catch (NumberFormatException ignored) {}
+        if (validation.getNormalizedStock() != null) {
+            p.setStockQuantity(validation.getNormalizedStock());
         }
         if (actor != null) {
             p.setLastUpdatedBy(actor.name);
@@ -473,10 +492,14 @@ public class ProductService {
         return syncProductToRepository(p);
     }
 
-    public ProductEntity updateProductStock(int id, int stockQuantity, String actorName) {
+    public ProductEntity updateProductStock(int id, Object rawStockQuantity, String actorName) {
         Product p = store.findProduct(id);
         if (p == null || p.takenDown) return null;
-        int nextQty = Math.max(0, stockQuantity);
+
+        ProductValidator.ValidationResult validation = productValidator.validateStockQuantity(rawStockQuantity, true);
+        validation.throwIfInvalid();
+
+        int nextQty = validation.getNormalizedStock();
         boolean nextLowStock = nextQty < LOW_STOCK_THRESHOLD;
         long now = System.currentTimeMillis();
         String updatedBy = (actorName != null && !actorName.isBlank()) ? actorName : p.lastUpdatedBy;
@@ -493,6 +516,10 @@ public class ProductService {
         return syncProductToRepository(p);
     }
 
+    public ProductEntity updateProductStock(int id, int stockQuantity, String actorName) {
+        return updateProductStock(id, Integer.valueOf(stockQuantity), actorName);
+    }
+
     public boolean takeDownProduct(int id) {
         Product p = store.findProduct(id);
         if (p == null) return false;
@@ -506,4 +533,131 @@ public class ProductService {
         syncProductToRepository(p);
         return true;
     }
+
+    public Map<String, Object> buildQuickActionSummary(
+            int id,
+            int cartQty,
+            boolean wishlisted,
+            boolean compared,
+            boolean hasPriceAlert) {
+        ProductEntity entity = findEnrichedProduct(id);
+        if (entity == null || entity.isTakenDown()) {
+            return null;
+        }
+
+        int stock = Math.max(0, entity.getStockQuantity());
+        boolean outOfStock = stock <= 0;
+        String sku = entity.getSku();
+        double price = entity.getPrice();
+        String group = entity.getComponentGroup();
+        boolean rigEligible = "gpus".equals(group)
+                || "cpus".equals(group)
+                || "motherboards".equals(group)
+                || "storage".equals(group);
+
+        double avgPrice = entity.getSpecs() != null && entity.getSpecs().avgPrice > 0
+                ? entity.getSpecs().avgPrice
+                : price;
+        double dropVsAvgPct = avgPrice > 0
+                ? roundMoney(((avgPrice - price) / avgPrice) * 100.0)
+                : 0.0;
+
+        String copyName = entity.getTitle();
+        String copySkuPrice = String.format(Locale.US, "%s (%s) — $%.2f", entity.getTitle(), sku, price);
+
+        List<Map<String, Object>> actions = new ArrayList<>();
+        actions.add(Map.of(
+                "id", "add-to-cart",
+                "label", outOfStock
+                        ? "Out of Stock (Backorder)"
+                        : (cartQty > 0 ? "Add to Cart (" + cartQty + " in cart)" : "Add to Cart"),
+                "sublabel", outOfStock ? "0 available" : (stock + " in stock"),
+                "shortcut", "+",
+                "section", "primary",
+                "active", cartQty > 0,
+                "disabled", outOfStock,
+                "badgeText", String.format(Locale.US, "$%.2f", price)
+        ));
+        actions.add(Map.of(
+                "id", "toggle-wishlist",
+                "label", wishlisted ? "Remove from Wishlist" : "Toggle Wishlist",
+                "sublabel", wishlisted ? "Saved to personal wishlist" : "Save for later",
+                "shortcut", "W",
+                "section", "primary",
+                "active", wishlisted,
+                "disabled", false
+        ));
+        actions.add(Map.of(
+                "id", "toggle-compare",
+                "label", compared ? "Remove from Compare" : "Compare Side-by-Side",
+                "sublabel", compared ? "Active in comparison tray" : "Add to 4-slot bench compare",
+                "shortcut", "C",
+                "section", "primary",
+                "active", compared,
+                "disabled", false
+        ));
+        actions.add(Map.of(
+                "id", "copy-name",
+                "label", "Copy Name",
+                "sublabel", copyName,
+                "shortcut", "⌘C",
+                "section", "clipboard",
+                "active", false,
+                "disabled", false
+        ));
+        actions.add(Map.of(
+                "id", "copy-sku",
+                "label", "Copy SKU & Price",
+                "sublabel", sku + " · $" + String.format(Locale.US, "%.2f", price),
+                "shortcut", "S",
+                "section", "clipboard",
+                "active", false,
+                "disabled", false
+        ));
+        actions.add(Map.of(
+                "id", "open-specs",
+                "label", "Inspect Full Specs",
+                "sublabel", "Open hardware spec drawer",
+                "shortcut", "Enter",
+                "section", "inspect",
+                "active", false,
+                "disabled", false
+        ));
+        actions.add(Map.of(
+                "id", "open-volatility",
+                "label", "D3 Volatility Chart",
+                "sublabel", "6-month σ bands & zoom engine",
+                "shortcut", "V",
+                "section", "inspect",
+                "active", false,
+                "disabled", false
+        ));
+        actions.add(Map.of(
+                "id", "price-alert",
+                "label", hasPriceAlert ? "Manage Price Alert" : "Set Price Drop Alert",
+                "sublabel", hasPriceAlert ? "Active threshold alert" : "Get notified on price drop",
+                "shortcut", "A",
+                "section", "inspect",
+                "active", hasPriceAlert,
+                "disabled", false
+        ));
+
+        Map<String, Object> result = new LinkedHashMap<>();
+        result.put("ok", true);
+        result.put("productId", entity.getId());
+        result.put("sku", sku);
+        result.put("title", entity.getTitle());
+        result.put("price", price);
+        result.put("stockQuantity", stock);
+        result.put("lowStock", entity.isLowStock());
+        result.put("inStock", entity.isInStock());
+        result.put("rigBundleEligible", rigEligible);
+        result.put("sixMonthAvgPrice", avgPrice);
+        result.put("dropVsSixMonthAvgPct", dropVsAvgPct);
+        result.put("copyNameText", copyName);
+        result.put("copySkuPriceText", copySkuPrice);
+        result.put("actions", actions);
+        return result;
+    }
 }
+

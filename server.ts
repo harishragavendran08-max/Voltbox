@@ -54,6 +54,14 @@ import {
   computeProductReviewSummary,
   filterAndSortProductReviews,
   planBatchProductTransaction,
+  buildProductContextMenuItems,
+  formatProductCopyPayload,
+  validateProductSku,
+  validateProductStockLevel,
+  validateProductStockAdjustment,
+  validateProductModificationPayload,
+  computeSearchQueryAnalytics,
+  normalizeSearchQueryForLog,
 } from './src/logic/inventory';
 
 const PORT = 3000;
@@ -327,7 +335,85 @@ app.get('/api/products', (req, res) => {
       return hay.includes(searchFilter);
     });
 
+  // Server-side search query logging in ProductController when ?search= is provided
+  if (searchFilter && searchFilter.length >= 2) {
+    const user = userFromReq(req);
+    const actor = user ? user.name : 'guest';
+    const logged = store.addSearchLog({
+      rawQuery: typeof req.query.search === 'string' ? req.query.search.trim() : searchFilter,
+      categoryFilter: categoryFilter || groupFilter || 'all',
+      resultCount: shelf.length,
+      source: 'api-products-query',
+      actorName: actor,
+    });
+    if (logged) {
+      console.info(
+        `[Voltbox SearchLog] source=api-products-query actor="${logged.actorName}" query="${logged.rawQuery}" normalized="${logged.normalizedQuery}" category="${logged.categoryFilter}" inferredGroup="${logged.inferredComponentGroup}" results=${logged.resultCount} catalogGap=${logged.zeroResultGap}`
+      );
+    }
+  }
+
   res.json(shelf);
+});
+
+app.post('/api/products/search-log', (req, res) => {
+  const user = userFromReq(req);
+  const rawQuery = String(req.body?.query ?? req.body?.rawQuery ?? '').trim();
+  const category = String(req.body?.category ?? req.body?.categoryFilter ?? 'all').trim().toLowerCase();
+  const source = String(req.body?.source ?? 'catalog-search').trim().toLowerCase();
+  const actor =
+    user
+      ? user.name
+      : typeof req.body?.actorName === 'string' && req.body.actorName.trim()
+      ? req.body.actorName.trim()
+      : 'guest';
+
+  let resultCount = -1;
+  if (req.body?.resultCount !== undefined && req.body?.resultCount !== null) {
+    const parsed = Number.parseInt(String(req.body.resultCount), 10);
+    if (!Number.isNaN(parsed)) {
+      resultCount = Math.max(0, parsed);
+    }
+  }
+
+  if (resultCount < 0 && rawQuery) {
+    const qLower = normalizeSearchQueryForLog(rawQuery);
+    resultCount = store
+      .getProducts()
+      .filter((p) => !p.takenDown)
+      .map(enrichProduct)
+      .filter((pe) => !category || category === 'all' || category === 'low-stock' || category === 'wishlist' || pe.category.toLowerCase() === category || pe.componentGroup.toLowerCase() === category)
+      .filter((pe) => {
+        const hay = `${pe.name} ${pe.title} ${pe.description || ''} ${pe.category} ${pe.componentGroup} ${pe.sku}`.toLowerCase();
+        return hay.includes(qLower);
+      }).length;
+  }
+
+  const logged = store.addSearchLog({
+    rawQuery,
+    categoryFilter: category || 'all',
+    resultCount: Math.max(0, resultCount),
+    source,
+    actorName: actor,
+  });
+
+  if (!logged) {
+    return res.json({
+      ok: false,
+      logged: false,
+      message: 'Query too short to log (minimum 2 characters).',
+    });
+  }
+
+  console.info(
+    `[Voltbox SearchLog] source=${logged.source} actor="${logged.actorName}" query="${logged.rawQuery}" normalized="${logged.normalizedQuery}" category="${logged.categoryFilter}" inferredGroup="${logged.inferredComponentGroup}" results=${logged.resultCount} catalogGap=${logged.zeroResultGap}`
+  );
+
+  return res.json({
+    ok: true,
+    logged: true,
+    entry: logged,
+  });
 });
 
 app.get('/api/products/low-stock', (_req, res) => {
@@ -369,6 +455,22 @@ app.get('/api/products/:id/inventory', (req, res) => {
   });
 });
 
+app.post(['/api/products/validate', '/api/admin/products/validate'], (req, res) => {
+  const rawPid = req.body?.productId ?? req.body?.id;
+  const parsedPid = rawPid !== undefined && rawPid !== null && String(rawPid).trim() !== ''
+    ? Number.parseInt(String(rawPid), 10)
+    : null;
+  const currentProductId = parsedPid !== null && !Number.isNaN(parsedPid) ? parsedPid : null;
+  const isCreate = req.body?.isCreate !== undefined ? Boolean(req.body.isCreate) : currentProductId === null;
+
+  const result = validateProductModificationPayload(req.body || {}, {
+    isCreate,
+    currentProductId,
+    existingProducts: store.getProducts(),
+  });
+  return res.status(result.ok ? 200 : 400).json(result);
+});
+
 app.post('/api/products/:id/inventory', (req, res) => {
   const user = userFromReq(req);
   if (!user) return notSignedIn(res);
@@ -378,18 +480,29 @@ app.post('/api/products/:id/inventory', (req, res) => {
   if (!p || p.takenDown) return notFound(res, 'Product not found.');
 
   const prevQty = getProductQuantity(p);
-  const rawTarget = req.body?.stockQuantity ?? req.body?.quantity ?? req.body?.stock;
-  const rawDelta = req.body?.delta ?? req.body?.amount;
+  const hasTarget =
+    req.body &&
+    (req.body.stockQuantity !== undefined ||
+      req.body.quantity !== undefined ||
+      req.body.stock !== undefined);
+  const rawTarget = hasTarget
+    ? (req.body.stockQuantity ?? req.body.quantity ?? req.body.stock)
+    : undefined;
+  const hasDelta = req.body && (req.body.delta !== undefined || req.body.amount !== undefined);
+  const rawDelta = hasDelta
+    ? (req.body.delta ?? req.body.amount)
+    : (hasTarget ? undefined : 3);
 
-  let nextQty = prevQty;
-  if (rawTarget !== undefined && !Number.isNaN(Number(rawTarget))) {
-    nextQty = Math.max(0, Math.floor(Number(rawTarget)));
-  } else if (rawDelta !== undefined && !Number.isNaN(Number(rawDelta))) {
-    nextQty = Math.max(0, prevQty + Math.floor(Number(rawDelta)));
-  } else {
-    nextQty = prevQty + 3;
+  const validation = validateProductStockAdjustment(prevQty, {
+    targetStock: rawTarget,
+    delta: rawDelta,
+    isRestockOnly: false,
+  });
+  if (!validation.ok || validation.normalizedStock === null || validation.normalizedStock === undefined) {
+    return res.status(400).json(validation);
   }
 
+  const nextQty = validation.normalizedStock;
   p.quantity = nextQty;
   p.stock = nextQty;
   p.lowStock = isLowStock({ quantity: nextQty });
@@ -418,6 +531,52 @@ app.post('/api/products/:id/inventory', (req, res) => {
     actor: user.name,
   });
   return res.json({ ok: true, product: enriched, inventory });
+});
+
+app.get('/api/products/:id/quick-actions', (req, res) => {
+  const id = Number.parseInt(String(req.params.id || ''), 10);
+  const p = Number.isNaN(id) ? null : store.findProduct(id);
+  if (!p || p.takenDown) return notFound(res, 'Product not found.');
+
+  const enriched = enrichProduct(p);
+  const cartQty = Math.max(0, Number.parseInt(String(req.query.cartQty || '0'), 10) || 0);
+  const wishlisted = String(req.query.wishlisted || 'false') === 'true';
+  const compared = String(req.query.compared || 'false') === 'true';
+  const hasAlert = String(req.query.hasAlert || 'false') === 'true';
+
+  const group = enriched.componentGroup || classifyComponentGroup(p);
+  const rigEligible = ['gpus', 'cpus', 'motherboards', 'storage'].includes(group);
+  const avgPrice = enriched.specs?.avgPrice || enriched.price;
+  const dropVsAvgPct = avgPrice > 0 ? roundMoney(((avgPrice - enriched.price) / avgPrice) * 100) : 0;
+
+  const actions = buildProductContextMenuItems({
+    productId: enriched.id,
+    title: enriched.title,
+    sku: enriched.sku,
+    price: enriched.price,
+    effectiveStock: enriched.stockQuantity,
+    cartQty,
+    isWishlisted: wishlisted,
+    isCompared: compared,
+    hasPriceAlert: hasAlert,
+  });
+
+  return res.json({
+    ok: true,
+    productId: enriched.id,
+    sku: enriched.sku,
+    title: enriched.title,
+    price: enriched.price,
+    stockQuantity: enriched.stockQuantity,
+    lowStock: enriched.lowStock,
+    inStock: enriched.stockQuantity > 0,
+    rigBundleEligible: rigEligible,
+    sixMonthAvgPrice: avgPrice,
+    dropVsSixMonthAvgPct: dropVsAvgPct,
+    copyNameText: formatProductCopyPayload(enriched, 'name'),
+    copySkuPriceText: formatProductCopyPayload(enriched, 'sku-price'),
+    actions,
+  });
 });
 
 app.get('/api/products/:id', (req, res) => {
@@ -634,6 +793,18 @@ app.put('/api/products/:id', (req, res) => {
     return forbidden(res, 'You can only update your own listings.');
   }
 
+  const validation = validateProductModificationPayload(req.body || {}, {
+    isCreate: false,
+    currentProductId: p.id,
+    existingProducts: store.getProducts(),
+  });
+  if (!validation.ok) {
+    return res.status(400).json(validation);
+  }
+
+  if (validation.normalizedSku) {
+    p.sku = validation.normalizedSku;
+  }
   const nextTitle = typeof (req.body?.name ?? req.body?.title) === 'string'
     ? String(req.body.name ?? req.body.title).trim()
     : '';
@@ -648,12 +819,11 @@ app.put('/api/products/:id', (req, res) => {
     p.image = req.body.image.trim();
   }
   const prevPrice = p.price;
-  if (req.body?.price !== undefined && !Number.isNaN(Number(req.body.price)) && Number(req.body.price) > 0) {
-    p.price = roundMoney(Number(req.body.price));
+  if (validation.normalizedPrice !== null && validation.normalizedPrice !== undefined && validation.normalizedPrice > 0) {
+    p.price = validation.normalizedPrice;
   }
-  const rawQty = req.body?.stockQuantity ?? req.body?.quantity ?? req.body?.stock;
-  if (rawQty !== undefined && !Number.isNaN(Number(rawQty))) {
-    const nextQty = Math.max(0, Math.floor(Number(rawQty)));
+  if (validation.normalizedStock !== null && validation.normalizedStock !== undefined) {
+    const nextQty = validation.normalizedStock;
     p.quantity = nextQty;
     p.stock = nextQty;
     p.lowStock = isLowStock({ quantity: nextQty });
@@ -697,11 +867,12 @@ app.patch('/api/products/:id/stock', (req, res) => {
   if (!p || p.takenDown) return notFound(res, 'Product not found.');
 
   const rawQty = req.body?.stockQuantity ?? req.body?.quantity ?? req.body?.stock;
-  if (rawQty === undefined || Number.isNaN(Number(rawQty))) {
-    return badRequest(res, 'Provide stockQuantity or quantity.');
+  const validation = validateProductStockLevel(rawQty, { required: true });
+  if (!validation.ok || validation.normalizedStock === null || validation.normalizedStock === undefined) {
+    return res.status(400).json(validation);
   }
   const prevQty = getProductQuantity(p);
-  const nextQty = Math.max(0, Math.floor(Number(rawQty)));
+  const nextQty = validation.normalizedStock;
   p.quantity = nextQty;
   p.stock = nextQty;
   p.lowStock = isLowStock({ quantity: nextQty });
@@ -747,9 +918,17 @@ app.post('/api/inventory/:productId/restock', (req, res) => {
   const p = Number.isNaN(id) ? null : store.findProduct(id);
   if (!p || p.takenDown) return notFound(res, 'Product not found.');
 
-  const addQty = Math.max(1, Math.min(50, Number(req.body?.amount) || 3));
   const prevQty = getProductQuantity(p);
-  const nextQty = prevQty + addQty;
+  const rawAmount = req.body?.amount !== undefined ? req.body.amount : 3;
+  const validation = validateProductStockAdjustment(prevQty, {
+    delta: rawAmount,
+    isRestockOnly: true,
+  });
+  if (!validation.ok || validation.normalizedStock === null || validation.normalizedStock === undefined) {
+    return res.status(400).json(validation);
+  }
+  const nextQty = validation.normalizedStock;
+  const addQty = nextQty - prevQty;
   p.quantity = nextQty;
   p.stock = nextQty;
   p.lowStock = isLowStock({ quantity: nextQty });
@@ -783,13 +962,26 @@ app.patch('/api/inventory/:productId', (req, res) => {
   if (!p || p.takenDown) return notFound(res, 'Product not found.');
 
   const prevQty = getProductQuantity(p);
-  let nextQty = prevQty;
-  if (req.body?.quantity !== undefined && !Number.isNaN(Number(req.body.quantity))) {
-    nextQty = Math.max(0, Math.floor(Number(req.body.quantity)));
-  } else if (req.body?.delta !== undefined && !Number.isNaN(Number(req.body.delta))) {
-    nextQty = Math.max(0, prevQty + Math.floor(Number(req.body.delta)));
+  const hasTarget =
+    req.body &&
+    (req.body.stockQuantity !== undefined ||
+      req.body.quantity !== undefined ||
+      req.body.stock !== undefined);
+  const rawTarget = hasTarget
+    ? (req.body.stockQuantity ?? req.body.quantity ?? req.body.stock)
+    : undefined;
+  const rawDelta = req.body?.delta;
+
+  const validation = validateProductStockAdjustment(prevQty, {
+    targetStock: rawTarget,
+    delta: rawDelta,
+    isRestockOnly: false,
+  });
+  if (!validation.ok || validation.normalizedStock === null || validation.normalizedStock === undefined) {
+    return res.status(400).json(validation);
   }
 
+  const nextQty = validation.normalizedStock;
   p.quantity = nextQty;
   p.stock = nextQty;
   p.lowStock = isLowStock({ quantity: nextQty });
@@ -1808,15 +2000,17 @@ app.post('/api/products', (req, res) => {
   const category = typeof req.body?.category === 'string' ? req.body.category.trim() : '';
   const description = typeof req.body?.description === 'string' ? req.body.description.trim() : '';
   const image = typeof req.body?.image === 'string' ? req.body.image.trim() : '';
-  const price = req.body?.price !== undefined ? Number(req.body.price) : -1;
-  const rawQuantity = req.body?.quantity !== undefined ? Number(req.body.quantity) : 3;
-  const quantity = Number.isNaN(rawQuantity) || rawQuantity < 0 ? 3 : Math.floor(rawQuantity);
 
   if (!title || !category) {
     return badRequest(res, 'A listing needs at least a title and a category.');
   }
-  if (Number.isNaN(price) || price < 0) {
-    return badRequest(res, 'Give it a price of zero or more.');
+  const validation = validateProductModificationPayload(req.body || {}, {
+    isCreate: true,
+    currentProductId: null,
+    existingProducts: store.getProducts(),
+  });
+  if (!validation.ok) {
+    return res.status(400).json(validation);
   }
   if (!image) {
     return badRequest(res, 'Add an image link for the listing — a photo of the part.');
@@ -1825,7 +2019,11 @@ app.post('/api/products', (req, res) => {
     return badRequest(res, "That image link doesn't look right — it should start with https://");
   }
 
+  const price = validation.normalizedPrice ?? 0;
+  const quantity = validation.normalizedStock ?? 3;
+
   const product = store.addProduct({
+    ...(validation.normalizedSku ? { sku: validation.normalizedSku } : {}),
     title,
     price,
     description,
@@ -1860,8 +2058,17 @@ app.post('/api/products/:id/restock', (req, res) => {
   const p = Number.isNaN(id) ? null : store.findProduct(id);
   if (!p || p.takenDown) return notFound(res, "Couldn't find that listing.");
 
-  const addQty = Math.max(1, Math.min(20, Number(req.body?.amount) || 3));
-  const nextQty = getProductQuantity(p) + addQty;
+  const prevQty = getProductQuantity(p);
+  const rawAmount = req.body?.amount !== undefined ? req.body.amount : 3;
+  const validation = validateProductStockAdjustment(prevQty, {
+    delta: rawAmount,
+    isRestockOnly: true,
+  });
+  if (!validation.ok || validation.normalizedStock === null || validation.normalizedStock === undefined) {
+    return res.status(400).json(validation);
+  }
+  const nextQty = validation.normalizedStock;
+  const addQty = nextQty - prevQty;
   p.quantity = nextQty;
   p.stock = nextQty;
   p.lowStock = isLowStock({ quantity: nextQty });
@@ -2262,7 +2469,37 @@ app.get(['/api/admin/metrics', '/api/admin/health'], (_req, res) => {
     heapMaxMb,
   });
 
-  return res.json(metrics);
+  const activeProducts = store.getProducts().filter((p) => !p.takenDown).map(enrichProduct);
+  const searchAnalytics = computeSearchQueryAnalytics(store.getSearchLogs(), activeProducts);
+
+  return res.json({
+    ...metrics,
+    searchAnalytics,
+  });
+});
+
+app.get('/api/admin/search-analytics', (_req, res) => {
+  const activeProducts = store.getProducts().filter((p) => !p.takenDown).map(enrichProduct);
+  const report = computeSearchQueryAnalytics(store.getSearchLogs(), activeProducts);
+  return res.json({
+    ok: true,
+    ...report,
+  });
+});
+
+app.delete('/api/admin/search-analytics', (req, res) => {
+  const user = userFromReq(req);
+  if (!user) return notSignedIn(res);
+  if (!isModerator(user)) return forbidden(res, 'Administrator privileges required.');
+
+  store.clearSearchLogs();
+  const activeProducts = store.getProducts().filter((p) => !p.takenDown).map(enrichProduct);
+  const report = computeSearchQueryAnalytics(store.getSearchLogs(), activeProducts);
+  return res.json({
+    ok: true,
+    message: 'Search query logs cleared.',
+    ...report,
+  });
 });
 
 app.get('/api/admin/products', (req, res) => {
@@ -2288,28 +2525,28 @@ app.post('/api/admin/products', (req, res) => {
   if (!user) return notSignedIn(res);
   if (!isModerator(user)) return forbidden(res, 'Administrator privileges required.');
 
-  const title = typeof (req.body?.title ?? req.body?.name) === 'string'
-    ? String(req.body.title ?? req.body.name).trim()
-    : '';
+  const validation = validateProductModificationPayload(req.body || {}, {
+    isCreate: true,
+    currentProductId: null,
+    existingProducts: store.getProducts(),
+  });
+  if (!validation.ok) {
+    return res.status(400).json(validation);
+  }
+
+  const title = String(req.body?.title ?? req.body?.name ?? '').trim();
   const category = typeof req.body?.category === 'string' && req.body.category.trim()
     ? req.body.category.trim()
     : 'components';
   const description = typeof req.body?.description === 'string' ? req.body.description.trim() : '';
   const rawImage = typeof req.body?.image === 'string' ? req.body.image.trim() : '';
   const image = rawImage || `/images/categories/${category.toLowerCase()}.svg`;
-  const price = req.body?.price !== undefined ? Number(req.body.price) : 0;
-  const rawQty = req.body?.stockQuantity ?? req.body?.quantity ?? 8;
-  const quantity = Number.isNaN(Number(rawQty)) || Number(rawQty) < 0 ? 8 : Math.floor(Number(rawQty));
+  const price = validation.normalizedPrice ?? 0;
+  const quantity = validation.normalizedStock ?? 8;
   const official = req.body?.official !== undefined ? Boolean(req.body.official) : isModerator(user);
 
-  if (!title) {
-    return badRequest(res, 'Product name/title is required.');
-  }
-  if (Number.isNaN(price) || price < 0) {
-    return badRequest(res, 'Price must be zero or greater.');
-  }
-
   const created = store.addProduct({
+    ...(validation.normalizedSku ? { sku: validation.normalizedSku } : {}),
     title,
     price: roundMoney(price),
     description,
@@ -2341,7 +2578,19 @@ app.put('/api/admin/products/:id', (req, res) => {
   const p = Number.isNaN(id) ? null : store.findProduct(id);
   if (!p) return notFound(res, 'Product not found.');
 
+  const validation = validateProductModificationPayload(req.body || {}, {
+    isCreate: false,
+    currentProductId: p.id,
+    existingProducts: store.getProducts(),
+  });
+  if (!validation.ok) {
+    return res.status(400).json(validation);
+  }
+
   const prevQty = getProductQuantity(p);
+  if (validation.normalizedSku) {
+    p.sku = validation.normalizedSku;
+  }
   const nextTitle = typeof (req.body?.name ?? req.body?.title) === 'string'
     ? String(req.body.name ?? req.body.title).trim()
     : '';
@@ -2355,8 +2604,8 @@ app.put('/api/admin/products/:id', (req, res) => {
   if (typeof req.body?.image === 'string' && req.body.image.trim()) {
     p.image = req.body.image.trim();
   }
-  if (req.body?.price !== undefined && !Number.isNaN(Number(req.body.price)) && Number(req.body.price) >= 0) {
-    p.price = roundMoney(Number(req.body.price));
+  if (validation.normalizedPrice !== null && validation.normalizedPrice !== undefined) {
+    p.price = validation.normalizedPrice;
   }
   if (req.body?.official !== undefined) {
     p.official = Boolean(req.body.official);
@@ -2365,9 +2614,8 @@ app.put('/api/admin/products/:id', (req, res) => {
     p.takenDown = Boolean(req.body.takenDown);
   }
 
-  const rawQty = req.body?.stockQuantity ?? req.body?.quantity ?? req.body?.stock;
-  if (rawQty !== undefined && !Number.isNaN(Number(rawQty))) {
-    const nextQty = Math.max(0, Math.floor(Number(rawQty)));
+  if (validation.normalizedStock !== null && validation.normalizedStock !== undefined) {
+    const nextQty = validation.normalizedStock;
     p.quantity = nextQty;
     p.stock = nextQty;
     p.lowStock = isLowStock({ quantity: nextQty });

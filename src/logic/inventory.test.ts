@@ -134,6 +134,42 @@ import {
   SPEC_DRAWER_SECTIONS,
   resolveSpecDrawerSectionNav,
   resolveActiveSpecSectionFromScroll,
+  CARD_LONG_PRESS_DURATION_MS,
+  CARD_LONG_PRESS_MOVE_TOLERANCE_PX,
+  computeProductContextMenuPosition,
+  shouldCancelLongPressOnMove,
+  formatProductCopyPayload,
+  buildProductContextMenuItems,
+  MIN_STOCK_QUANTITY,
+  MAX_STOCK_QUANTITY,
+  MIN_RESTOCK_AMOUNT,
+  MAX_RESTOCK_AMOUNT,
+  MAX_STOCK_DELTA,
+  VALID_SKU_PREFIXES,
+  CANONICAL_SKU_REGEX,
+  validateProductSku,
+  validateProductStockLevel,
+  validateProductStockAdjustment,
+  validateProductModificationPayload,
+  CARD_IMAGE_ASPECT_RATIO_LABEL,
+  CARD_IMAGE_ASPECT_RATIO,
+  PRODUCT_CARD_GRID_AREAS,
+  resolveProductCardGridTemplate,
+  normalizeProductCardContentSlots,
+  evaluateProductGridCardAlignment,
+  computeCatalogFilterDrawerSummary,
+  normalizeSearchQueryForLog,
+  inferHardwareGroupFromSearchQuery,
+  recommendedSkuPrefixForSearchGroup,
+  createSearchQueryLogEntry,
+  DEFAULT_SEEDED_SEARCH_LOGS,
+  computeSearchQueryAnalytics,
+  IOS_SYSTEM_FONT_STACK,
+  IOS_DISPLAY_FONT_STACK,
+  IOS_MONO_FONT_STACK,
+  resolveIosColorMode,
+  toggleIosColorMode,
+  getIosColorModeTokens,
 } from './inventory';
 
 test('LOW_STOCK_THRESHOLD is 5', () => {
@@ -2587,4 +2623,345 @@ test('Spec Drawer Section Navigation & Scroll Spy: resolves active section tabs,
   assert.equal(resolveActiveSpecSectionFromScroll(1240, offsets, 80), 'reviews');
 });
 
+test('Product Card Floating Context Menu & Long-Press Quick Actions: positions popover inside viewport, formats clipboard text, and builds stateful menu items', () => {
+  assert.equal(CARD_LONG_PRESS_DURATION_MS, 480);
+  assert.equal(CARD_LONG_PRESS_MOVE_TOLERANCE_PX, 10);
+
+  // 1. Viewport clamping & flip placement
+  const normalPos = computeProductContextMenuPosition(300, 220, 260, 320, 1440, 900, 12);
+  assert.equal(normalPos.left, 300);
+  assert.equal(normalPos.top, 220);
+  assert.equal(normalPos.placement, 'bottom-right');
+  assert.equal(normalPos.transformOrigin, 'top left');
+
+  const bottomRightEdgePos = computeProductContextMenuPosition(1390, 820, 260, 320, 1440, 900, 12);
+  assert.equal(bottomRightEdgePos.placement, 'top-left');
+  assert.equal(bottomRightEdgePos.transformOrigin, 'bottom right');
+  assert.ok(bottomRightEdgePos.left + 260 <= 1440 - 12);
+  assert.ok(bottomRightEdgePos.top + 320 <= 900 - 12);
+
+  // 2. Long-press move cancellation tolerance
+  assert.equal(shouldCancelLongPressOnMove(100, 100, 105, 104, 10), false);
+  assert.equal(shouldCancelLongPressOnMove(100, 100, 112, 108, 10), true);
+
+  // 3. Clipboard payload formatting
+  assert.equal(
+    formatProductCopyPayload({ id: 19, title: 'Nvidia RTX 5090', sku: 'VB-GPU-019', price: 159.16 }, 'name'),
+    'Nvidia RTX 5090'
+  );
+  assert.equal(
+    formatProductCopyPayload({ id: 19, title: 'Nvidia RTX 5090', sku: 'VB-GPU-019', price: 159.16 }, 'sku-price'),
+    'Nvidia RTX 5090 (VB-GPU-019) — $159.16'
+  );
+
+  // 4. Stateful menu items
+  const items = buildProductContextMenuItems({
+    productId: 19,
+    title: 'Nvidia RTX 5090',
+    sku: 'VB-GPU-019',
+    price: 159.16,
+    effectiveStock: 14,
+    cartQty: 2,
+    isWishlisted: true,
+    isCompared: false,
+    hasPriceAlert: true,
+  });
+  assert.equal(items.length, 8);
+  const addCart = items.find((i) => i.id === 'add-to-cart')!;
+  assert.equal(addCart.label, 'Add to Cart (2 in cart)');
+  assert.equal(addCart.badgeText, '$159.16');
+  assert.equal(addCart.disabled, false);
+
+  const wish = items.find((i) => i.id === 'toggle-wishlist')!;
+  assert.equal(wish.label, 'Remove from Wishlist');
+  assert.equal(wish.active, true);
+
+  const copyName = items.find((i) => i.id === 'copy-name')!;
+  assert.equal(copyName.label, 'Copy Name');
+  assert.equal(copyName.sublabel, 'Nvidia RTX 5090');
+
+  // Out of stock disables Add to Cart
+  const oosItems = buildProductContextMenuItems({
+    productId: 25,
+    title: 'Backorder Part',
+    price: 99,
+    effectiveStock: 0,
+  });
+  assert.equal(oosItems.find((i) => i.id === 'add-to-cart')!.disabled, true);
+});
+
+test('Server-Side SKU Formatting & Stock Level Validation Layer: rejects invalid SKUs, duplicate SKUs, and invalid stock levels/adjustments before store update', () => {
+  assert.equal(MIN_STOCK_QUANTITY, 0);
+  assert.equal(MAX_STOCK_QUANTITY, 1000);
+  assert.equal(MIN_RESTOCK_AMOUNT, 1);
+  assert.equal(MAX_RESTOCK_AMOUNT, 500);
+  assert.equal(MAX_STOCK_DELTA, 500);
+  assert.equal(VALID_SKU_PREFIXES.length, 7);
+  assert.ok(CANONICAL_SKU_REGEX.test('VB-GPU-019'));
+
+  const catalog = [
+    { id: 19, title: 'Nvidia RTX 5090', category: 'gpus', sku: 'VB-GPU-019', price: 159.16, quantity: 14 },
+    { id: 20, title: 'AMD RYZEN 9', category: 'cpus', sku: 'VB-CPU-020', price: 180, quantity: 8 },
+    { id: 21, title: 'MSI MotherBoard B570', category: 'motherboards', sku: 'VB-MBD-021', price: 150, quantity: 2 },
+  ];
+
+  // 1. SKU Format Validation
+  const validSku1 = validateProductSku('VB-GPU-019', { currentProductId: 19, existingProducts: catalog });
+  assert.equal(validSku1.ok, true);
+  assert.equal(validSku1.normalizedSku, 'VB-GPU-019');
+
+  const validSkuRev = validateProductSku('VB-MBD-021-R2', { currentProductId: 21, existingProducts: catalog });
+  assert.equal(validSkuRev.ok, true);
+  assert.equal(validSkuRev.normalizedSku, 'VB-MBD-021-R2');
+
+  const lowercaseSku = validateProductSku('vb-gpu-019');
+  assert.equal(lowercaseSku.ok, false);
+  assert.equal(lowercaseSku.errors[0].code, 'SKU_LOWERCASE_NOT_ALLOWED');
+
+  const badPrefixSku = validateProductSku('VB-XYZ-019');
+  assert.equal(badPrefixSku.ok, false);
+  assert.equal(badPrefixSku.errors[0].code, 'SKU_INVALID_PREFIX');
+
+  const shortLenSku = validateProductSku('VB-GPU-19');
+  assert.equal(shortLenSku.ok, false);
+  assert.equal(shortLenSku.errors[0].code, 'SKU_INVALID_LENGTH');
+
+  const shortSeqSku = validateProductSku('VB-GPU-19-R1');
+  assert.equal(shortSeqSku.ok, false);
+  assert.equal(shortSeqSku.errors[0].code, 'SKU_INVALID_SEQUENCE_LENGTH');
+
+  const badFormatSku = validateProductSku('VB-GPU-019-R@');
+  assert.equal(badFormatSku.ok, false);
+  assert.equal(badFormatSku.errors[0].code, 'SKU_INVALID_FORMAT');
+
+  const zeroSeqSku = validateProductSku('VB-GPU-000');
+  assert.equal(zeroSeqSku.ok, false);
+  assert.equal(zeroSeqSku.errors[0].code, 'SKU_ZERO_SEQUENCE');
+
+  const duplicateSku = validateProductSku('VB-CPU-020', { currentProductId: 19, existingProducts: catalog });
+  assert.equal(duplicateSku.ok, false);
+  assert.equal(duplicateSku.errors[0].code, 'SKU_DUPLICATE');
+
+  // 2. Stock Level Bounds Validation
+  const validStockZero = validateProductStockLevel(0);
+  assert.equal(validStockZero.ok, true);
+  assert.equal(validStockZero.normalizedStock, 0);
+
+  const validStockMax = validateProductStockLevel(1000);
+  assert.equal(validStockMax.ok, true);
+  assert.equal(validStockMax.normalizedStock, 1000);
+
+  const negativeStock = validateProductStockLevel(-5);
+  assert.equal(negativeStock.ok, false);
+  assert.equal(negativeStock.errors[0].code, 'STOCK_NEGATIVE');
+
+  const overflowStock = validateProductStockLevel(1250);
+  assert.equal(overflowStock.ok, false);
+  assert.equal(overflowStock.errors[0].code, 'STOCK_EXCEEDS_MAX');
+
+  const floatStock = validateProductStockLevel(4.5);
+  assert.equal(floatStock.ok, false);
+  assert.equal(floatStock.errors[0].code, 'STOCK_NOT_INTEGER');
+
+  // 3. Stock Adjustment & Restock Bounds Validation
+  const validDelta = validateProductStockAdjustment(14, { delta: -4 });
+  assert.equal(validDelta.ok, true);
+  assert.equal(validDelta.normalizedStock, 10);
+
+  const underflowDelta = validateProductStockAdjustment(3, { delta: -5 });
+  assert.equal(underflowDelta.ok, false);
+  assert.equal(underflowDelta.errors[0].code, 'STOCK_UNDERFLOW');
+
+  const overflowDelta = validateProductStockAdjustment(985, { delta: 25 });
+  assert.equal(overflowDelta.ok, false);
+  assert.equal(overflowDelta.errors[0].code, 'STOCK_OVERFLOW');
+
+  const badRestock = validateProductStockAdjustment(10, { delta: 0, isRestockOnly: true });
+  assert.equal(badRestock.ok, false);
+  assert.equal(badRestock.errors[0].code, 'RESTOCK_OUT_OF_RANGE');
+
+  // 4. Full Modification Payload Validation & getProductSku custom SKU honor
+  const invalidPayload = validateProductModificationPayload(
+    { id: 19, title: 'Nvidia RTX 5090', sku: 'BAD_SKU', price: 159.16, stockQuantity: -10 },
+    { isCreate: false, currentProductId: 19, existingProducts: catalog }
+  );
+  assert.equal(invalidPayload.ok, false);
+  assert.equal(invalidPayload.errors.length, 2);
+
+  const validPayload = validateProductModificationPayload(
+    { id: 19, title: 'Nvidia RTX 5090 OC', sku: 'VB-GPU-019-OC', price: 169.99, stockQuantity: 22 },
+    { isCreate: false, currentProductId: 19, existingProducts: catalog }
+  );
+  assert.equal(validPayload.ok, true);
+  assert.equal(validPayload.normalizedSku, 'VB-GPU-019-OC');
+  assert.equal(validPayload.normalizedStock, 22);
+  assert.equal(getProductSku({ id: 19, title: 'Nvidia RTX 5090 OC', sku: 'VB-GPU-019-OC' }), 'VB-GPU-019-OC');
+});
+
+test('Product Grid Card CSS Grid Template & Layout Consistency: enforces fixed 4/3 image aspect ratio, normalized card slots, and bottom-aligned action buttons across rows', () => {
+  assert.equal(CARD_IMAGE_ASPECT_RATIO_LABEL, '4 / 3');
+  assert.ok(Math.abs(CARD_IMAGE_ASPECT_RATIO - 4 / 3) < 0.0001);
+  assert.equal(PRODUCT_CARD_GRID_AREAS.length, 8);
+  assert.equal(PRODUCT_CARD_GRID_AREAS[0], 'media');
+  assert.equal(PRODUCT_CARD_GRID_AREAS[7], 'actions');
+
+  // 1. Desktop 1440px grid template
+  const desktopSpec = resolveProductCardGridTemplate({ viewMode: 'grid', isChartOpen: false, viewportWidth: 1440 });
+  assert.equal(desktopSpec.columnCount, 4);
+  assert.equal(desktopSpec.gridTemplateColumns, 'repeat(4, minmax(0, 1fr))');
+  assert.equal(desktopSpec.gridAutoRows, '1fr');
+  assert.equal(desktopSpec.cardDisplay, 'grid');
+  assert.equal(desktopSpec.cardGridTemplateAreas.length, 8);
+  assert.equal(desktopSpec.cardGridTemplateAreas[desktopSpec.cardGridTemplateAreas.length - 1], '"actions"');
+  assert.equal(desktopSpec.imageAspectRatio, '4 / 3');
+  assert.equal(desktopSpec.footerAlignSelf, 'end');
+
+  // 2. Open chart drawer inserts "chart" track immediately above "actions"
+  const openChartSpec = resolveProductCardGridTemplate({ viewMode: 'grid', isChartOpen: true, viewportWidth: 1200 });
+  assert.equal(openChartSpec.columnCount, 3);
+  assert.equal(openChartSpec.cardGridTemplateAreas.length, 9);
+  assert.equal(openChartSpec.cardGridTemplateAreas[7], '"chart"');
+  assert.equal(openChartSpec.cardGridTemplateAreas[8], '"actions"');
+
+  // 3. Content slot normalization guarantees non-empty description & rating row even on minimal products
+  const sparseSlots = normalizeProductCardContentSlots({ id: 99, title: 'Custom Bench PCB', price: 89.5 });
+  assert.equal(sparseSlots.title, 'Custom Bench PCB');
+  assert.ok(sparseSlots.description.length > 15);
+  assert.equal(sparseSlots.ratingLabel, '4.8 (Verified)');
+  assert.equal(sparseSlots.formattedPrice, '$89.50');
+  assert.equal(sparseSlots.sku, 'VB-PRT-099');
+
+  // 4. Row alignment & image aspect ratio audit
+  const alignedRow = evaluateProductGridCardAlignment([
+    {
+      cardId: 19,
+      cardRect: { top: 200, bottom: 640, width: 300, height: 440 },
+      imageRect: { width: 272, height: 204 }, // exact 4:3
+      footerRect: { top: 592, bottom: 626, height: 34 },
+    },
+    {
+      cardId: 20,
+      cardRect: { top: 200, bottom: 640, width: 300, height: 440 },
+      imageRect: { width: 272, height: 204 }, // exact 4:3
+      footerRect: { top: 592, bottom: 626, height: 34 },
+    },
+  ]);
+  assert.equal(alignedRow.allImagesMatchAspectRatio, true);
+  assert.equal(alignedRow.maxAspectRatioVariancePct, 0);
+  assert.equal(alignedRow.allFootersPinnedToBottom, true);
+  assert.equal(alignedRow.allRowsAligned, true);
+  assert.equal(alignedRow.maxFooterBottomDeltaPx, 0);
+  assert.equal(alignedRow.maxCardHeightDeltaPx, 0);
+});
+
+test('Progressive Disclosure Catalog Filter & Deals Drawer: computes active filter tags, counts, and button state', () => {
+  const idle = computeCatalogFilterDrawerSummary();
+  assert.equal(idle.activeCount, 0);
+  assert.equal(idle.hasActiveFilters, false);
+  assert.deepEqual(idle.activeTags, []);
+  assert.equal(idle.buttonLabel, 'Filters & Deals');
+  assert.equal(idle.ariaExpanded, 'false');
+
+  const active = computeCatalogFilterDrawerSummary({
+    stockFilter: 'available-now',
+    budgetMax: 150,
+    sortMode: 'best-deal',
+    activePromoCode: 'volt10',
+    batchEditActive: true,
+    isExpanded: true,
+  });
+  assert.equal(active.activeCount, 5);
+  assert.equal(active.hasActiveFilters, true);
+  assert.deepEqual(active.activeTags, ['In Stock', 'Under $150', '6M Deals', 'VOLT10', 'Batch Edit']);
+  assert.equal(active.buttonLabel, 'Filters & Deals (5)');
+  assert.equal(active.ariaExpanded, 'true');
+});
+
+test('Server-Side Search Query Logging & Catalog Gap Analytics: normalizes queries, infers hardware groups, detects zero-result gaps, and updates when gap is stocked', () => {
+  assert.equal(normalizeSearchQueryForLog('  RTX   5090!! '), 'rtx 5090');
+  assert.equal(inferHardwareGroupFromSearchQuery('DDR5 64GB ECC RAM', 'all'), 'motherboards');
+  assert.equal(inferHardwareGroupFromSearchQuery('8TB NVMe Gen5', 'all'), 'storage');
+  assert.equal(inferHardwareGroupFromSearchQuery('Threadripper PRO 7995WX', 'all'), 'cpus');
+  assert.equal(inferHardwareGroupFromSearchQuery('XLR Boom Arm', 'all'), 'audio');
+  assert.equal(recommendedSkuPrefixForSearchGroup('motherboards'), 'VB-MBD-');
+  assert.equal(recommendedSkuPrefixForSearchGroup('storage'), 'VB-STR-');
+
+  // Rejects single-character noise queries
+  assert.equal(createSearchQueryLogEntry({ id: 1, rawQuery: 'a', resultCount: 5 }), null);
+
+  const gapEntry = createSearchQueryLogEntry({
+    id: 42,
+    rawQuery: 'DDR5 64GB ECC RAM',
+    categoryFilter: 'all',
+    resultCount: 0,
+    source: 'catalog-search',
+    actorName: 'builder_01',
+  });
+  assert.ok(gapEntry);
+  assert.equal(gapEntry.normalizedQuery, 'ddr5 64gb ecc ram');
+  assert.equal(gapEntry.zeroResultGap, true);
+  assert.equal(gapEntry.inferredComponentGroup, 'motherboards');
+
+  const seededWithIds = DEFAULT_SEEDED_SEARCH_LOGS.map((item, idx) => ({
+    ...item,
+    id: idx + 1,
+  }));
+
+  const sampleCatalog = [
+    { id: 19, title: 'Nvidia RTX 5090', category: 'gpus', sku: 'VB-GPU-019' },
+    { id: 20, title: 'AMD Ryzen 9 9950X', category: 'cpus', sku: 'VB-CPU-020' },
+    { id: 21, title: 'MSI MotherBoard B570', category: 'motherboards', sku: 'VB-MBD-021' },
+    { id: 22, title: 'Samsung 2TB NVMe SSD', category: 'storage', sku: 'VB-STR-022' },
+    { id: 23, title: '4K OLED Gaming Monitor', category: 'gaming', sku: 'VB-GAM-023' },
+  ];
+
+  const report = computeSearchQueryAnalytics(seededWithIds, sampleCatalog);
+  assert.equal(report.totalSearchesLogged, DEFAULT_SEEDED_SEARCH_LOGS.length);
+  assert.ok(report.uniqueQueriesCount >= 9);
+  assert.ok(report.zeroResultSearchesCount >= 9);
+  assert.equal(report.distinctCatalogGapsCount, 5);
+  assert.equal(report.catalogGaps[0].query, 'ddr5 64gb ecc ram');
+  assert.equal(report.catalogGaps[0].priorityLevel, 'CRITICAL_GAP');
+  assert.equal(report.catalogGaps[0].recommendedSkuPrefix, 'VB-MBD-');
+  assert.equal(report.popularSearches[0].query, 'rtx 5090');
+  assert.equal(report.popularSearches[0].isCatalogGap, false);
+
+  // If the admin stocks "DDR5 64GB ECC RAM" in the catalog, the gap automatically resolves!
+  const updatedCatalog = [
+    ...sampleCatalog,
+    { id: 99, title: 'Corsair DDR5 64GB ECC RAM Kit', category: 'motherboards', sku: 'VB-MBD-099' },
+  ];
+  const reportAfterStocking = computeSearchQueryAnalytics(seededWithIds, updatedCatalog);
+  assert.equal(reportAfterStocking.distinctCatalogGapsCount, 4);
+  const resolvedDdr5 = reportAfterStocking.popularSearches.find((p) => p.query === 'ddr5 64gb ecc ram');
+  assert.ok(resolvedDdr5);
+  assert.equal(resolvedDdr5.isCatalogGap, false);
+  assert.equal(resolvedDdr5.latestResultCount, 1);
+});
+
+test('iOS / Apple HIG Light & Dark Mode Tokens & SF Pro Typography Stack: resolves light/dark modes, toggles cleanly, and provides Apple font stacks', () => {
+  assert.ok(IOS_SYSTEM_FONT_STACK.includes('-apple-system'));
+  assert.ok(IOS_SYSTEM_FONT_STACK.includes('SF Pro Text'));
+  assert.ok(IOS_DISPLAY_FONT_STACK.includes('SF Pro Display'));
+  assert.ok(IOS_MONO_FONT_STACK.includes('SF Mono'));
+
+  assert.equal(resolveIosColorMode('light'), 'light');
+  assert.equal(resolveIosColorMode('dark'), 'dark');
+  assert.equal(resolveIosColorMode(null), 'dark');
+  assert.equal(toggleIosColorMode('dark'), 'light');
+  assert.equal(toggleIosColorMode('light'), 'dark');
+
+  const lightTokens = getIosColorModeTokens('light');
+  assert.equal(lightTokens.mode, 'light');
+  assert.equal(lightTokens.bgGroupedPrimary, '#F2F2F7');
+  assert.equal(lightTokens.surfaceElevated, '#FFFFFF');
+  assert.equal(lightTokens.iosSystemBlue, '#007AFF');
+  assert.equal(lightTokens.nextMode, 'dark');
+
+  const darkTokens = getIosColorModeTokens('dark');
+  assert.equal(darkTokens.mode, 'dark');
+  assert.equal(darkTokens.surfaceElevated, '#1C1C1E');
+  assert.equal(darkTokens.iosSystemBlue, '#0A84FF');
+  assert.equal(darkTokens.nextMode, 'light');
+});
 

@@ -4,6 +4,7 @@
   "nextApplicationId": 1,
   "nextReportId": 29,
   "nextMessageId": 16,
+  "nextSearchLogId": 24,
   "users": [
     {
       "id": 1,
@@ -697,7 +698,8 @@
     "391b910a-f74f-48a2-abe1-72dd260b59ef": "harish@voltbox.test",
     "8ed81fb0-cc44-453d-b709-f168c7c66e83": "alex.chen@gmail.com",
     "e4d1dbed-4e68-40c4-9587-93b488f3b0e2": "harish@voltbox.test",
-    "a680cb0a-1171-4ba1-babe-ae39c5737bd6": "harish@voltbox.test"
+    "a680cb0a-1171-4ba1-babe-ae39c5737bd6": "harish@voltbox.test",
+    "cbd15629-58c0-42d4-a785-98f5861d6a42": "harish@voltbox.test"
   },
   "products": [
     {
@@ -2400,6 +2402,284 @@
       "helpfulCount": 6,
       "helpfulVoterEmails": [],
       "createdAt": 1793854839695
+    }
+  ],
+  "searchLogs": [
+    {
+      "rawQuery": "RTX 5090",
+      "normalizedQuery": "rtx 5090",
+      "categoryFilter": "all",
+      "resultCount": 2,
+      "zeroResultGap": false,
+      "inferredComponentGroup": "gpus",
+      "source": "catalog-search",
+      "actorName": "builder_arjun",
+      "timestamp": "2026-11-09T04:51:43.138Z",
+      "id": 1
+    },
+    {
+      "rawQuery": "rtx 5090",
+      "normalizedQuery": "rtx 5090",
+      "categoryFilter": "gpus",
+      "resultCount": 2,
+      "zeroResultGap": false,
+      "inferredComponentGroup": "gpus",
+      "source": "catalog-search",
+      "actorName": "guest",
+      "timestamp": "2026-11-09T04:56:43.138Z",
+      "id": 2
+    },
+    {
+      "rawQuery": "Nvidia RTX 5090",
+      "normalizedQuery": "nvidia rtx 5090",
+      "categoryFilter": "all",
+      "resultCount": 1,
+      "zeroResultGap": false,
+      "inferredComponentGroup": "gpus",
+      "source": "voice-search",
+      "actorName": "kiran_oc",
+      "timestamp": "2026-11-09T05:03:23.138Z",
+      "id": 3
+    },
+    {
+      "rawQuery": "RTX 5090",
+      "normalizedQuery": "rtx 5090",
+      "categoryFilter": "all",
+      "resultCount": 2,
+      "zeroResultGap": false,
+      "inferredComponentGroup": "gpus",
+      "source": "catalog-search",
+      "actorName": "dev_rig_lab",
+      "timestamp": "2026-11-09T05:13:23.138Z",
+      "id": 4
+    },
+    {
+      "rawQuery": "RTX 5090",
+      "normalizedQuery": "rtx 5090",
+      "categoryFilter": "gpus",
+      "resultCount": 2,
+      "zeroResultGap": false,
+      "inferredComponentGroup": "gpus",
+      "source": "catalog-search",
+      "actorName": "ananya_render",
+      "timestamp": "2026-11-09T05:43:23.138Z",
+      "id": 5
+    },
+    {
+      "rawQuery": "Ryzen 9",
+      "normalizedQuery": "ryzen 9",
+      "categoryFilter": "cpus",
+      "resultCount": 2,
+      "zeroResultGap": false,
+      "inferredComponentGroup": "cpus",
+      "source": "catalog-search",
+      "actorName": "guest",
+      "timestamp": "2026-11-09T05:05:03.138Z",
+      "id": 6
+    },
+    {
+      "rawQuery": "AMD Ryzen 9",
+      "normalizedQuery": "amd ryzen 9",
+      "categoryFilter": "all",
+      "resultCount": 2,
+      "zeroResultGap": false,
+      "inferredComponentGroup": "cpus",
+      "source": "catalog-search",
+      "actorName": "meera_cad",
+      "timestamp": "2026-11-09T05:16:43.138Z",
+      "id": 7
+    },
+    {
+      "rawQuery": "Ryzen 9",
+      "normalizedQuery": "ryzen 9",
+      "categoryFilter": "all",
+      "resultCount": 2,
+      "zeroResultGap": false,
+      "inferredComponentGroup": "cpus",
+      "source": "catalog-search",
+      "actorName": "guest",
+      "timestamp": "2026-11-09T05:31:43.138Z",
+      "id": 8
+    },
+    {
+      "rawQuery": "NVMe SSD",
+      "normalizedQuery": "nvme ssd",
+      "categoryFilter": "storage",
+      "resultCount": 3,
+      "zeroResultGap": false,
+      "inferredComponentGroup": "storage",
+      "source": "catalog-search",
+      "actorName": "guest",
+      "timestamp": "2026-11-09T05:10:03.138Z",
+      "id": 9
+    },
+    {
+      "rawQuery": "NVMe SSD",
+      "normalizedQuery": "nvme ssd",
+      "categoryFilter": "all",
+      "resultCount": 3,
+      "zeroResultGap": false,
+      "inferredComponentGroup": "storage",
+      "source": "catalog-search",
+      "actorName": "rohan_nas",
+      "timestamp": "2026-11-09T05:30:03.138Z",
+      "id": 10
+    },
+    {
+      "rawQuery": "OLED monitor",
+      "normalizedQuery": "oled monitor",
+      "categoryFilter": "gaming",
+      "resultCount": 2,
+      "zeroResultGap": false,
+      "inferredComponentGroup": "gaming",
+      "source": "catalog-search",
+      "actorName": "guest",
+      "timestamp": "2026-11-09T05:25:03.138Z",
+      "id": 11
+    },
+    {
+      "rawQuery": "B570 motherboard",
+      "normalizedQuery": "b570 motherboard",
+      "categoryFilter": "motherboards",
+      "resultCount": 1,
+      "zeroResultGap": false,
+      "inferredComponentGroup": "motherboards",
+      "source": "catalog-search",
+      "actorName": "guest",
+      "timestamp": "2026-11-09T05:35:03.138Z",
+      "id": 12
+    },
+    {
+      "rawQuery": "DDR5 64GB ECC RAM",
+      "normalizedQuery": "ddr5 64gb ecc ram",
+      "categoryFilter": "motherboards",
+      "resultCount": 0,
+      "zeroResultGap": true,
+      "inferredComponentGroup": "motherboards",
+      "source": "catalog-search",
+      "actorName": "ai_workstation_blr",
+      "timestamp": "2026-11-09T04:58:23.138Z",
+      "id": 13
+    },
+    {
+      "rawQuery": "ddr5 64gb ecc ram",
+      "normalizedQuery": "ddr5 64gb ecc ram",
+      "categoryFilter": "all",
+      "resultCount": 0,
+      "zeroResultGap": true,
+      "inferredComponentGroup": "motherboards",
+      "source": "catalog-search",
+      "actorName": "guest",
+      "timestamp": "2026-11-09T05:18:23.138Z",
+      "id": 14
+    },
+    {
+      "rawQuery": "DDR5 64GB ECC RAM",
+      "normalizedQuery": "ddr5 64gb ecc ram",
+      "categoryFilter": "all",
+      "resultCount": 0,
+      "zeroResultGap": true,
+      "inferredComponentGroup": "motherboards",
+      "source": "voice-search",
+      "actorName": "vikram_ml",
+      "timestamp": "2026-11-09T05:41:43.139Z",
+      "id": 15
+    },
+    {
+      "rawQuery": "PCIe 5.0 Riser Cable",
+      "normalizedQuery": "pcie 5.0 riser cable",
+      "categoryFilter": "all",
+      "resultCount": 0,
+      "zeroResultGap": true,
+      "inferredComponentGroup": "motherboards",
+      "source": "catalog-search",
+      "actorName": "sff_builder",
+      "timestamp": "2026-11-09T05:08:23.139Z",
+      "id": 16
+    },
+    {
+      "rawQuery": "pcie 5.0 riser cable",
+      "normalizedQuery": "pcie 5.0 riser cable",
+      "categoryFilter": "all",
+      "resultCount": 0,
+      "zeroResultGap": true,
+      "inferredComponentGroup": "motherboards",
+      "source": "catalog-search",
+      "actorName": "guest",
+      "timestamp": "2026-11-09T05:38:23.140Z",
+      "id": 17
+    },
+    {
+      "rawQuery": "8TB NVMe Gen5",
+      "normalizedQuery": "8tb nvme gen5",
+      "categoryFilter": "storage",
+      "resultCount": 0,
+      "zeroResultGap": true,
+      "inferredComponentGroup": "storage",
+      "source": "catalog-search",
+      "actorName": "studio_edit_pro",
+      "timestamp": "2026-11-09T05:21:43.140Z",
+      "id": 18
+    },
+    {
+      "rawQuery": "8tb nvme gen5",
+      "normalizedQuery": "8tb nvme gen5",
+      "categoryFilter": "all",
+      "resultCount": 0,
+      "zeroResultGap": true,
+      "inferredComponentGroup": "storage",
+      "source": "catalog-search",
+      "actorName": "guest",
+      "timestamp": "2026-11-09T05:45:53.140Z",
+      "id": 19
+    },
+    {
+      "rawQuery": "Threadripper PRO 7995WX",
+      "normalizedQuery": "threadripper pro 7995wx",
+      "categoryFilter": "cpus",
+      "resultCount": 0,
+      "zeroResultGap": true,
+      "inferredComponentGroup": "cpus",
+      "source": "catalog-search",
+      "actorName": "vfx_render_node",
+      "timestamp": "2026-11-09T05:36:43.140Z",
+      "id": 20
+    },
+    {
+      "rawQuery": "XLR Boom Arm",
+      "normalizedQuery": "xlr boom arm",
+      "categoryFilter": "audio",
+      "resultCount": 0,
+      "zeroResultGap": true,
+      "inferredComponentGroup": "audio",
+      "source": "catalog-search",
+      "actorName": "podcaster_ind",
+      "timestamp": "2026-11-09T05:48:23.140Z",
+      "id": 21
+    },
+    {
+      "id": 22,
+      "rawQuery": "Thunderbolt 5 eGPU Dock",
+      "normalizedQuery": "thunderbolt 5 egpu dock",
+      "categoryFilter": "all",
+      "resultCount": 0,
+      "zeroResultGap": true,
+      "inferredComponentGroup": "accessories",
+      "source": "catalog-search-enter",
+      "actorName": "Harish",
+      "timestamp": "2026-11-09T06:02:38.872Z"
+    },
+    {
+      "id": 23,
+      "rawQuery": "thunderbolt 5 egpu dock",
+      "normalizedQuery": "thunderbolt 5 egpu dock",
+      "categoryFilter": "all",
+      "resultCount": 0,
+      "zeroResultGap": true,
+      "inferredComponentGroup": "accessories",
+      "source": "catalog-search",
+      "actorName": "Harish",
+      "timestamp": "2026-11-09T06:02:39.221Z"
     }
   ]
 }

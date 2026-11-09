@@ -7,6 +7,7 @@ import com.voltbox.entity.ProductEntity;
 import com.voltbox.model.User;
 import com.voltbox.service.InventoryService;
 import com.voltbox.service.ProductService;
+import com.voltbox.validation.ProductValidationException;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
@@ -58,6 +59,11 @@ public class InventoryController {
         return ResponseEntity.ok(item);
     }
 
+    @ExceptionHandler(ProductValidationException.class)
+    public ResponseEntity<Map<String, Object>> handleProductValidationException(ProductValidationException ex) {
+        return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(ex.toResponsePayload());
+    }
+
     @PostMapping("/{productId}/restock")
     public ResponseEntity<?> restockInventory(
             @RequestHeader(value = "Authorization", required = false) String auth,
@@ -69,32 +75,31 @@ public class InventoryController {
                     .body(Map.of("ok", false, "message", "You're not signed in."));
         }
 
-        int amount = 3;
-        if (body != null && body.get("amount") != null) {
-            try {
-                amount = Math.max(1, Math.min(50, Integer.parseInt(String.valueOf(body.get("amount")))));
-            } catch (NumberFormatException ignored) {}
-        }
+        Object rawAmount = (body != null && body.containsKey("amount")) ? body.get("amount") : Integer.valueOf(3);
         String reason = body != null && body.get("reason") != null
                 ? String.valueOf(body.get("reason"))
                 : "Warehouse restock";
 
-        ProductEntity enriched = inventoryService.restockProduct(productId, amount, u.name, reason);
+        InventoryItem beforeItem = inventoryService.getInventoryForProduct(productId);
+        int prevQty = beforeItem != null ? beforeItem.getQuantity() : 0;
+
+        ProductEntity enriched = inventoryService.restockProduct(productId, rawAmount, u.name, reason);
         if (enriched == null) {
             return ResponseEntity.status(HttpStatus.NOT_FOUND)
                     .body(Map.of("ok", false, "message", "Product not found."));
         }
 
+        int added = enriched.getStockQuantity() - prevQty;
         InventoryItem inventoryItem = inventoryService.getInventoryForProduct(productId);
         socket.broadcastToAll(Map.of(
                 "type", "product-restocked",
                 "product", enriched,
-                "added", amount,
+                "added", added,
                 "actor", u.name
         ));
         socket.broadcastToAll(Map.of(
                 "type", "activity-feed",
-                "message", String.format("%s restocked +%d units of %s", u.name, amount, enriched.getTitle()),
+                "message", String.format("%s restocked +%d units of %s", u.name, added, enriched.getTitle()),
                 "timestamp", System.currentTimeMillis()
         ));
 
@@ -116,21 +121,21 @@ public class InventoryController {
                     .body(Map.of("ok", false, "message", "You're not signed in."));
         }
 
-        Integer targetQuantity = null;
-        Integer delta = null;
-        if (body.get("quantity") != null) {
-            try {
-                targetQuantity = Integer.parseInt(String.valueOf(body.get("quantity")));
-            } catch (NumberFormatException ignored) {}
+        Object rawTarget = null;
+        if (body != null) {
+            if (body.containsKey("stockQuantity")) rawTarget = body.get("stockQuantity");
+            else if (body.containsKey("quantity")) rawTarget = body.get("quantity");
+            else if (body.containsKey("stock")) rawTarget = body.get("stock");
         }
-        if (body.get("delta") != null) {
-            try {
-                delta = Integer.parseInt(String.valueOf(body.get("delta")));
-            } catch (NumberFormatException ignored) {}
-        }
-        String reason = body.get("reason") != null ? String.valueOf(body.get("reason")) : "Manual stock adjustment";
+        Object rawDelta = (body != null && body.containsKey("delta")) ? body.get("delta") : null;
+        String reason = (body != null && body.get("reason") != null)
+                ? String.valueOf(body.get("reason"))
+                : "Manual stock adjustment";
 
-        InventoryItem updatedItem = inventoryService.adjustStock(productId, targetQuantity, delta, u.name, reason);
+        InventoryItem beforeItem = inventoryService.getInventoryForProduct(productId);
+        int prevQty = beforeItem != null ? beforeItem.getQuantity() : 0;
+
+        InventoryItem updatedItem = inventoryService.adjustStock(productId, rawTarget, rawDelta, u.name, reason);
         if (updatedItem == null) {
             return ResponseEntity.status(HttpStatus.NOT_FOUND)
                     .body(Map.of("ok", false, "message", "Product not found."));
@@ -141,7 +146,7 @@ public class InventoryController {
             socket.broadcastToAll(Map.of(
                     "type", "product-restocked",
                     "product", enriched,
-                    "added", delta != null ? delta : 0,
+                    "added", updatedItem.getQuantity() - prevQty,
                     "actor", u.name
             ));
         }

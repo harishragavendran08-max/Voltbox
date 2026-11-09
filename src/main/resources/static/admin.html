@@ -11,6 +11,13 @@
   <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600&family=JetBrains+Mono:wght@400;500;600;700&family=Plus+Jakarta+Sans:wght@600;700;800&display=swap" rel="stylesheet" />
   <link rel="stylesheet" href="/admin.css" />
   <script>
+    (function () {
+      var savedMode = localStorage.getItem("voltbox_color_mode");
+      var mode = (savedMode === "light" || savedMode === "dark") ? savedMode : "dark";
+      document.documentElement.setAttribute("data-color-mode", mode);
+      document.documentElement.classList.toggle("light-mode", mode === "light");
+      document.documentElement.classList.toggle("dark-mode", mode === "dark");
+    })();
     if (!localStorage.getItem("voltbox_token")) {
       localStorage.setItem("voltbox_token", "ed4a9555-540b-4bb9-a406-b353acded905");
       localStorage.setItem("voltbox_user", "Harish");
@@ -44,6 +51,11 @@
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/><polyline points="3.27 6.96 12 12.01 20.73 6.96"/><line x1="12" y1="22.08" x2="12" y2="12"/></svg>
           <span>Inventory Levels</span>
           <span class="nav-count mono warn" id="nav-count-lowstock">0</span>
+        </button>
+        <button type="button" class="nav-item" data-view="search-analytics" id="nav-btn-search-analytics" data-testid="nav-btn-search-analytics">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/><line x1="11" y1="8" x2="11" y2="14"/><line x1="8" y1="11" x2="14" y2="11"/></svg>
+          <span>Search &amp; Catalog Gaps</span>
+          <span class="nav-count mono warn" id="nav-count-search-gaps" data-testid="nav-count-search-gaps">0</span>
         </button>
         <button type="button" class="nav-item" data-view="health" id="nav-btn-health">
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
@@ -82,6 +94,10 @@
         </div>
 
         <div class="topbar-actions">
+          <button type="button" class="btn-secondary ios-theme-mode-btn" id="admin-theme-mode-btn" data-testid="admin-theme-mode-btn" title="Switch iOS Light / Dark Mode">
+            <span class="theme-mode-icon" id="admin-theme-mode-icon" aria-hidden="true">☀</span>
+            <span class="theme-mode-label" id="admin-theme-mode-label">Light</span>
+          </button>
           <button type="button" class="btn-secondary" id="refresh-data-btn">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>
             <span>Sync Telemetry</span>
@@ -338,9 +354,9 @@
             </div>
             <div class="custom-adjust-bar">
               <select id="ledger-product-select" class="select-control" aria-label="Select product to adjust"></select>
-              <input type="number" id="ledger-qty-input" class="input-control compact mono" value="10" min="0" max="999" aria-label="New stock quantity" />
+              <input type="number" id="ledger-qty-input" data-testid="ledger-qty-input" class="input-control compact mono" value="10" step="1" aria-label="New stock quantity (0 to 1000)" />
               <input type="text" id="ledger-reason-input" class="input-control" placeholder="Adjustment reason (e.g. Warehouse audit)" />
-              <button type="button" class="btn-secondary" id="ledger-apply-btn">Set Stock</button>
+              <button type="button" class="btn-secondary" id="ledger-apply-btn" data-testid="ledger-apply-btn">Set Stock</button>
             </div>
           </div>
           <div class="table-scroll">
@@ -359,6 +375,153 @@
               </thead>
               <tbody id="inventory-ledger-tbody"></tbody>
             </table>
+          </div>
+        </div>
+      </section>
+
+      <!-- =========================================================
+           VIEW 2.5: SEARCH QUERY LOGGING & CATALOG GAP ANALYTICS
+           ========================================================= -->
+      <section class="admin-view" id="view-search-analytics" data-testid="view-search-analytics" hidden>
+        <!-- Search Telemetry KPI Summary -->
+        <div class="search-kpi-grid">
+          <div class="kpi-cell">
+            <div class="kpi-label">Total Logged Searches</div>
+            <div class="kpi-value mono" id="sa-kpi-total" data-testid="sa-kpi-total">0</div>
+            <div class="kpi-sub">Captured by `ProductController` &amp; `SearchAnalyticsService`</div>
+          </div>
+          <div class="kpi-cell">
+            <div class="kpi-label">Distinct Component Queries</div>
+            <div class="kpi-value mono" id="sa-kpi-unique" data-testid="sa-kpi-unique">0</div>
+            <div class="kpi-sub">Normalized case-insensitive search phrases</div>
+          </div>
+          <div class="kpi-cell">
+            <div class="kpi-label">Unstocked Catalog Gaps (0 Matches)</div>
+            <div class="kpi-value mono warn" id="sa-kpi-gaps" data-testid="sa-kpi-gaps">0</div>
+            <div class="kpi-sub" id="sa-kpi-gaps-sub">0 zero-result search events</div>
+          </div>
+          <div class="kpi-cell">
+            <div class="kpi-label">Zero-Result Gap Rate</div>
+            <div class="kpi-value mono" id="sa-kpi-rate" data-testid="sa-kpi-rate">0%</div>
+            <div class="kpi-sub">Share of shopper searches returning 0 SKUs</div>
+          </div>
+        </div>
+
+        <!-- Simulate / Log Component Search Bar -->
+        <div class="panel-surface">
+          <div class="panel-toolbar">
+            <div>
+              <h2 class="panel-title">Server-Side Search Query Logger (`POST /api/products/search-log`)</h2>
+              <p class="panel-subtitle">Simulate a shopper search or inspect real queries logged from the Storefront search bar</p>
+            </div>
+            <form class="custom-adjust-bar" id="admin-test-search-form" data-testid="admin-test-search-form">
+              <input type="text" id="admin-test-search-input" data-testid="admin-test-search-input" class="input-control" style="min-width:260px;" placeholder="e.g. RTX 5090 32GB or Noctua NH-D15 G2" required />
+              <button type="submit" class="btn-primary" id="admin-test-search-btn" data-testid="admin-test-search-btn">Log &amp; Analyze Query</button>
+              <button type="button" class="btn-secondary" id="admin-clear-search-logs-btn" data-testid="admin-clear-search-logs-btn">Reset Logs</button>
+            </form>
+          </div>
+        </div>
+
+        <div class="split-grid">
+          <!-- 01. Identified Catalog Gaps (Zero-Result Searches) -->
+          <div class="panel-surface">
+            <div class="panel-header">
+              <div>
+                <h2 class="panel-title">01. Identified Catalog Gaps (Zero-Result Searches)</h2>
+                <p class="panel-subtitle">High-intent component searches with 0 matching products in `voltbox-data.json`</p>
+              </div>
+              <span class="state-label warn" id="sa-gaps-badge">ACTIONABLE GAPS</span>
+            </div>
+            <div class="table-scroll">
+              <table class="data-table">
+                <thead>
+                  <tr>
+                    <th>Searched Component Query</th>
+                    <th class="num-col">Searches</th>
+                    <th>Inferred Group</th>
+                    <th>Suggested SKU</th>
+                    <th>Gap Priority</th>
+                    <th class="actions-col">Catalog Action</th>
+                  </tr>
+                </thead>
+                <tbody id="search-gaps-tbody" data-testid="search-gaps-tbody"></tbody>
+              </table>
+            </div>
+          </div>
+
+          <!-- 02. Popular Component Searches Leaderboard -->
+          <div class="panel-surface">
+            <div class="panel-header">
+              <div>
+                <h2 class="panel-title">02. Popular Component Searches Leaderboard</h2>
+                <p class="panel-subtitle">Most frequently searched hardware terms ranked by shopper query volume</p>
+              </div>
+            </div>
+            <div class="table-scroll">
+              <table class="data-table">
+                <thead>
+                  <tr>
+                    <th>Rank</th>
+                    <th>Query</th>
+                    <th class="num-col">Volume</th>
+                    <th class="num-col">Live Matches</th>
+                    <th>Group</th>
+                    <th>Catalog Status</th>
+                  </tr>
+                </thead>
+                <tbody id="popular-searches-tbody" data-testid="popular-searches-tbody"></tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+
+        <div class="split-grid">
+          <!-- 03. Search Demand by Hardware Group -->
+          <div class="panel-surface">
+            <div class="panel-header">
+              <div>
+                <h2 class="panel-title">03. Search Demand vs. Catalog Gaps by Group</h2>
+                <p class="panel-subtitle">Identifies which hardware categories have unmet shopper search demand</p>
+              </div>
+            </div>
+            <div class="table-scroll">
+              <table class="data-table">
+                <thead>
+                  <tr>
+                    <th>Hardware Group</th>
+                    <th class="num-col">Total Searches</th>
+                    <th class="num-col">Zero-Result Searches</th>
+                    <th class="num-col">Distinct Queries</th>
+                  </tr>
+                </thead>
+                <tbody id="search-category-demand-tbody" data-testid="search-category-demand-tbody"></tbody>
+              </table>
+            </div>
+          </div>
+
+          <!-- 04. Real-Time Server Controller Search Log Stream -->
+          <div class="panel-surface">
+            <div class="panel-header">
+              <div>
+                <h2 class="panel-title">04. Recent `ProductController` Search Log Stream</h2>
+                <p class="panel-subtitle">Chronological audit trail of `SearchQueryLog` records persisted in `Store.java`</p>
+              </div>
+            </div>
+            <div class="table-scroll">
+              <table class="data-table">
+                <thead>
+                  <tr>
+                    <th>Log ID</th>
+                    <th>Time</th>
+                    <th>Query</th>
+                    <th>Source</th>
+                    <th class="num-col">Matches</th>
+                    <th>Actor</th>
+                  </tr>
+                </thead>
+                <tbody id="recent-search-logs-tbody" data-testid="recent-search-logs-tbody"></tbody>
+              </table>
+            </div>
           </div>
         </div>
       </section>
@@ -433,22 +596,22 @@
       <div class="modal-header">
         <div>
           <h2 class="modal-title" id="product-modal-title">New Hardware Product</h2>
-          <p class="modal-subtitle" id="product-modal-subtitle">Persists to `ProductRepository` (`products` table) via Spring Boot REST API</p>
+          <p class="modal-subtitle" id="product-modal-subtitle">Validated via `ProductValidator` (`com.voltbox.validation`) before persisting to `voltbox-data.json`</p>
         </div>
         <button type="button" class="icon-close-btn" id="product-modal-close" aria-label="Close modal">✕</button>
       </div>
 
-      <form id="product-crud-form" class="modal-form">
+      <form id="product-crud-form" class="modal-form" novalidate>
         <input type="hidden" id="form-product-id" value="" />
 
         <div class="form-row-2">
           <div class="form-group">
             <label for="form-product-title">Product Name / Title *</label>
-            <input type="text" id="form-product-title" class="input-control" required placeholder="e.g. AMD Radeon RX 8900 XTX 24GB" />
+            <input type="text" id="form-product-title" data-testid="form-product-title" class="input-control" required placeholder="e.g. AMD Radeon RX 8900 XTX 24GB" />
           </div>
           <div class="form-group">
             <label for="form-product-category">Hardware Category *</label>
-            <select id="form-product-category" class="select-control" required>
+            <select id="form-product-category" data-testid="form-product-category" class="select-control" required>
               <option value="gpus">gpus (Graphics Cards)</option>
               <option value="cpus">cpus (Processors)</option>
               <option value="motherboards">motherboards (Motherboards)</option>
@@ -464,14 +627,19 @@
           </div>
         </div>
 
+        <div class="form-group">
+          <label for="form-product-sku">Hardware SKU (`sku`) — <span class="mono" style="font-size:11px;color:#94a3b8;">Format: VB-(GPU|CPU|MBD|STR|AUD|GMG|PRT)-001..9999[-REV]</span></label>
+          <input type="text" id="form-product-sku" data-testid="form-product-sku" class="input-control mono" placeholder="e.g. VB-GPU-019 (leave blank on create to auto-generate)" />
+        </div>
+
         <div class="form-row-2">
           <div class="form-group">
             <label for="form-product-price">Unit Price (USD) *</label>
-            <input type="number" id="form-product-price" class="input-control mono" step="0.01" min="0" required placeholder="199.00" />
+            <input type="number" id="form-product-price" data-testid="form-product-price" class="input-control mono" step="0.01" required placeholder="199.00" />
           </div>
           <div class="form-group">
-            <label for="form-product-stock">Stock Quantity (`stock_quantity`) *</label>
-            <input type="number" id="form-product-stock" class="input-control mono" step="1" min="0" required placeholder="10" />
+            <label for="form-product-stock">Stock Quantity (`0–1000` units) *</label>
+            <input type="number" id="form-product-stock" data-testid="form-product-stock" class="input-control mono" step="1" required placeholder="10" />
           </div>
         </div>
 
@@ -492,11 +660,11 @@
           </label>
         </div>
 
-        <div class="form-error-msg" id="form-error-msg" hidden></div>
+        <div class="form-error-msg" id="form-error-msg" data-testid="form-error-msg" role="alert" hidden></div>
 
         <div class="modal-footer">
           <button type="button" class="btn-secondary" id="product-modal-cancel">Cancel</button>
-          <button type="submit" class="btn-primary" id="product-modal-submit">Save Product Entity</button>
+          <button type="submit" class="btn-primary" id="product-modal-submit" data-testid="product-modal-submit">Save Product Entity</button>
         </div>
       </form>
     </div>
