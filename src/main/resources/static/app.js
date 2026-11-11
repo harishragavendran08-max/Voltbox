@@ -3147,11 +3147,8 @@ function triggerQrScanPingFeedback(customLabel) {
     setTimeout(function () { kickerPill.classList.remove("ping-active"); }, 750);
   }
 
-  // 3. Reticle emerald lock
-  var reticle = document.getElementById("qr-scanner-reticle");
-  if (reticle) {
-    reticle.classList.add("scan-detected");
-  }
+  // 3. Reticle emerald lock + corner scaling animation (tl, tr, bl, br)
+  setQrReticleScanState("detected");
 
   // 4. Visual viewfinder flash
   var flash = document.getElementById("qr-scanner-ping-flash");
@@ -3164,11 +3161,171 @@ function triggerQrScanPingFeedback(customLabel) {
   }
 }
 
-function resetQrScanPingFeedback() {
+var QR_RETICLE_TIMEOUT_MS = 5000;
+var qrScanProgressInterval = null;
+var qrScanTimeoutResetTimer = null;
+var qrScanCycleStartTime = 0;
+
+function updateQrReticleProgressRing(elapsedMs, customTimeoutMs) {
+  var timeoutMs = Math.max(1000, Number(customTimeoutMs) || QR_RETICLE_TIMEOUT_MS);
+  var rawElapsed = Math.max(0, Number(elapsedMs) || 0);
+  var isTimedOut = rawElapsed >= timeoutMs;
+  var clamped = isTimedOut ? timeoutMs : rawElapsed;
+  var remainingMs = Math.max(0, timeoutMs - clamped);
+  var remainingSec = (remainingMs / 1000).toFixed(1);
+  var ratio = Math.min(1, Math.max(0, clamped / timeoutMs));
+  var pct = Math.round(ratio * 100);
+  var offset = Math.round(100 * (1 - ratio) * 100) / 100;
+
   var reticle = document.getElementById("qr-scanner-reticle");
+  var ringWrap = document.getElementById("qr-reticle-progress-ring");
+  var ringRect = document.getElementById("qr-reticle-ring-progress");
+  var badgeEl = document.getElementById("qr-reticle-timeout-badge");
+
   if (reticle) {
-    reticle.classList.remove("scan-detected");
+    reticle.style.setProperty("--qr-ring-offset", String(offset));
+    reticle.setAttribute("data-scan-progress", String(pct));
+    reticle.classList.toggle("scan-warning", !isTimedOut && remainingMs <= 1200 && rawElapsed > 0);
   }
+  if (ringWrap) {
+    ringWrap.setAttribute("aria-valuenow", String(pct));
+  }
+  if (ringRect) {
+    ringRect.setAttribute("stroke-dashoffset", String(offset));
+    ringRect.style.strokeDashoffset = String(offset);
+  }
+  if (badgeEl) {
+    if (isTimedOut) {
+      badgeEl.textContent = "No QR detected (5s) · Resetting…";
+    } else if (remainingMs <= 1200 && rawElapsed > 0) {
+      badgeEl.textContent = "Align QR code · " + remainingSec + "s";
+    } else {
+      badgeEl.textContent = "Scanning · " + remainingSec + "s";
+    }
+  }
+
+  return {
+    elapsedMs: clamped,
+    remainingMs: remainingMs,
+    progressPercent: pct,
+    strokeDashoffset: offset,
+    isTimedOut: isTimedOut
+  };
+}
+window.updateQrReticleProgressRing = updateQrReticleProgressRing;
+
+function stopQrScanProgressCycle(resetToZero) {
+  if (qrScanProgressInterval) {
+    clearInterval(qrScanProgressInterval);
+    qrScanProgressInterval = null;
+  }
+  if (qrScanTimeoutResetTimer) {
+    clearTimeout(qrScanTimeoutResetTimer);
+    qrScanTimeoutResetTimer = null;
+  }
+  if (resetToZero !== false) {
+    var reticle = document.getElementById("qr-scanner-reticle");
+    if (reticle) {
+      reticle.classList.remove("scan-warning", "scan-timeout-reset");
+    }
+    updateQrReticleProgressRing(0, QR_RETICLE_TIMEOUT_MS);
+  }
+}
+
+function triggerQrScanTimeoutReset() {
+  if (qrScanProgressInterval) {
+    clearInterval(qrScanProgressInterval);
+    qrScanProgressInterval = null;
+  }
+  var reticle = document.getElementById("qr-scanner-reticle");
+  updateQrReticleProgressRing(QR_RETICLE_TIMEOUT_MS, QR_RETICLE_TIMEOUT_MS);
+
+  if (reticle) {
+    reticle.classList.remove("scan-warning");
+    reticle.classList.add("scan-timeout-reset");
+    reticle.setAttribute("data-scan-state", "timeout-reset");
+  }
+
+  updateScannerStatus("No QR code detected within 5s — resetting scan reticle…", false);
+
+  if (qrScanTimeoutResetTimer) {
+    clearTimeout(qrScanTimeoutResetTimer);
+  }
+  qrScanTimeoutResetTimer = setTimeout(function () {
+    if (!reticle) return;
+    reticle.classList.remove("scan-timeout-reset");
+    updateQrReticleProgressRing(0, QR_RETICLE_TIMEOUT_MS);
+    var overlay = document.getElementById("qr-scanner-overlay");
+    var isOpen = overlay && overlay.classList.contains("open");
+    if (isOpen && qrScanningActive) {
+      reticle.classList.add("scan-in-progress");
+      reticle.setAttribute("data-scan-state", "scanning");
+      updateScannerStatus("Align product QR code within reticle frame", false);
+      startQrScanProgressCycle(QR_RETICLE_TIMEOUT_MS);
+    } else {
+      reticle.classList.remove("scan-in-progress");
+      reticle.setAttribute("data-scan-state", "idle");
+    }
+  }, 450);
+}
+window.triggerQrScanTimeoutReset = triggerQrScanTimeoutReset;
+
+function startQrScanProgressCycle(customTimeoutMs) {
+  stopQrScanProgressCycle(true);
+  var timeoutMs = Math.max(1000, Number(customTimeoutMs) || QR_RETICLE_TIMEOUT_MS);
+  qrScanCycleStartTime = Date.now();
+  updateQrReticleProgressRing(0, timeoutMs);
+
+  qrScanProgressInterval = setInterval(function () {
+    var reticle = document.getElementById("qr-scanner-reticle");
+    if (!reticle || reticle.classList.contains("scan-detected")) {
+      stopQrScanProgressCycle(false);
+      return;
+    }
+    var elapsed = Date.now() - qrScanCycleStartTime;
+    if (elapsed >= timeoutMs) {
+      triggerQrScanTimeoutReset();
+      return;
+    }
+    updateQrReticleProgressRing(elapsed, timeoutMs);
+  }, 80);
+}
+window.startQrScanProgressCycle = startQrScanProgressCycle;
+
+function setQrReticleScanState(state) {
+  var reticle = document.getElementById("qr-scanner-reticle");
+  if (!reticle) return;
+  var normalized = String(state || "idle").toLowerCase().trim();
+  if (normalized === "detected" || normalized === "scan-detected") {
+    stopQrScanProgressCycle(false);
+    reticle.classList.remove("scan-in-progress", "scan-warning", "scan-timeout-reset", "scan-detected");
+    void reticle.offsetWidth;
+    reticle.classList.add("scan-detected");
+    reticle.setAttribute("data-scan-state", "detected");
+    reticle.style.setProperty("--qr-ring-offset", "0");
+    reticle.setAttribute("data-scan-progress", "100");
+    var ringWrap = document.getElementById("qr-reticle-progress-ring");
+    var ringRect = document.getElementById("qr-reticle-ring-progress");
+    if (ringWrap) ringWrap.setAttribute("aria-valuenow", "100");
+    if (ringRect) {
+      ringRect.setAttribute("stroke-dashoffset", "0");
+      ringRect.style.strokeDashoffset = "0";
+    }
+  } else if (normalized === "scanning" || normalized === "scan-in-progress" || normalized === "active") {
+    reticle.classList.remove("scan-detected", "scan-timeout-reset");
+    reticle.classList.add("scan-in-progress");
+    reticle.setAttribute("data-scan-state", "scanning");
+    startQrScanProgressCycle(QR_RETICLE_TIMEOUT_MS);
+  } else {
+    stopQrScanProgressCycle(true);
+    reticle.classList.remove("scan-in-progress", "scan-detected", "scan-warning", "scan-timeout-reset");
+    reticle.setAttribute("data-scan-state", "idle");
+  }
+}
+window.setQrReticleScanState = setQrReticleScanState;
+
+function resetQrScanPingFeedback() {
+  setQrReticleScanState(qrScanningActive && qrScanStream ? "scanning" : "idle");
   var flash = document.getElementById("qr-scanner-ping-flash");
   if (flash) {
     flash.classList.remove("active");
@@ -3190,7 +3347,11 @@ function openQrScannerModal() {
 function closeQrScannerModal() {
   var overlay = document.getElementById("qr-scanner-overlay");
   if (!overlay) return;
+  if (typeof window.closeQrClearConfirmDialog === "function") {
+    window.closeQrClearConfirmDialog(true);
+  }
   stopQrCamera();
+  stopQrScanProgressCycle(true);
   resetQrScanPingFeedback();
   closeModal(overlay);
 }
@@ -3209,9 +3370,11 @@ function startQrCamera() {
   if (!video) return;
 
   qrScanningActive = true;
+  setQrReticleScanState("scanning");
   updateScannerStatus("Initializing optical camera sensor…", false);
 
   if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+    setQrReticleScanState("idle");
     updateScannerStatus("Webcam hardware not supported on this browser. Upload QR image or use simulation below.", true);
     return;
   }
@@ -3237,17 +3400,23 @@ function startQrCamera() {
       return video.play();
     })
     .then(function () {
+      setQrReticleScanState("scanning");
       updateScannerStatus("Align product QR code within reticle frame", false);
       qrScanAnimFrame = requestAnimationFrame(scanVideoFrameLoop);
     })
     .catch(function (err) {
       console.warn("Camera sensor unavailable:", err);
+      setQrReticleScanState("idle");
       updateScannerStatus("Camera unavailable — upload QR image or simulate below", true);
     });
 }
 
 function stopQrCamera() {
   qrScanningActive = false;
+  var reticle = document.getElementById("qr-scanner-reticle");
+  if (reticle && !reticle.classList.contains("scan-detected")) {
+    setQrReticleScanState("idle");
+  }
   if (qrScanAnimFrame) {
     cancelAnimationFrame(qrScanAnimFrame);
     qrScanAnimFrame = null;
@@ -3514,6 +3683,14 @@ function renderQrScanHistory() {
   if (clearBtnEl) {
     clearBtnEl.hidden = items.length === 0;
   }
+  var confirmCountEl = document.getElementById("qr-clear-confirm-count");
+  if (confirmCountEl) {
+    confirmCountEl.textContent = String(items.length);
+  }
+  if (items.length === 0) {
+    var confirmDialogEl = document.getElementById("qr-clear-confirm-dialog");
+    if (confirmDialogEl) confirmDialogEl.hidden = true;
+  }
 
   if (items.length === 0) {
     listEl.innerHTML =
@@ -3599,10 +3776,59 @@ window.removeQrScanHistoryItem = function (event, productId) {
   renderQrScanHistory();
 };
 
+window.requestClearQrScanHistory = function () {
+  var items = Array.isArray(qrScanHistory) ? qrScanHistory : [];
+  if (items.length === 0) {
+    showActivityToast("Scan history is already empty.");
+    return;
+  }
+  var dialogEl = document.getElementById("qr-clear-confirm-dialog");
+  var countEl = document.getElementById("qr-clear-confirm-count");
+  if (countEl) {
+    countEl.textContent = String(items.length);
+  }
+  if (dialogEl) {
+    dialogEl.hidden = false;
+    dialogEl.setAttribute("aria-hidden", "false");
+    if (typeof window.triggerHaptic === "function") {
+      window.triggerHaptic("warning", document.getElementById("qr-scan-history-clear-btn"));
+    }
+    setTimeout(function () {
+      var cancelBtn = document.getElementById("qr-clear-cancel-btn");
+      if (cancelBtn) cancelBtn.focus();
+    }, 20);
+  }
+};
+
+window.closeQrClearConfirmDialog = function (skipFocusRestore) {
+  var dialogEl = document.getElementById("qr-clear-confirm-dialog");
+  if (!dialogEl || dialogEl.hidden) return;
+  dialogEl.hidden = true;
+  dialogEl.setAttribute("aria-hidden", "true");
+  if (!skipFocusRestore) {
+    var clearBtn = document.getElementById("qr-scan-history-clear-btn");
+    if (clearBtn && !clearBtn.hidden) {
+      clearBtn.focus();
+    }
+  }
+};
+
+window.confirmClearQrScanHistory = function () {
+  window.closeQrClearConfirmDialog(true);
+  window.clearQrScanHistory();
+  var manualInput = document.getElementById("qr-manual-input");
+  var closeBtn = document.getElementById("qr-scanner-close");
+  if (manualInput) manualInput.focus();
+  else if (closeBtn) closeBtn.focus();
+};
+
 window.clearQrScanHistory = function () {
   qrScanHistory = [];
   saveQrScanHistory();
   renderQrScanHistory();
+  if (typeof window.triggerHaptic === "function") {
+    window.triggerHaptic("success");
+  }
   showActivityToast("QR Scan History cleared.");
 };
 
@@ -3617,12 +3843,14 @@ function parseFallbackScannedProduct(rawText) {
 }
 
 window.simulateQrScan = function (productId) {
+  setQrReticleScanState("scanning");
   var url = getProductShareUrl(productId);
   handleSuccessfulQrScan(url);
 };
 
 function handleQrImageUpload(file) {
   if (!file) return;
+  setQrReticleScanState("scanning");
   updateScannerStatus("Processing uploaded QR image…", false);
   var reader = new FileReader();
   reader.onload = function (e) {
@@ -3641,6 +3869,7 @@ function handleQrImageUpload(file) {
           return;
         }
       }
+      setQrReticleScanState("idle");
       updateScannerStatus("No valid QR code detected in uploaded image.", true);
     };
     img.src = e.target.result;
@@ -3652,6 +3881,7 @@ function handleManualQrSubmit(e) {
   if (e) e.preventDefault();
   var input = document.getElementById("qr-manual-input");
   if (!input || !input.value.trim()) return;
+  setQrReticleScanState("scanning");
   handleSuccessfulQrScan(input.value.trim());
 }
 
@@ -5463,7 +5693,35 @@ function wireUpButtons() {
   }
   var qrScanHistoryClearBtn = document.getElementById("qr-scan-history-clear-btn");
   if (qrScanHistoryClearBtn) {
-    qrScanHistoryClearBtn.addEventListener("click", window.clearQrScanHistory);
+    qrScanHistoryClearBtn.addEventListener("click", function (e) {
+      e.preventDefault();
+      e.stopPropagation();
+      window.requestClearQrScanHistory();
+    });
+  }
+  var qrClearCancelBtn = document.getElementById("qr-clear-cancel-btn");
+  if (qrClearCancelBtn) {
+    qrClearCancelBtn.addEventListener("click", function (e) {
+      e.preventDefault();
+      e.stopPropagation();
+      window.closeQrClearConfirmDialog(false);
+    });
+  }
+  var qrClearConfirmBtn = document.getElementById("qr-clear-confirm-btn");
+  if (qrClearConfirmBtn) {
+    qrClearConfirmBtn.addEventListener("click", function (e) {
+      e.preventDefault();
+      e.stopPropagation();
+      window.confirmClearQrScanHistory();
+    });
+  }
+  var qrClearConfirmDialog = document.getElementById("qr-clear-confirm-dialog");
+  if (qrClearConfirmDialog) {
+    qrClearConfirmDialog.addEventListener("click", function (e) {
+      if (e.target === qrClearConfirmDialog) {
+        window.closeQrClearConfirmDialog(false);
+      }
+    });
   }
   loadQrScanHistory();
   renderQrScanHistory();
@@ -5878,10 +6136,24 @@ function wireUpButtons() {
 
   document.addEventListener("keydown", function (e) {
     if (e.key === "Escape") {
-      if (overlayEl && overlayEl.classList.contains("open")) closeReceipt();
+      var qrConfirmDlg = document.getElementById("qr-clear-confirm-dialog");
+      var qrScannerOvl = document.getElementById("qr-scanner-overlay");
+      var compareOvl = document.getElementById("compare-overlay");
+      var orderHistOvl = document.getElementById("order-history-overlay");
+      var filterDrwOvl = document.getElementById("catalog-filter-drawer-overlay");
+      if (qrConfirmDlg && !qrConfirmDlg.hidden) {
+        e.preventDefault();
+        window.closeQrClearConfirmDialog(false);
+      } else if (qrScannerOvl && qrScannerOvl.classList.contains("open")) {
+        e.preventDefault();
+        closeQrScannerModal();
+      } else if (overlayEl && overlayEl.classList.contains("open")) closeReceipt();
       else if (checkoutOverlayEl && checkoutOverlayEl.classList.contains("open")) closeModal(checkoutOverlayEl);
       else if (priceAlertOverlayEl && priceAlertOverlayEl.classList.contains("open")) closePriceAlertModal();
       else if (pwaInstallOverlayEl && pwaInstallOverlayEl.classList.contains("open")) closePwaInstallModal();
+      else if (compareOvl && compareOvl.classList.contains("open")) closeComparisonModal();
+      else if (orderHistOvl && orderHistOvl.classList.contains("open") && typeof window.closeOrderHistoryModal === "function") window.closeOrderHistoryModal();
+      else if (filterDrwOvl && filterDrwOvl.classList.contains("open") && typeof window.closeCatalogFilterDrawer === "function") window.closeCatalogFilterDrawer();
       else if (messengerOverlayEl && messengerOverlayEl.classList.contains("open")) closeMessenger();
       else if (specDrawerOverlayEl && specDrawerOverlayEl.classList.contains("open")) closeSpecDrawer();
       else if (rigDrawerOverlayEl && rigDrawerOverlayEl.classList.contains("open")) closeRigDrawer();
@@ -13237,6 +13509,275 @@ window.toggleVoltboxColorMode = toggleVoltboxColorMode;
   };
   window.triggerHaptic = triggerHaptic;
 })();
+
+/* ============================================================================
+   ACCESSIBILITY: CATALOG KEYBOARD NAVIGATION & MODAL/DRAWER FOCUS TRAP CYCLING
+   ============================================================================ */
+(function initKeyboardAccessibilityAndFocusTrap() {
+  var FOCUSABLE_SELECTOR = [
+    "button:not([disabled])",
+    "a[href]",
+    "input:not([disabled]):not([type='hidden'])",
+    "select:not([disabled])",
+    "textarea:not([disabled])",
+    "[tabindex]:not([tabindex='-1'])"
+  ].join(", ");
+
+  var focusReturnMap = new Map();
+
+  function isElementVisibleAndFocusable(el) {
+    if (!el || el.disabled) return false;
+    if (el.hidden || el.closest("[hidden]")) return false;
+    var ariaHiddenAncestor = el.closest("[aria-hidden='true']");
+    if (ariaHiddenAncestor && !ariaHiddenAncestor.classList.contains("open")) return false;
+    var style = window.getComputedStyle(el);
+    if (style.display === "none" || style.visibility === "hidden") return false;
+    return true;
+  }
+
+  function getFocusableElementsInContainer(container) {
+    if (!container) return [];
+    var raw = Array.prototype.slice.call(container.querySelectorAll(FOCUSABLE_SELECTOR));
+    return raw.filter(isElementVisibleAndFocusable);
+  }
+
+  function computeNextTrapIndex(currentIndex, total, shiftKey) {
+    if (window.VoltboxQR && typeof window.VoltboxQR.computeFocusTrapNextIndex === "function") {
+      return window.VoltboxQR.computeFocusTrapNextIndex(currentIndex, total, shiftKey);
+    }
+    if (total <= 0) return -1;
+    if (total === 1) return 0;
+    if (currentIndex < 0 || currentIndex >= total) {
+      return shiftKey ? total - 1 : 0;
+    }
+    if (shiftKey) {
+      return currentIndex === 0 ? total - 1 : currentIndex - 1;
+    }
+    return currentIndex === total - 1 ? 0 : currentIndex + 1;
+  }
+
+  /**
+   * Returns the highest-priority open modal dialog, drawer, or sheet container.
+   */
+  function getActiveFocusTrapContainer() {
+    // 1. Nested confirmation alertdialog inside QR Scanner
+    var qrConfirmDialog = document.getElementById("qr-clear-confirm-dialog");
+    var qrScannerOverlay = document.getElementById("qr-scanner-overlay");
+    if (qrConfirmDialog && !qrConfirmDialog.hidden && qrScannerOverlay && qrScannerOverlay.classList.contains("open")) {
+      return qrConfirmDialog;
+    }
+
+    // 2. Open modal overlays (check in reverse DOM or priority order)
+    var openModals = document.querySelectorAll(".modal-overlay.open");
+    if (openModals.length > 0) {
+      var topModal = openModals[openModals.length - 1];
+      return topModal.querySelector(".modal-card, [role='dialog'], [role='alertdialog']") || topModal;
+    }
+
+    // 3. Open side drawers
+    var openDrawers = document.querySelectorAll(".drawer-overlay.open");
+    if (openDrawers.length > 0) {
+      var topDrawer = openDrawers[openDrawers.length - 1];
+      return topDrawer.querySelector(".side-drawer, .drawer-panel, [role='dialog']") || topDrawer;
+    }
+
+    // 4. Open topbar popover sheets
+    var openSheets = document.querySelectorAll(".sheet:not([hidden])");
+    if (openSheets.length > 0) {
+      return openSheets[openSheets.length - 1];
+    }
+
+    return null;
+  }
+
+  // Global keydown listener for Tab focus trap cycling and roving tablists
+  document.addEventListener("keydown", function (e) {
+    if (!e) return;
+
+    // 1. Modal & Drawer Focus Trap Cycling on Tab / Shift+Tab
+    if (e.key === "Tab") {
+      var activeTrap = getActiveFocusTrapContainer();
+      if (activeTrap) {
+        var focusables = getFocusableElementsInContainer(activeTrap);
+        if (focusables.length > 0) {
+          var currentIdx = focusables.indexOf(document.activeElement);
+          var nextIdx = computeNextTrapIndex(currentIdx, focusables.length, e.shiftKey);
+          if (nextIdx !== -1 && focusables[nextIdx]) {
+            e.preventDefault();
+            focusables[nextIdx].focus();
+          }
+        }
+        return;
+      }
+    }
+
+    // 2. Roving Tablist Arrow Navigation on Category Filter Tabs (.filter-tab)
+    var activeEl = document.activeElement;
+    if (activeEl && activeEl.classList && activeEl.classList.contains("filter-tab")) {
+      if (
+        e.key === "ArrowRight" ||
+        e.key === "ArrowLeft" ||
+        e.key === "Home" ||
+        e.key === "End"
+      ) {
+        var tabContainer = activeEl.closest("#filter-tabs, [role='tablist']");
+        if (tabContainer) {
+          var tabs = Array.prototype.slice.call(tabContainer.querySelectorAll(".filter-tab:not([hidden]):not([disabled])"));
+          var tabIdx = tabs.indexOf(activeEl);
+          if (tabIdx !== -1 && tabs.length > 0) {
+            e.preventDefault();
+            var nextTabIdx = tabIdx;
+            if (e.key === "ArrowRight") nextTabIdx = (tabIdx + 1) % tabs.length;
+            else if (e.key === "ArrowLeft") nextTabIdx = (tabIdx - 1 + tabs.length) % tabs.length;
+            else if (e.key === "Home") nextTabIdx = 0;
+            else if (e.key === "End") nextTabIdx = tabs.length - 1;
+            if (tabs[nextTabIdx]) {
+              tabs[nextTabIdx].focus();
+              tabs[nextTabIdx].click();
+            }
+            return;
+          }
+        }
+      }
+    }
+
+    // 3. Fallback Catalog Card Arrow Navigation if focus is inside #product-grid
+    var cardEl = activeEl && activeEl.closest ? activeEl.closest("#product-grid .card") : null;
+    if (cardEl && !getActiveFocusTrapContainer()) {
+      var tag = activeEl.tagName;
+      var isTextControl = tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT";
+      if (!isTextControl && (
+        e.key === "ArrowRight" ||
+        e.key === "ArrowLeft" ||
+        e.key === "ArrowDown" ||
+        e.key === "ArrowUp" ||
+        e.key === "Home" ||
+        e.key === "End"
+      )) {
+        // If handleCardKeyNavigation didn't already move focus (e.g. if event was on a nested element)
+        if (document.activeElement === activeEl && activeEl !== cardEl) {
+          var grid = document.getElementById("product-grid");
+          if (grid) {
+            var visibleCards = Array.prototype.slice.call(grid.querySelectorAll(".card:not([hidden])"));
+            var cIdx = visibleCards.indexOf(cardEl);
+            if (cIdx !== -1 && visibleCards.length > 0) {
+              e.preventDefault();
+              var cols = typeof getActualGridColumns === "function" ? getActualGridColumns() : 3;
+              var targetIdx = typeof computeGridNavIndex === "function"
+                ? computeGridNavIndex(cIdx, visibleCards.length, cols, e.key)
+                : Math.max(0, Math.min(visibleCards.length - 1, cIdx + (e.key === "ArrowRight" ? 1 : e.key === "ArrowLeft" ? -1 : 0)));
+              if (visibleCards[targetIdx]) {
+                visibleCards[targetIdx].focus();
+                visibleCards[targetIdx].scrollIntoView({ block: "nearest", inline: "nearest", behavior: "smooth" });
+              }
+            }
+          }
+        }
+      }
+    }
+  });
+
+  // Track visual keyboard focus state on catalog cards
+  document.addEventListener("focusin", function (e) {
+    var target = e.target;
+    var prevCards = document.querySelectorAll("#product-grid .card.keyboard-focused");
+    for (var i = 0; i < prevCards.length; i++) {
+      if (!target || !prevCards[i].contains(target)) {
+        prevCards[i].classList.remove("keyboard-focused");
+      }
+    }
+    var card = target && target.closest ? target.closest("#product-grid .card") : null;
+    if (card) {
+      card.classList.add("keyboard-focused");
+    }
+  });
+
+  // Observe modal and drawer open/close state transitions to manage initial focus and restore trigger focus
+  var overlayObserver = new MutationObserver(function (mutations) {
+    mutations.forEach(function (m) {
+      var el = m.target;
+      if (!el || !el.classList) return;
+      var id = el.id || el.className;
+
+      var isModalOrDrawer = el.classList.contains("modal-overlay") || el.classList.contains("drawer-overlay");
+      var isSheet = el.classList.contains("sheet");
+
+      if (isModalOrDrawer) {
+        var isOpen = el.classList.contains("open");
+        var wasOpen = focusReturnMap.has(id);
+        if (isOpen && !wasOpen) {
+          var trigger = document.activeElement;
+          if (trigger && trigger !== document.body && !el.contains(trigger)) {
+            focusReturnMap.set(id, trigger);
+          } else {
+            focusReturnMap.set(id, null);
+          }
+          setTimeout(function () {
+            if (!el.classList.contains("open")) return;
+            if (el.contains(document.activeElement)) return;
+            var container = el.querySelector(".modal-card, .side-drawer, .drawer-panel, [role='dialog']") || el;
+            var focusables = getFocusableElementsInContainer(container);
+            if (focusables.length > 0) {
+              focusables[0].focus();
+            }
+          }, 30);
+        } else if (!isOpen && wasOpen) {
+          var savedTrigger = focusReturnMap.get(id);
+          focusReturnMap.delete(id);
+          if (savedTrigger && typeof savedTrigger.focus === "function" && document.body.contains(savedTrigger)) {
+            setTimeout(function () {
+              if (!getActiveFocusTrapContainer()) {
+                savedTrigger.focus();
+              }
+            }, 20);
+          }
+        }
+      } else if (isSheet) {
+        var sheetOpen = !el.hidden;
+        var sheetWasOpen = focusReturnMap.has(id);
+        if (sheetOpen && !sheetWasOpen) {
+          var sheetTrigger = document.activeElement;
+          focusReturnMap.set(id, sheetTrigger && sheetTrigger !== document.body ? sheetTrigger : null);
+          setTimeout(function () {
+            if (el.hidden || el.contains(document.activeElement)) return;
+            var focusables = getFocusableElementsInContainer(el);
+            if (focusables.length > 0) focusables[0].focus();
+          }, 30);
+        } else if (!sheetOpen && sheetWasOpen) {
+          var prevTrigger = focusReturnMap.get(id);
+          focusReturnMap.delete(id);
+          if (prevTrigger && typeof prevTrigger.focus === "function" && document.body.contains(prevTrigger)) {
+            setTimeout(function () {
+              if (!getActiveFocusTrapContainer()) {
+                prevTrigger.focus();
+              }
+            }, 20);
+          }
+        }
+      }
+    });
+  });
+
+  function attachOverlayObservers() {
+    var targets = document.querySelectorAll(".modal-overlay, .drawer-overlay, .sheet");
+    for (var i = 0; i < targets.length; i++) {
+      overlayObserver.observe(targets[i], { attributes: true, attributeFilter: ["class", "hidden"] });
+    }
+  }
+
+  if (document.readyState === "loading") {
+    document.addEventListener("DOMContentLoaded", attachOverlayObservers);
+  } else {
+    attachOverlayObservers();
+  }
+
+  window.VoltboxFocusTrap = {
+    getActiveContainer: getActiveFocusTrapContainer,
+    getFocusableElements: getFocusableElementsInContainer,
+    computeNextIndex: computeNextTrapIndex
+  };
+})();
+
 
 
 

@@ -170,12 +170,21 @@ import {
   resolveIosColorMode,
   toggleIosColorMode,
   getIosColorModeTokens,
+  resolveIosDarkThemeSpecification,
+  computeRelativeLuminance,
+  computeHexContrastRatio,
   IOS_HAPTIC_PATTERNS,
   resolveHapticFeedbackPattern,
   isHapticFeedbackSupported,
   resolveHapticFeedbackPreference,
   inferHapticTypeForElement,
   evaluateHapticTrigger,
+  computeFocusTrapNextIndex,
+  computeRovingTablistNextIndex,
+  evaluateQrScanHistoryClearAction,
+  resolveQrReticleAnimationProfile,
+  QR_SCAN_TIMEOUT_MS,
+  computeQrReticleProgressRingMetrics,
 } from './inventory';
 
 
@@ -3052,4 +3061,172 @@ test('iOS / Apple HIG Haptic Feedback Service: patterns, preferences, element in
   assert.equal(resAllowed.executed, true);
 });
 
+test('iOS / Apple HIG True Black Pro Dark Theme: surface hierarchy, contrast ratios, and WCAG AA compliance', () => {
+  const spec = resolveIosDarkThemeSpecification();
+
+  // 1. Core metadata & Mode
+  assert.equal(spec.mode, 'dark');
+  assert.equal(spec.themeName, 'Apple iOS True Black Pro Dark Theme');
+
+  // 2. Surface Hierarchy follows Apple HIG System Grouped & Elevated Guidelines
+  assert.equal(spec.surfaces.canvasBackground, '#000000'); // True OLED Black
+  assert.equal(spec.surfaces.surfaceElevated, '#161618');  // Card surface
+  assert.equal(spec.surfaces.cardImageStage, '#111113');   // Neutral hardware stage
+  assert.equal(spec.surfaces.segmentedControlActive, '#2C2C2E'); // Dark segmented pill
+
+  // 3. Apple System Accents
+  assert.equal(spec.accents.systemBlue, '#0A84FF');
+  assert.equal(spec.accents.systemGreen, '#30D158');
+  assert.equal(spec.accents.systemOrange, '#FF9F0A');
+  assert.equal(spec.accents.systemGold, '#FFD60A');
+
+  // 4. Geometry follows nested radius rules
+  assert.equal(spec.geometry.cardRadiusPx, 18);
+  assert.equal(spec.geometry.pillRadiusPx, 999);
+  assert.equal(spec.geometry.inputRadiusPx, 12);
+  assert.equal(spec.geometry.blurAmountPx, 24);
+
+  // 5. Relative Luminance & WCAG AA Contrast Ratios
+  assert.equal(computeRelativeLuminance('#000000'), 0);
+  assert.equal(computeRelativeLuminance('#FFFFFF'), 1);
+
+  // White text on True Black background has theoretical maximum 21.0:1 contrast
+  const whiteOnBlackContrast = computeHexContrastRatio('#FFFFFF', '#000000');
+  assert.equal(whiteOnBlackContrast, 21);
+
+  // White text on #161618 dark card surface exceeds 16.0:1 contrast (WCAG AA requirement is 4.5:1)
+  const whiteOnCardContrast = computeHexContrastRatio('#FFFFFF', '#161618');
+  assert.ok(whiteOnCardContrast >= 16.0);
+
+  // System Blue #0A84FF on True Black has strong contrast > 4.5:1
+  const blueOnBlackContrast = computeHexContrastRatio('#0A84FF', '#000000');
+  assert.ok(blueOnBlackContrast >= 5.0);
+
+  // System Green #30D158 on True Black has exceptional contrast > 9.0:1
+  const greenOnBlackContrast = computeHexContrastRatio('#30D158', '#000000');
+  assert.ok(greenOnBlackContrast >= 9.0);
+
+  // Verify overall compliance metric flag
+  assert.equal(spec.metrics.isWcagAaCompliant, true);
+});
+
+test('Keyboard Accessibility: Modal/Drawer Focus Trap Cycling & Roving Tablist Navigation', () => {
+  // Empty or single element edge cases
+  assert.equal(computeFocusTrapNextIndex(0, 0, false), -1);
+  assert.equal(computeFocusTrapNextIndex(0, 1, false), 0);
+  assert.equal(computeFocusTrapNextIndex(0, 1, true), 0);
+
+  // Forward Tab cycling (0 -> 1 -> 2 -> 3 -> 0)
+  assert.equal(computeFocusTrapNextIndex(0, 4, false), 1);
+  assert.equal(computeFocusTrapNextIndex(1, 4, false), 2);
+  assert.equal(computeFocusTrapNextIndex(2, 4, false), 3);
+  assert.equal(computeFocusTrapNextIndex(3, 4, false), 0); // wraps last -> first
+
+  // Reverse Shift+Tab cycling (0 -> 3 -> 2 -> 1 -> 0)
+  assert.equal(computeFocusTrapNextIndex(0, 4, true), 3); // wraps first -> last
+  assert.equal(computeFocusTrapNextIndex(3, 4, true), 2);
+  assert.equal(computeFocusTrapNextIndex(2, 4, true), 1);
+  assert.equal(computeFocusTrapNextIndex(1, 4, true), 0);
+
+  // Focus outside container (-1) snaps into container
+  assert.equal(computeFocusTrapNextIndex(-1, 5, false), 0);
+  assert.equal(computeFocusTrapNextIndex(-1, 5, true), 4);
+
+  // Roving tablist navigation for category filter pills
+  assert.equal(computeRovingTablistNextIndex(0, 6, 'ArrowRight'), 1);
+  assert.equal(computeRovingTablistNextIndex(5, 6, 'ArrowRight'), 0); // wraps to start
+  assert.equal(computeRovingTablistNextIndex(0, 6, 'ArrowLeft'), 5);  // wraps to end
+  assert.equal(computeRovingTablistNextIndex(3, 6, 'Home'), 0);
+  assert.equal(computeRovingTablistNextIndex(1, 6, 'End'), 5);
+});
+
+test('QR Scanner Clear All Confirmation State Machine: prevents accidental history deletion until confirmed', () => {
+  const sampleHistory = [
+    { id: 19, sku: 'VB-GPU-019', title: 'Nvidia RTX 5090', category: 'gpus', price: 200, image: '', scannedAt: 1700000000000 },
+    { id: 20, sku: 'VB-CPU-020', title: 'AMD RYZEN 9', category: 'cpus', price: 180, image: '', scannedAt: 1700000005000 },
+  ];
+
+  // 1. Requesting clear on non-empty history opens confirmation dialog without deleting items
+  const reqState = evaluateQrScanHistoryClearAction('request', sampleHistory);
+  assert.equal(reqState.dialogOpen, true);
+  assert.equal(reqState.nextHistory.length, 2);
+  assert.equal(reqState.clearedCount, 0);
+  assert.equal(reqState.shouldPersist, false);
+
+  // 2. Cancelling closes dialog and preserves all items
+  const cancelState = evaluateQrScanHistoryClearAction('cancel', sampleHistory);
+  assert.equal(cancelState.dialogOpen, false);
+  assert.equal(cancelState.nextHistory.length, 2);
+  assert.equal(cancelState.clearedCount, 0);
+  assert.equal(cancelState.shouldPersist, false);
+
+  // 3. Confirming closes dialog, empties history, and marks for persistence
+  const confirmState = evaluateQrScanHistoryClearAction('confirm', sampleHistory);
+  assert.equal(confirmState.dialogOpen, false);
+  assert.equal(confirmState.nextHistory.length, 0);
+  assert.equal(confirmState.clearedCount, 2);
+  assert.equal(confirmState.shouldPersist, true);
+  assert.ok(confirmState.statusMessage.includes('Cleared 2 recent scans'));
+
+  // 4. Requesting clear when already empty does not open dialog
+  const emptyReqState = evaluateQrScanHistoryClearAction('request', []);
+  assert.equal(emptyReqState.dialogOpen, false);
+  assert.equal(emptyReqState.nextHistory.length, 0);
+});
+
+test('QR Scanner Reticle Corner Animation Profile: transitions from subtle idle pulse to pronounced scanning heartbeat and detected lock', () => {
+  const idle = resolveQrReticleAnimationProfile('idle');
+  assert.equal(idle.state, 'idle');
+  assert.equal(idle.cssClass, null);
+  assert.equal(idle.animationBaseName, 'qrReticleCornerIdlePulse');
+  assert.equal(idle.iterationCount, 'infinite');
+
+  const scanning = resolveQrReticleAnimationProfile('scanning');
+  assert.equal(scanning.state, 'scanning');
+  assert.equal(scanning.cssClass, 'scan-in-progress');
+  assert.equal(scanning.animationBaseName, 'qrReticleCornerHeartbeat');
+  assert.equal(scanning.iterationCount, 'infinite');
+  assert.ok(scanning.peakScale > idle.peakScale);
+  assert.ok(scanning.durationMs < idle.durationMs);
+
+  const detected = resolveQrReticleAnimationProfile('detected');
+  assert.equal(detected.state, 'detected');
+  assert.equal(detected.cssClass, 'scan-detected');
+  assert.equal(detected.animationBaseName, 'qrReticleCornerScale');
+  assert.equal(detected.iterationCount, '1');
+  assert.equal(detected.glowColor, '#10b981');
+});
+
+test('QR Scanner Reticle 5-Second Visual Progress Ring: fills from 0% to 100% and triggers timeout reset at 5000ms', () => {
+  assert.equal(QR_SCAN_TIMEOUT_MS, 5000);
+
+  // Start (0ms): 0% filled, offset = 100
+  const start = computeQrReticleProgressRingMetrics(0, 5000, 100);
+  assert.equal(start.progressPercent, 0);
+  assert.equal(start.strokeDashoffset, 100);
+  assert.equal(start.isTimedOut, false);
+  assert.equal(start.remainingSecondsFormatted, '5.0s');
+
+  // Midpoint (2500ms): 50% filled, offset = 50
+  const mid = computeQrReticleProgressRingMetrics(2500, 5000, 100);
+  assert.equal(mid.progressPercent, 50);
+  assert.equal(mid.strokeDashoffset, 50);
+  assert.equal(mid.phase, 'filling');
+  assert.equal(mid.isTimedOut, false);
+
+  // Final second warning window (4200ms): 84% filled, phase = 'warning'
+  const warn = computeQrReticleProgressRingMetrics(4200, 5000, 100);
+  assert.equal(warn.progressPercent, 84);
+  assert.equal(warn.strokeDashoffset, 16);
+  assert.equal(warn.phase, 'warning');
+  assert.equal(warn.isTimedOut, false);
+
+  // 5-second timeout reached (5000ms): 100% filled, offset = 0, isTimedOut = true, phase = 'timeout-reset'
+  const timedOut = computeQrReticleProgressRingMetrics(5000, 5000, 100);
+  assert.equal(timedOut.progressPercent, 100);
+  assert.equal(timedOut.strokeDashoffset, 0);
+  assert.equal(timedOut.isTimedOut, true);
+  assert.equal(timedOut.phase, 'timeout-reset');
+  assert.ok(timedOut.statusLabel.includes('Resetting'));
+});
 

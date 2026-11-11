@@ -9153,6 +9153,147 @@ export function getIosColorModeTokens(rawMode?: string | null): IosColorModeToke
   };
 }
 
+export interface IosDarkThemeSurfaceTokens {
+  canvasBackground: string;
+  surfaceGrouped: string;
+  surfaceElevated: string;
+  surfaceTertiary: string;
+  surfaceFrosted: string;
+  surfaceSearchField: string;
+  segmentedControlTrack: string;
+  segmentedControlActive: string;
+  cardImageStage: string;
+  hairlineSeparator: string;
+  hairlineCardBorder: string;
+}
+
+export interface IosDarkThemeTypographyTokens {
+  labelPrimary: string;
+  labelSecondary: string;
+  labelTertiary: string;
+  labelQuaternary: string;
+  fontSystem: string;
+  fontDisplay: string;
+  fontMono: string;
+}
+
+export interface IosDarkThemeAccentTokens {
+  systemBlue: string;
+  systemGreen: string;
+  systemOrange: string;
+  systemGold: string;
+  systemRed: string;
+  systemPurple: string;
+  systemTeal: string;
+}
+
+export interface IosDarkThemeSpecification {
+  mode: 'dark';
+  themeName: string;
+  surfaces: IosDarkThemeSurfaceTokens;
+  typography: IosDarkThemeTypographyTokens;
+  accents: IosDarkThemeAccentTokens;
+  geometry: {
+    cardRadiusPx: number;
+    pillRadiusPx: number;
+    inputRadiusPx: number;
+    drawerRadiusPx: number;
+    blurAmountPx: number;
+  };
+  metrics: {
+    primaryTextContrastOnBlack: number;
+    primaryTextContrastOnCard: number;
+    systemBlueContrastOnBlack: number;
+    systemGreenContrastOnBlack: number;
+    isWcagAaCompliant: boolean;
+  };
+}
+
+export function computeRelativeLuminance(hexColor: string): number {
+  let hex = String(hexColor || '').replace('#', '').trim();
+  if (hex.length === 3) {
+    hex = hex.split('').map((c) => c + c).join('');
+  }
+  if (hex.length !== 6) return 0;
+  const r = parseInt(hex.substring(0, 2), 16) / 255;
+  const g = parseInt(hex.substring(2, 4), 16) / 255;
+  const b = parseInt(hex.substring(4, 6), 16) / 255;
+  const toLinear = (c: number) => (c <= 0.03928 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4));
+  return 0.2126 * toLinear(r) + 0.7152 * toLinear(g) + 0.0722 * toLinear(b);
+}
+
+export function computeHexContrastRatio(hex1: string, hex2: string): number {
+  const l1 = computeRelativeLuminance(hex1);
+  const l2 = computeRelativeLuminance(hex2);
+  const brighter = Math.max(l1, l2);
+  const darker = Math.min(l1, l2);
+  const ratio = (brighter + 0.05) / (darker + 0.05);
+  return Number(ratio.toFixed(2));
+}
+
+export function resolveIosDarkThemeSpecification(): IosDarkThemeSpecification {
+  const canvasBackground = '#000000';
+  const surfaceCard = '#161618';
+  const labelPrimary = '#FFFFFF';
+  const systemBlue = '#0A84FF';
+  const systemGreen = '#30D158';
+
+  const primaryOnBlack = computeHexContrastRatio(labelPrimary, canvasBackground);
+  const primaryOnCard = computeHexContrastRatio(labelPrimary, surfaceCard);
+  const blueOnBlack = computeHexContrastRatio(systemBlue, canvasBackground);
+  const greenOnBlack = computeHexContrastRatio(systemGreen, canvasBackground);
+
+  return {
+    mode: 'dark',
+    themeName: 'Apple iOS True Black Pro Dark Theme',
+    surfaces: {
+      canvasBackground,
+      surfaceGrouped: '#0F0F11',
+      surfaceElevated: surfaceCard,
+      surfaceTertiary: '#222226',
+      surfaceFrosted: 'rgba(24, 24, 26, 0.82)',
+      surfaceSearchField: 'rgba(118, 118, 128, 0.24)',
+      segmentedControlTrack: 'rgba(118, 118, 128, 0.20)',
+      segmentedControlActive: '#2C2C2E',
+      cardImageStage: '#111113',
+      hairlineSeparator: 'rgba(255, 255, 255, 0.08)',
+      hairlineCardBorder: 'rgba(255, 255, 255, 0.09)',
+    },
+    typography: {
+      labelPrimary,
+      labelSecondary: '#A1A1AA',
+      labelTertiary: '#71717A',
+      labelQuaternary: '#52525B',
+      fontSystem: IOS_SYSTEM_FONT_STACK,
+      fontDisplay: IOS_DISPLAY_FONT_STACK,
+      fontMono: IOS_MONO_FONT_STACK,
+    },
+    accents: {
+      systemBlue,
+      systemGreen,
+      systemOrange: '#FF9F0A',
+      systemGold: '#FFD60A',
+      systemRed: '#FF453A',
+      systemPurple: '#BF5AF2',
+      systemTeal: '#64D2FF',
+    },
+    geometry: {
+      cardRadiusPx: 18,
+      pillRadiusPx: 999,
+      inputRadiusPx: 12,
+      drawerRadiusPx: 24,
+      blurAmountPx: 24,
+    },
+    metrics: {
+      primaryTextContrastOnBlack: primaryOnBlack,
+      primaryTextContrastOnCard: primaryOnCard,
+      systemBlueContrastOnBlack: blueOnBlack,
+      systemGreenContrastOnBlack: greenOnBlack,
+      isWcagAaCompliant: primaryOnBlack >= 4.5 && primaryOnCard >= 4.5 && blueOnBlack >= 3.0,
+    },
+  };
+}
+
 /* ============================================================================
    iOS / Apple HIG Haptic Feedback Service Pure Logic
    Mimics UISelectionFeedbackGenerator, UIImpactFeedbackGenerator (.light, .medium, .heavy)
@@ -9354,5 +9495,257 @@ export function evaluateHapticTrigger(
   };
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// Keyboard Accessibility: Modal/Drawer Focus Trap Cycling & Roving Tablist
+// ─────────────────────────────────────────────────────────────────────────────
 
+/**
+ * Computes the next focusable element index within an active modal overlay or drawer
+ * when the user presses Tab or Shift+Tab, ensuring focus cycles strictly inside the container.
+ *
+ * @param currentIndex Index of currently focused element inside container (-1 if focus is outside)
+ * @param totalFocusable Total count of visible, enabled focusable elements inside the container
+ * @param shiftKey True when Shift+Tab (reverse navigation), false when Tab (forward navigation)
+ */
+export function computeFocusTrapNextIndex(
+  currentIndex: number,
+  totalFocusable: number,
+  shiftKey: boolean = false
+): number {
+  const count = Math.floor(Number(totalFocusable) || 0);
+  if (count <= 0) return -1;
+  if (count === 1) return 0;
 
+  const idx = Math.floor(Number(currentIndex));
+  if (Number.isNaN(idx) || idx < 0 || idx >= count) {
+    return shiftKey ? count - 1 : 0;
+  }
+
+  if (shiftKey) {
+    return idx === 0 ? count - 1 : idx - 1;
+  }
+  return idx === count - 1 ? 0 : idx + 1;
+}
+
+/**
+ * Computes the next tab index for horizontal roving tabindex navigation (e.g. category filter tabs)
+ * when pressing ArrowRight, ArrowLeft, ArrowDown, ArrowUp, Home, or End.
+ */
+export function computeRovingTablistNextIndex(
+  currentIndex: number,
+  totalTabs: number,
+  key: string
+): number {
+  const count = Math.floor(Number(totalTabs) || 0);
+  if (count <= 0) return -1;
+  const idx = Math.max(0, Math.min(count - 1, Math.floor(Number(currentIndex) || 0)));
+  const cleanKey = String(key || '').trim();
+
+  if (cleanKey === 'ArrowRight' || cleanKey === 'ArrowDown') {
+    return (idx + 1) % count;
+  }
+  if (cleanKey === 'ArrowLeft' || cleanKey === 'ArrowUp') {
+    return (idx - 1 + count) % count;
+  }
+  if (cleanKey === 'Home') {
+    return 0;
+  }
+  if (cleanKey === 'End') {
+    return count - 1;
+  }
+  return idx;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// QR Scanner Recent Scan History 'Clear All' Confirmation Dialog State Machine
+// ─────────────────────────────────────────────────────────────────────────────
+
+export type QrClearHistoryAction = 'request' | 'confirm' | 'cancel';
+
+export interface QrClearHistoryEvaluation<T = unknown> {
+  action: QrClearHistoryAction;
+  dialogOpen: boolean;
+  nextHistory: T[];
+  clearedCount: number;
+  shouldPersist: boolean;
+  statusMessage: string;
+}
+
+/**
+ * Evaluates the QR Scan History 'Clear All' workflow with confirmation dialog protection
+ * to prevent accidental deletion of recent scan history.
+ */
+export function evaluateQrScanHistoryClearAction<T = unknown>(
+  action: QrClearHistoryAction,
+  currentHistory: T[]
+): QrClearHistoryEvaluation<T> {
+  const safeHistory = Array.isArray(currentHistory) ? [...currentHistory] : [];
+
+  if (action === 'request') {
+    if (safeHistory.length === 0) {
+      return {
+        action: 'request',
+        dialogOpen: false,
+        nextHistory: safeHistory,
+        clearedCount: 0,
+        shouldPersist: false,
+        statusMessage: 'Scan history is already empty.',
+      };
+    }
+    return {
+      action: 'request',
+      dialogOpen: true,
+      nextHistory: safeHistory,
+      clearedCount: 0,
+      shouldPersist: false,
+      statusMessage: `Confirm clearing ${safeHistory.length} recently scanned item${safeHistory.length === 1 ? '' : 's'}?`,
+    };
+  }
+
+  if (action === 'confirm') {
+    const count = safeHistory.length;
+    return {
+      action: 'confirm',
+      dialogOpen: false,
+      nextHistory: [],
+      clearedCount: count,
+      shouldPersist: true,
+      statusMessage: count > 0 ? `Cleared ${count} recent scan${count === 1 ? '' : 's'}.` : 'Scan history cleared.',
+    };
+  }
+
+  // 'cancel'
+  return {
+    action: 'cancel',
+    dialogOpen: false,
+    nextHistory: safeHistory,
+    clearedCount: 0,
+    shouldPersist: false,
+    statusMessage: 'Clear All cancelled. Scan history preserved.',
+  };
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// QR Scanner Reticle Corner Animation State Profile (Idle Pulse -> Heartbeat -> Lock)
+// ─────────────────────────────────────────────────────────────────────────────
+
+export type QrReticleScanState = 'idle' | 'scanning' | 'detected';
+
+export interface QrReticleAnimationProfile {
+  state: QrReticleScanState;
+  cssClass: string | null;
+  animationBaseName: string;
+  durationMs: number;
+  iterationCount: 'infinite' | '1';
+  peakScale: number;
+  glowColor: string;
+}
+
+/**
+ * Resolves the animation profile for #qr-scanner-reticle corners (tl, tr, bl, br)
+ * across idling (subtle glowing pulse), active scan-in-progress (pronounced heartbeat),
+ * and QR code detected (emerald lock-on scaling).
+ */
+export function resolveQrReticleAnimationProfile(rawState?: string | null): QrReticleAnimationProfile {
+  const normalized = String(rawState || 'idle').trim().toLowerCase();
+  if (normalized === 'detected' || normalized === 'scan-detected') {
+    return {
+      state: 'detected',
+      cssClass: 'scan-detected',
+      animationBaseName: 'qrReticleCornerScale',
+      durationMs: 420,
+      iterationCount: '1',
+      peakScale: 1.28,
+      glowColor: '#10b981',
+    };
+  }
+  if (normalized === 'scanning' || normalized === 'scan-in-progress' || normalized === 'active') {
+    return {
+      state: 'scanning',
+      cssClass: 'scan-in-progress',
+      animationBaseName: 'qrReticleCornerHeartbeat',
+      durationMs: 1120,
+      iterationCount: 'infinite',
+      peakScale: 1.18,
+      glowColor: '#ffd23f',
+    };
+  }
+  return {
+    state: 'idle',
+    cssClass: null,
+    animationBaseName: 'qrReticleCornerIdlePulse',
+    durationMs: 2600,
+    iterationCount: 'infinite',
+    peakScale: 1.045,
+    glowColor: '#ffd23f',
+  };
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// QR Scanner Reticle 5-Second Visual Progress Ring & Timeout Reset Metrics
+// ─────────────────────────────────────────────────────────────────────────────
+
+export const QR_SCAN_TIMEOUT_MS = 5000;
+
+export interface QrReticleProgressRingMetrics {
+  timeoutMs: number;
+  elapsedMs: number;
+  remainingMs: number;
+  remainingSecondsFormatted: string;
+  progressRatio: number;
+  progressPercent: number;
+  pathLength: number;
+  strokeDashoffset: number;
+  isTimedOut: boolean;
+  phase: 'idle' | 'filling' | 'warning' | 'timeout-reset';
+  statusLabel: string;
+}
+
+/**
+ * Computes progress ring stroke-dashoffset, percentage, and 5-second timeout state
+ * for the visual progress ring around #qr-scanner-reticle.
+ */
+export function computeQrReticleProgressRingMetrics(
+  elapsedMs: number,
+  timeoutMs: number = QR_SCAN_TIMEOUT_MS,
+  pathLength: number = 100
+): QrReticleProgressRingMetrics {
+  const safeTimeout = Math.max(1000, Math.floor(Number(timeoutMs) || QR_SCAN_TIMEOUT_MS));
+  const safePathLen = Math.max(1, Number(pathLength) || 100);
+  const rawElapsed = Math.max(0, Number(elapsedMs) || 0);
+  const isTimedOut = rawElapsed >= safeTimeout;
+  const clampedElapsed = isTimedOut ? safeTimeout : rawElapsed;
+  const remainingMs = Math.max(0, safeTimeout - clampedElapsed);
+  const remainingSec = (remainingMs / 1000).toFixed(1);
+  const progressRatio = Math.min(1, Math.max(0, clampedElapsed / safeTimeout));
+  const progressPercent = Math.round(progressRatio * 100);
+  const strokeDashoffset = Math.round(safePathLen * (1 - progressRatio) * 100) / 100;
+
+  let phase: 'idle' | 'filling' | 'warning' | 'timeout-reset' = 'filling';
+  let statusLabel = `Scanning · ${remainingSec}s`;
+
+  if (rawElapsed <= 0) {
+    phase = 'idle';
+    statusLabel = `Scanning · ${(safeTimeout / 1000).toFixed(1)}s`;
+  } else if (isTimedOut) {
+    phase = 'timeout-reset';
+    statusLabel = 'No QR detected (5s) · Resetting…';
+  } else if (remainingMs <= 1200) {
+    phase = 'warning';
+    statusLabel = `Align QR code · ${remainingSec}s`;
+  }
+
+  return {
+    timeoutMs: safeTimeout,
+    elapsedMs: clampedElapsed,
+    remainingMs,
+    remainingSecondsFormatted: `${remainingSec}s`,
+    progressRatio,
+    progressPercent,
+    pathLength: safePathLen,
+    strokeDashoffset,
+    isTimedOut,
+    phase,
+    statusLabel,
+  };
+}

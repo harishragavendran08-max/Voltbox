@@ -6797,49 +6797,315 @@ body.can-report .card-flag {
   display: none;
 }
 
-/* Cyber Reticle Overlay with Amber/Gold Corners */
+/* Cyber Reticle Overlay with Amber/Gold Corners & 5s Visual Progress Ring */
+#qr-scanner-reticle,
 .qr-scanner-reticle {
+  --qr-ring-offset: 100;
   position: absolute;
   inset: 22px;
   pointer-events: none;
+  transition: inset 0.28s cubic-bezier(0.22, 1, 0.36, 1), transform 0.28s cubic-bezier(0.22, 1, 0.36, 1);
 }
 
+/* Visual Progress Ring around #qr-scanner-reticle */
+.qr-reticle-progress-ring {
+  position: absolute;
+  inset: -7px;
+  pointer-events: none;
+  z-index: 1;
+}
+
+.qr-reticle-progress-svg {
+  width: 100%;
+  height: 100%;
+  display: block;
+  overflow: visible;
+}
+
+.qr-reticle-ring-track {
+  fill: none;
+  stroke: rgba(255, 210, 63, 0.14);
+  stroke-width: 2.2px;
+  vector-effect: non-scaling-stroke;
+}
+
+.qr-reticle-ring-progress {
+  fill: none;
+  stroke: #ffd23f;
+  stroke-width: 2.8px;
+  stroke-linecap: round;
+  stroke-dasharray: 100;
+  stroke-dashoffset: var(--qr-ring-offset, 100);
+  vector-effect: non-scaling-stroke;
+  filter: drop-shadow(0 0 6px rgba(255, 210, 63, 0.6));
+  transition: stroke-dashoffset 0.12s linear, stroke 0.2s ease, opacity 0.2s ease;
+}
+
+#qr-scanner-reticle.scan-warning .qr-reticle-ring-progress {
+  stroke: #ff9f0a;
+  filter: drop-shadow(0 0 8px rgba(255, 159, 10, 0.8));
+}
+
+#qr-scanner-reticle.scan-timeout-reset .qr-reticle-ring-progress {
+  stroke: #ff453a;
+  filter: drop-shadow(0 0 10px rgba(255, 69, 58, 0.85));
+  transition: stroke-dashoffset 0.18s ease-out, stroke 0.15s ease;
+}
+
+#qr-scanner-reticle.scan-detected .qr-reticle-ring-progress {
+  stroke: #10b981 !important;
+  stroke-dashoffset: 0 !important;
+  filter: drop-shadow(0 0 12px rgba(16, 185, 129, 0.9));
+}
+
+.qr-reticle-timeout-badge {
+  position: absolute;
+  top: -11px;
+  left: 50%;
+  transform: translateX(-50%);
+  padding: 2px 9px;
+  border-radius: 999px;
+  background: rgba(15, 17, 23, 0.88);
+  border: 1px solid rgba(255, 210, 63, 0.38);
+  color: #ffd23f;
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  white-space: nowrap;
+  opacity: 0;
+  transition: opacity 0.2s ease, border-color 0.2s ease, color 0.2s ease, transform 0.2s ease;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.45);
+}
+
+#qr-scanner-reticle.scan-in-progress .qr-reticle-timeout-badge,
+#qr-scanner-reticle.scan-timeout-reset .qr-reticle-timeout-badge {
+  opacity: 1;
+}
+
+#qr-scanner-reticle.scan-warning .qr-reticle-timeout-badge {
+  border-color: rgba(255, 159, 10, 0.65);
+  color: #ff9f0a;
+}
+
+#qr-scanner-reticle.scan-timeout-reset .qr-reticle-timeout-badge {
+  border-color: rgba(255, 69, 58, 0.75);
+  color: #ff453a;
+  transform: translateX(-50%) scale(1.04);
+}
+
+#qr-scanner-reticle .qr-scanner-corner,
 .qr-scanner-corner {
   position: absolute;
   width: 26px;
   height: 26px;
+  will-change: transform, width, height, border-color, box-shadow, opacity;
+  box-shadow: 0 0 8px rgba(255, 210, 63, 0.28);
+  animation: qrReticleCornerIdlePulse 2.6s ease-in-out infinite;
+  transition:
+    transform 0.32s cubic-bezier(0.34, 1.56, 0.64, 1),
+    width 0.28s cubic-bezier(0.22, 1, 0.36, 1),
+    height 0.28s cubic-bezier(0.22, 1, 0.36, 1),
+    border-color 0.18s ease-out,
+    box-shadow 0.22s ease-out;
 }
 
+#qr-scanner-reticle .qr-scanner-corner.tl,
 .qr-scanner-corner.tl {
   top: 0;
   left: 0;
+  transform-origin: top left;
   border-top: 3px solid #ffd23f;
   border-left: 3px solid #ffd23f;
   border-top-left-radius: 6px;
 }
 
+#qr-scanner-reticle .qr-scanner-corner.tr,
 .qr-scanner-corner.tr {
   top: 0;
   right: 0;
+  transform-origin: top right;
   border-top: 3px solid #ffd23f;
   border-right: 3px solid #ffd23f;
   border-top-right-radius: 6px;
 }
 
+#qr-scanner-reticle .qr-scanner-corner.bl,
 .qr-scanner-corner.bl {
   bottom: 0;
   left: 0;
+  transform-origin: bottom left;
   border-bottom: 3px solid #ffd23f;
   border-left: 3px solid #ffd23f;
   border-bottom-left-radius: 6px;
 }
 
+#qr-scanner-reticle .qr-scanner-corner.br,
 .qr-scanner-corner.br {
   bottom: 0;
   right: 0;
+  transform-origin: bottom right;
   border-bottom: 3px solid #ffd23f;
   border-right: 3px solid #ffd23f;
   border-bottom-right-radius: 6px;
+}
+
+/* 1. Subtle Glowing Pulse Animation when #qr-scanner-reticle is Idling */
+@keyframes qrReticleCornerIdlePulse {
+  0%,
+  100% {
+    opacity: 0.76;
+    transform: scale(1);
+    box-shadow: 0 0 6px rgba(255, 210, 63, 0.22);
+  }
+  50% {
+    opacity: 1;
+    transform: scale(1.045);
+    box-shadow: 0 0 15px rgba(255, 210, 63, 0.62), 0 0 24px rgba(245, 158, 11, 0.28);
+  }
+}
+
+/* 2. Pronounced Double-Beat Heartbeat Effect when a Scan is in Progress */
+@keyframes qrReticleCornerHeartbeatTL {
+  0%,
+  100% {
+    opacity: 0.92;
+    transform: translate(0, 0) scale(1);
+    box-shadow: 0 0 10px rgba(255, 210, 63, 0.45);
+  }
+  14% {
+    opacity: 1;
+    transform: translate(-2px, -2px) scale(1.13);
+    box-shadow: 0 0 18px rgba(255, 210, 63, 0.85), 0 0 28px rgba(245, 158, 11, 0.55);
+  }
+  28% {
+    opacity: 0.95;
+    transform: translate(0, 0) scale(1.03);
+    box-shadow: 0 0 12px rgba(255, 210, 63, 0.55);
+  }
+  42% {
+    opacity: 1;
+    transform: translate(-3px, -3px) scale(1.18);
+    box-shadow: 0 0 22px rgba(255, 210, 63, 0.95), 0 0 34px rgba(245, 158, 11, 0.68);
+  }
+  70% {
+    opacity: 0.92;
+    transform: translate(0, 0) scale(1);
+    box-shadow: 0 0 10px rgba(255, 210, 63, 0.45);
+  }
+}
+
+@keyframes qrReticleCornerHeartbeatTR {
+  0%,
+  100% {
+    opacity: 0.92;
+    transform: translate(0, 0) scale(1);
+    box-shadow: 0 0 10px rgba(255, 210, 63, 0.45);
+  }
+  14% {
+    opacity: 1;
+    transform: translate(2px, -2px) scale(1.13);
+    box-shadow: 0 0 18px rgba(255, 210, 63, 0.85), 0 0 28px rgba(245, 158, 11, 0.55);
+  }
+  28% {
+    opacity: 0.95;
+    transform: translate(0, 0) scale(1.03);
+    box-shadow: 0 0 12px rgba(255, 210, 63, 0.55);
+  }
+  42% {
+    opacity: 1;
+    transform: translate(3px, -3px) scale(1.18);
+    box-shadow: 0 0 22px rgba(255, 210, 63, 0.95), 0 0 34px rgba(245, 158, 11, 0.68);
+  }
+  70% {
+    opacity: 0.92;
+    transform: translate(0, 0) scale(1);
+    box-shadow: 0 0 10px rgba(255, 210, 63, 0.45);
+  }
+}
+
+@keyframes qrReticleCornerHeartbeatBL {
+  0%,
+  100% {
+    opacity: 0.92;
+    transform: translate(0, 0) scale(1);
+    box-shadow: 0 0 10px rgba(255, 210, 63, 0.45);
+  }
+  14% {
+    opacity: 1;
+    transform: translate(-2px, 2px) scale(1.13);
+    box-shadow: 0 0 18px rgba(255, 210, 63, 0.85), 0 0 28px rgba(245, 158, 11, 0.55);
+  }
+  28% {
+    opacity: 0.95;
+    transform: translate(0, 0) scale(1.03);
+    box-shadow: 0 0 12px rgba(255, 210, 63, 0.55);
+  }
+  42% {
+    opacity: 1;
+    transform: translate(-3px, 3px) scale(1.18);
+    box-shadow: 0 0 22px rgba(255, 210, 63, 0.95), 0 0 34px rgba(245, 158, 11, 0.68);
+  }
+  70% {
+    opacity: 0.92;
+    transform: translate(0, 0) scale(1);
+    box-shadow: 0 0 10px rgba(255, 210, 63, 0.45);
+  }
+}
+
+@keyframes qrReticleCornerHeartbeatBR {
+  0%,
+  100% {
+    opacity: 0.92;
+    transform: translate(0, 0) scale(1);
+    box-shadow: 0 0 10px rgba(255, 210, 63, 0.45);
+  }
+  14% {
+    opacity: 1;
+    transform: translate(2px, 2px) scale(1.13);
+    box-shadow: 0 0 18px rgba(255, 210, 63, 0.85), 0 0 28px rgba(245, 158, 11, 0.55);
+  }
+  28% {
+    opacity: 0.95;
+    transform: translate(0, 0) scale(1.03);
+    box-shadow: 0 0 12px rgba(255, 210, 63, 0.55);
+  }
+  42% {
+    opacity: 1;
+    transform: translate(3px, 3px) scale(1.18);
+    box-shadow: 0 0 22px rgba(255, 210, 63, 0.95), 0 0 34px rgba(245, 158, 11, 0.68);
+  }
+  70% {
+    opacity: 0.92;
+    transform: translate(0, 0) scale(1);
+    box-shadow: 0 0 10px rgba(255, 210, 63, 0.45);
+  }
+}
+
+#qr-scanner-reticle.scan-in-progress:not(.scan-detected) .qr-scanner-corner,
+.qr-scanner-reticle.scan-in-progress:not(.scan-detected) .qr-scanner-corner {
+  width: 28px;
+  height: 28px;
+  border-color: #ffe066;
+}
+
+#qr-scanner-reticle.scan-in-progress:not(.scan-detected) .qr-scanner-corner.tl,
+.qr-scanner-reticle.scan-in-progress:not(.scan-detected) .qr-scanner-corner.tl {
+  animation: qrReticleCornerHeartbeatTL 1.12s cubic-bezier(0.22, 1, 0.36, 1) infinite;
+}
+
+#qr-scanner-reticle.scan-in-progress:not(.scan-detected) .qr-scanner-corner.tr,
+.qr-scanner-reticle.scan-in-progress:not(.scan-detected) .qr-scanner-corner.tr {
+  animation: qrReticleCornerHeartbeatTR 1.12s cubic-bezier(0.22, 1, 0.36, 1) infinite;
+}
+
+#qr-scanner-reticle.scan-in-progress:not(.scan-detected) .qr-scanner-corner.bl,
+.qr-scanner-reticle.scan-in-progress:not(.scan-detected) .qr-scanner-corner.bl {
+  animation: qrReticleCornerHeartbeatBL 1.12s cubic-bezier(0.22, 1, 0.36, 1) infinite;
+}
+
+#qr-scanner-reticle.scan-in-progress:not(.scan-detected) .qr-scanner-corner.br,
+.qr-scanner-reticle.scan-in-progress:not(.scan-detected) .qr-scanner-corner.br {
+  animation: qrReticleCornerHeartbeatBR 1.12s cubic-bezier(0.22, 1, 0.36, 1) infinite;
 }
 
 /* Animated Laser Sweep Line */
@@ -6851,6 +7117,13 @@ body.can-report .card-flag {
   background: linear-gradient(90deg, transparent, #ffd23f, #f59e0b, transparent);
   box-shadow: 0 0 10px #ffd23f, 0 0 18px #f59e0b;
   animation: qrLaserSweep 2.2s ease-in-out infinite alternate;
+}
+
+#qr-scanner-reticle.scan-in-progress:not(.scan-detected) .qr-scanner-laser,
+.qr-scanner-reticle.scan-in-progress:not(.scan-detected) .qr-scanner-laser {
+  height: 2.5px;
+  box-shadow: 0 0 14px #ffd23f, 0 0 24px #f59e0b;
+  animation: qrLaserSweep 1.25s ease-in-out infinite alternate;
 }
 
 @keyframes qrLaserSweep {
@@ -6867,13 +7140,100 @@ body.can-report .card-flag {
   }
 }
 
-/* Reticle QR Code Detected State (Synchronized with Audio Ping) */
-.qr-scanner-reticle.scan-detected .qr-scanner-corner {
-  border-color: #10b981 !important;
-  box-shadow: 0 0 16px rgba(16, 185, 129, 0.7);
-  transition: all 0.15s ease-out;
+@keyframes qrReticleCornerScaleTL {
+  0% {
+    transform: translate(0, 0) scale(1);
+  }
+  45% {
+    transform: translate(-4px, -4px) scale(1.28);
+  }
+  75% {
+    transform: translate(2px, 2px) scale(1.12);
+  }
+  100% {
+    transform: translate(0, 0) scale(1.18);
+  }
 }
 
+@keyframes qrReticleCornerScaleTR {
+  0% {
+    transform: translate(0, 0) scale(1);
+  }
+  45% {
+    transform: translate(4px, -4px) scale(1.28);
+  }
+  75% {
+    transform: translate(-2px, 2px) scale(1.12);
+  }
+  100% {
+    transform: translate(0, 0) scale(1.18);
+  }
+}
+
+@keyframes qrReticleCornerScaleBL {
+  0% {
+    transform: translate(0, 0) scale(1);
+  }
+  45% {
+    transform: translate(-4px, 4px) scale(1.28);
+  }
+  75% {
+    transform: translate(2px, -2px) scale(1.12);
+  }
+  100% {
+    transform: translate(0, 0) scale(1.18);
+  }
+}
+
+@keyframes qrReticleCornerScaleBR {
+  0% {
+    transform: translate(0, 0) scale(1);
+  }
+  45% {
+    transform: translate(4px, 4px) scale(1.28);
+  }
+  75% {
+    transform: translate(-2px, -2px) scale(1.12);
+  }
+  100% {
+    transform: translate(0, 0) scale(1.18);
+  }
+}
+
+/* Reticle QR Code Detected State (Synchronized with Audio Ping & Corner Scaling) */
+#qr-scanner-reticle.scan-detected .qr-scanner-corner,
+.qr-scanner-reticle.scan-detected .qr-scanner-corner {
+  width: 32px;
+  height: 32px;
+  border-color: #10b981 !important;
+  box-shadow: 0 0 18px rgba(16, 185, 129, 0.78);
+}
+
+#qr-scanner-reticle.scan-detected .qr-scanner-corner.tl,
+.qr-scanner-reticle.scan-detected .qr-scanner-corner.tl {
+  transform: scale(1.18);
+  animation: qrReticleCornerScaleTL 0.42s cubic-bezier(0.34, 1.56, 0.64, 1) forwards;
+}
+
+#qr-scanner-reticle.scan-detected .qr-scanner-corner.tr,
+.qr-scanner-reticle.scan-detected .qr-scanner-corner.tr {
+  transform: scale(1.18);
+  animation: qrReticleCornerScaleTR 0.42s cubic-bezier(0.34, 1.56, 0.64, 1) forwards;
+}
+
+#qr-scanner-reticle.scan-detected .qr-scanner-corner.bl,
+.qr-scanner-reticle.scan-detected .qr-scanner-corner.bl {
+  transform: scale(1.18);
+  animation: qrReticleCornerScaleBL 0.42s cubic-bezier(0.34, 1.56, 0.64, 1) forwards;
+}
+
+#qr-scanner-reticle.scan-detected .qr-scanner-corner.br,
+.qr-scanner-reticle.scan-detected .qr-scanner-corner.br {
+  transform: scale(1.18);
+  animation: qrReticleCornerScaleBR 0.42s cubic-bezier(0.34, 1.56, 0.64, 1) forwards;
+}
+
+#qr-scanner-reticle.scan-detected .qr-scanner-laser,
 .qr-scanner-reticle.scan-detected .qr-scanner-laser {
   background: #10b981 !important;
   box-shadow: 0 0 16px #10b981, 0 0 28px rgba(16, 185, 129, 0.9) !important;
@@ -21188,3 +21548,973 @@ html[data-color-mode="light"] .spec-drawer .spec-sec-nav-btn.active {
   border-color: #007aff !important;
   color: #ffffff !important;
 }
+
+
+/* ============================================================================
+   APPLE iOS TRUE BLACK PRO DARK THEME (html[data-color-mode="dark"] & body.ios-dark-mode)
+   OLED True Black Canvas (#000000) + Grouped Secondary Surfaces (#161618)
+   + Frosted Specular Glass (saturate(180%) blur(24px))
+   + Apple System Blue (#0A84FF), System Green (#30D158), System Orange (#FF9F0A), System Gold (#FFD60A)
+   + WCAG AA Compliant Crisp Typography & Authentic Segmented Controls
+   ============================================================================ */
+
+html[data-color-mode="dark"],
+html[data-color-mode="dark"] body,
+body.ios-dark-mode {
+  --bg: #000000 !important;
+  --bg-rgb: 0, 0, 0 !important;
+  --card: #161618 !important;
+  --card-hover: #222226 !important;
+  --line: rgba(255, 255, 255, 0.08) !important;
+  --text: #ffffff !important;
+  --muted: #a1a1aa !important;
+  --accent: #0a84ff !important;
+  --accent-rgb: 10, 132, 255 !important;
+  --accent-2: #30d158 !important;
+  --accent-glow: rgba(10, 132, 255, 0.22) !important;
+  background-color: #000000 !important;
+  color: #ffffff !important;
+  font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "SF Pro Display", "Helvetica Neue", system-ui, sans-serif !important;
+}
+
+/* Mute the legacy noisy cyan PCB canvas in Dark Mode for pure Apple OLED luxury */
+html[data-color-mode="dark"] .bg-canvas {
+  opacity: 0.02 !important;
+  filter: grayscale(1) !important;
+}
+
+/* 1. TOPBAR IN APPLE DARK GLASS */
+html[data-color-mode="dark"] .topbar {
+  background: rgba(18, 18, 20, 0.82) !important;
+  backdrop-filter: saturate(180%) blur(24px) !important;
+  -webkit-backdrop-filter: saturate(180%) blur(24px) !important;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08) !important;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.6) !important;
+}
+
+html[data-color-mode="dark"] .logo {
+  background: linear-gradient(135deg, #ffffff 0%, #e5e5ea 55%, #a1a1aa 100%) !important;
+  -webkit-background-clip: text !important;
+  background-clip: text !important;
+  -webkit-text-fill-color: transparent !important;
+  letter-spacing: -0.03em !important;
+  font-weight: 700 !important;
+}
+
+html[data-color-mode="dark"] #product-search {
+  background: rgba(118, 118, 128, 0.22) !important;
+  border: 1px solid rgba(255, 255, 255, 0.08) !important;
+  color: #ffffff !important;
+  border-radius: 12px !important;
+  box-shadow: none !important;
+  font-size: 13.5px !important;
+}
+
+html[data-color-mode="dark"] #product-search::placeholder {
+  color: rgba(235, 235, 245, 0.55) !important;
+}
+
+html[data-color-mode="dark"] #product-search:focus {
+  background: #1c1c1e !important;
+  border-color: #0a84ff !important;
+  box-shadow: 0 0 0 3px rgba(10, 132, 255, 0.25) !important;
+}
+
+html[data-color-mode="dark"] .search-icon {
+  color: rgba(235, 235, 245, 0.6) !important;
+}
+
+html[data-color-mode="dark"] .search-voice-btn {
+  color: #e5e5ea !important;
+}
+
+html[data-color-mode="dark"] .search-voice-btn:hover {
+  color: #0a84ff !important;
+}
+
+html[data-color-mode="dark"] .search-scan-qr-btn {
+  background: rgba(255, 255, 255, 0.08) !important;
+  border: 1px solid rgba(255, 255, 255, 0.12) !important;
+  color: #0a84ff !important;
+  border-radius: 10px !important;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.3) !important;
+}
+
+html[data-color-mode="dark"] .search-scan-qr-btn:hover {
+  background: rgba(10, 132, 255, 0.16) !important;
+  border-color: #0a84ff !important;
+  color: #64d2ff !important;
+}
+
+html[data-color-mode="dark"] .topbar-pill-btn,
+html[data-color-mode="dark"] .icon-btn,
+html[data-color-mode="dark"] .admin-link-btn,
+html[data-color-mode="dark"] .compare-trigger-btn,
+html[data-color-mode="dark"] .orders-trigger-btn,
+html[data-color-mode="dark"] .store-map-btn {
+  background: rgba(255, 255, 255, 0.06) !important;
+  border: 1px solid rgba(255, 255, 255, 0.1) !important;
+  color: #f2f2f7 !important;
+  border-radius: 999px !important;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.35) !important;
+  font-weight: 500 !important;
+}
+
+html[data-color-mode="dark"] .topbar-pill-btn:hover,
+html[data-color-mode="dark"] .icon-btn:hover,
+html[data-color-mode="dark"] .admin-link-btn:hover,
+html[data-color-mode="dark"] .compare-trigger-btn:hover,
+html[data-color-mode="dark"] .orders-trigger-btn:hover,
+html[data-color-mode="dark"] .store-map-btn:hover {
+  background: rgba(255, 255, 255, 0.12) !important;
+  border-color: #0a84ff !important;
+  color: #64d2ff !important;
+}
+
+html[data-color-mode="dark"] .topbar-pill-btn .badge,
+html[data-color-mode="dark"] .icon-btn .badge,
+html[data-color-mode="dark"] .compare-badge,
+html[data-color-mode="dark"] .orders-badge,
+html[data-color-mode="dark"] .cart-badge {
+  background: #0a84ff !important;
+  color: #ffffff !important;
+  border: none !important;
+  font-weight: 600 !important;
+  border-radius: 999px !important;
+}
+
+html[data-color-mode="dark"] .ios-theme-mode-btn {
+  background: rgba(44, 44, 46, 0.88) !important;
+  border: 1px solid rgba(255, 255, 255, 0.14) !important;
+  color: #ffffff !important;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.4) !important;
+  border-radius: 999px !important;
+}
+
+html[data-color-mode="dark"] .ios-theme-mode-btn:hover {
+  background: rgba(58, 58, 60, 1) !important;
+  border-color: #0a84ff !important;
+  color: #64d2ff !important;
+}
+
+/* 2. REFINED RIG COMPATIBILITY & TELEMETRY STRIP (REPLACES MESSY CYAN/ORANGE NOISE) */
+html[data-color-mode="dark"] .rig-promo-strip > div,
+html[data-color-mode="dark"] .rig-status-card,
+html[data-color-mode="dark"] .psu-meter-card,
+html[data-color-mode="dark"] .promo-wallet-card,
+html[data-color-mode="dark"] .studio-rig-status-card,
+html[data-color-mode="dark"] .studio-psu-card,
+html[data-color-mode="dark"] .studio-deals-card {
+  background: rgba(22, 22, 24, 0.85) !important;
+  backdrop-filter: blur(20px) !important;
+  -webkit-backdrop-filter: blur(20px) !important;
+  border: 1px solid rgba(255, 255, 255, 0.08) !important;
+  border-radius: 18px !important;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.45) !important;
+  color: #ffffff !important;
+}
+
+html[data-color-mode="dark"] .rig-kicker,
+html[data-color-mode="dark"] .psu-kicker,
+html[data-color-mode="dark"] .promo-kicker {
+  color: #8e8e93 !important;
+  font-size: 11px !important;
+  letter-spacing: 0.04em !important;
+  font-weight: 600 !important;
+}
+
+html[data-color-mode="dark"] .rig-slot-pill,
+html[data-color-mode="dark"] .promo-chip,
+html[data-color-mode="dark"] .studio-promo-chip {
+  background: rgba(44, 44, 46, 0.6) !important;
+  border: 1px solid rgba(255, 255, 255, 0.08) !important;
+  color: #aeaeb2 !important;
+  border-radius: 8px !important;
+}
+
+html[data-color-mode="dark"] .rig-slot-pill.filled {
+  background: rgba(48, 209, 88, 0.16) !important;
+  border-color: rgba(48, 209, 88, 0.4) !important;
+  color: #30d158 !important;
+  font-weight: 600 !important;
+}
+
+html[data-color-mode="dark"] .psu-meter-track,
+html[data-color-mode="dark"] .meter-bar {
+  background: rgba(255, 255, 255, 0.08) !important;
+  border-radius: 999px !important;
+}
+
+html[data-color-mode="dark"] .psu-meter-fill {
+  background: linear-gradient(90deg, #30d158 0%, #ffd60a 70%, #ff9f0a 100%) !important;
+  border-radius: 999px !important;
+  box-shadow: 0 0 8px rgba(48, 209, 88, 0.3) !important;
+}
+
+html[data-color-mode="dark"] .psu-watt-readout,
+html[data-color-mode="dark"] .rig-watt-val {
+  color: #ffffff !important;
+  font-weight: 700 !important;
+}
+
+html[data-color-mode="dark"] .rig-ready-btn,
+html[data-color-mode="dark"] .rig-ready-badge {
+  background: rgba(48, 209, 88, 0.16) !important;
+  border: 1px solid rgba(48, 209, 88, 0.4) !important;
+  color: #30d158 !important;
+  border-radius: 10px !important;
+  font-weight: 600 !important;
+}
+
+/* 3. CATALOG TOOLBAR & SEGMENTED CONTROLS */
+html[data-color-mode="dark"] .catalog-toolbar {
+  background: rgba(20, 20, 22, 0.82) !important;
+  backdrop-filter: saturate(180%) blur(20px) !important;
+  -webkit-backdrop-filter: saturate(180%) blur(20px) !important;
+  border: 1px solid rgba(255, 255, 255, 0.08) !important;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.45) !important;
+  border-radius: 18px !important;
+}
+
+html[data-color-mode="dark"] .filter-tab {
+  background: transparent !important;
+  border: 1px solid transparent !important;
+  color: #aeaeb2 !important;
+  border-radius: 9px !important;
+  font-weight: 500 !important;
+  transition: all 0.16s ease !important;
+}
+
+html[data-color-mode="dark"] .filter-tab:hover {
+  background: rgba(255, 255, 255, 0.06) !important;
+  color: #ffffff !important;
+}
+
+html[data-color-mode="dark"] .filter-tab.active {
+  background: rgba(10, 132, 255, 0.22) !important;
+  border: 1px solid rgba(10, 132, 255, 0.45) !important;
+  color: #ffffff !important;
+  font-weight: 600 !important;
+  box-shadow: 0 2px 10px rgba(10, 132, 255, 0.3) !important;
+}
+
+html[data-color-mode="dark"] .filter-count {
+  background: rgba(255, 255, 255, 0.08) !important;
+  color: #aeaeb2 !important;
+  border: none !important;
+  border-radius: 999px !important;
+  padding: 1px 6px !important;
+  font-size: 11px !important;
+}
+
+html[data-color-mode="dark"] .filter-tab.active .filter-count {
+  background: rgba(10, 132, 255, 0.4) !important;
+  color: #ffffff !important;
+}
+
+html[data-color-mode="dark"] .catalog-results-meta {
+  color: #8e8e93 !important;
+}
+
+html[data-color-mode="dark"] .catalog-results-meta strong,
+html[data-color-mode="dark"] .results-count-compact strong {
+  color: #ffffff !important;
+}
+
+html[data-color-mode="dark"] .sort-wrap,
+html[data-color-mode="dark"] .view-toggle-group,
+html[data-color-mode="dark"] .catalog-filters-toggle-btn,
+html[data-color-mode="dark"] .compare-all-visible-btn,
+html[data-color-mode="dark"] .batch-edit-trigger-btn,
+html[data-color-mode="dark"] .catalog-reset-filters-btn,
+html[data-color-mode="dark"] .catalog-keyboard-hint {
+  background: rgba(44, 44, 46, 0.72) !important;
+  border: 1px solid rgba(255, 255, 255, 0.1) !important;
+  color: #f2f2f7 !important;
+  border-radius: 10px !important;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3) !important;
+}
+
+html[data-color-mode="dark"] #sort-select {
+  background: transparent !important;
+  color: #ffffff !important;
+}
+
+html[data-color-mode="dark"] .view-toggle-btn {
+  color: #8e8e93 !important;
+}
+
+html[data-color-mode="dark"] .view-toggle-btn.active {
+  background: #3a3a3c !important;
+  color: #ffffff !important;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.35) !important;
+  border-radius: 8px !important;
+}
+
+html[data-color-mode="dark"] .topbar-rig-pill-btn,
+html[data-color-mode="dark"] .catalog-rig-pill-btn {
+  background: rgba(10, 132, 255, 0.15) !important;
+  border: 1px solid rgba(10, 132, 255, 0.38) !important;
+  color: #64d2ff !important;
+  border-radius: 10px !important;
+}
+
+html[data-color-mode="dark"] .topbar-rig-pill-btn:hover,
+html[data-color-mode="dark"] .catalog-rig-pill-btn:hover {
+  background: rgba(10, 132, 255, 0.25) !important;
+  border-color: #0a84ff !important;
+}
+
+html[data-color-mode="dark"] .catalog-expandable-drawer {
+  background: #111113 !important;
+  border-top: 1px solid rgba(255, 255, 255, 0.08) !important;
+}
+
+html[data-color-mode="dark"] .stock-filter-chip,
+html[data-color-mode="dark"] .budget-chip {
+  background: rgba(44, 44, 46, 0.7) !important;
+  border: 1px solid rgba(255, 255, 255, 0.1) !important;
+  color: #aeaeb2 !important;
+  border-radius: 999px !important;
+}
+
+html[data-color-mode="dark"] .stock-filter-chip.active,
+html[data-color-mode="dark"] .budget-chip.active {
+  background: rgba(10, 132, 255, 0.22) !important;
+  border-color: #0a84ff !important;
+  color: #ffffff !important;
+  box-shadow: 0 2px 8px rgba(10, 132, 255, 0.25) !important;
+}
+
+/* 4. PRODUCT CARDS IN APPLE DARK ELEGANCE */
+html[data-color-mode="dark"] #product-grid.grid:not(.list-view) > .card,
+html[data-color-mode="dark"] .card {
+  background: rgba(22, 22, 24, 0.88) !important;
+  backdrop-filter: blur(16px) !important;
+  -webkit-backdrop-filter: blur(16px) !important;
+  border: 1px solid rgba(255, 255, 255, 0.08) !important;
+  border-radius: 18px !important;
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.45) !important;
+  color: #ffffff !important;
+  transition: transform 0.2s cubic-bezier(0.16, 1, 0.3, 1), box-shadow 0.2s cubic-bezier(0.16, 1, 0.3, 1), border-color 0.2s ease !important;
+}
+
+html[data-color-mode="dark"] #product-grid.grid:not(.list-view) > .card:hover,
+html[data-color-mode="dark"] .card:hover {
+  transform: translateY(-3px) !important;
+  border-color: rgba(10, 132, 255, 0.45) !important;
+  box-shadow: 0 14px 36px rgba(0, 0, 0, 0.7), 0 0 20px rgba(10, 132, 255, 0.16) !important;
+}
+
+html[data-color-mode="dark"] #product-grid.grid:not(.list-view) > .card > .card-img-wrap,
+html[data-color-mode="dark"] .card .card-img-wrap {
+  background: #111113 !important;
+  border: 1px solid rgba(255, 255, 255, 0.06) !important;
+  border-radius: 14px !important;
+}
+
+html[data-color-mode="dark"] .card-img-wrap img {
+  filter: drop-shadow(0 4px 14px rgba(0, 0, 0, 0.5)) !important;
+}
+
+html[data-color-mode="dark"] .card-title-btn {
+  color: #ffffff !important;
+  font-weight: 600 !important;
+  font-size: 15.5px !important;
+  letter-spacing: -0.015em !important;
+}
+
+html[data-color-mode="dark"] .card-title-btn:hover {
+  color: #64d2ff !important;
+}
+
+html[data-color-mode="dark"] .card-desc {
+  color: #a1a1aa !important;
+  font-size: 13px !important;
+  line-height: 1.45 !important;
+}
+
+html[data-color-mode="dark"] .card-price,
+html[data-color-mode="dark"] .card-price-val {
+  color: #ffffff !important;
+  font-weight: 700 !important;
+  font-size: 1.35rem !important;
+  letter-spacing: -0.02em !important;
+}
+
+html[data-color-mode="dark"] .card-badge,
+html[data-color-mode="dark"] .card-deal-badge,
+html[data-color-mode="dark"] .deal-pill {
+  background: rgba(255, 159, 10, 0.16) !important;
+  border: 1px solid rgba(255, 159, 10, 0.38) !important;
+  color: #ff9f0a !important;
+  border-radius: 8px !important;
+  font-weight: 600 !important;
+  font-size: 11.5px !important;
+}
+
+html[data-color-mode="dark"] .price-alert-btn,
+html[data-color-mode="dark"] .card-alert-btn {
+  background: rgba(44, 44, 46, 0.85) !important;
+  border: 1px solid rgba(255, 255, 255, 0.12) !important;
+  color: #ffd60a !important;
+  border-radius: 8px !important;
+}
+
+html[data-color-mode="dark"] .card-wishlist-btn,
+html[data-color-mode="dark"] .card-report-btn {
+  background: rgba(30, 30, 32, 0.8) !important;
+  border: 1px solid rgba(255, 255, 255, 0.1) !important;
+  color: #e5e5ea !important;
+  border-radius: 999px !important;
+}
+
+html[data-color-mode="dark"] .card-wishlist-btn:hover,
+html[data-color-mode="dark"] .card-report-btn:hover {
+  background: #3a3a3c !important;
+  color: #ff375f !important;
+}
+
+html[data-color-mode="dark"] .card-stock-label,
+html[data-color-mode="dark"] .stock-indicator-text {
+  color: #30d158 !important;
+  font-size: 12px !important;
+  font-weight: 500 !important;
+}
+
+html[data-color-mode="dark"] .card-specs-link,
+html[data-color-mode="dark"] .chart-toggle-btn {
+  background: rgba(255, 255, 255, 0.06) !important;
+  border: 1px solid rgba(255, 255, 255, 0.1) !important;
+  color: #e5e5ea !important;
+  border-radius: 8px !important;
+  font-weight: 500 !important;
+}
+
+html[data-color-mode="dark"] .card-specs-link:hover,
+html[data-color-mode="dark"] .chart-toggle-btn:hover {
+  background: rgba(10, 132, 255, 0.18) !important;
+  border-color: #0a84ff !important;
+  color: #64d2ff !important;
+}
+
+/* Star Rating in Apple System Gold / Warm Amber (No ugly blue stars!) */
+html[data-color-mode="dark"] .star-rating,
+html[data-color-mode="dark"] .star-rating svg,
+html[data-color-mode="dark"] .star-icon,
+html[data-color-mode="dark"] .star-fill {
+  color: #ffb340 !important;
+  fill: #ffb340 !important;
+}
+
+html[data-color-mode="dark"] .rating-score,
+html[data-color-mode="dark"] .rating-val {
+  color: #ffffff !important;
+  font-weight: 600 !important;
+}
+
+html[data-color-mode="dark"] .rating-count,
+html[data-color-mode="dark"] .reviews-count {
+  color: #8e8e93 !important;
+}
+
+html[data-color-mode="dark"] .card-sku-barcode {
+  background: rgba(255, 255, 255, 0.04) !important;
+  border: 1px solid rgba(255, 255, 255, 0.07) !important;
+  color: #aeaeb2 !important;
+  border-radius: 8px !important;
+}
+
+html[data-color-mode="dark"] .card-sku-barcode .sku-code {
+  color: #ffffff !important;
+}
+
+html[data-color-mode="dark"] .card-compare-btn,
+html[data-color-mode="dark"] .card-quick-actions-btn {
+  background: rgba(255, 255, 255, 0.06) !important;
+  border: 1px solid rgba(255, 255, 255, 0.1) !important;
+  color: #e5e5ea !important;
+  border-radius: 8px !important;
+}
+
+html[data-color-mode="dark"] .card-compare-btn:hover,
+html[data-color-mode="dark"] .card-quick-actions-btn:hover {
+  background: rgba(10, 132, 255, 0.18) !important;
+  border-color: #0a84ff !important;
+  color: #64d2ff !important;
+}
+
+/* Quantity Stepper in iOS Hardware Tone */
+html[data-color-mode="dark"] .card .qty {
+  background: rgba(44, 44, 46, 0.8) !important;
+  border: 1px solid rgba(255, 255, 255, 0.12) !important;
+  border-radius: 10px !important;
+}
+
+html[data-color-mode="dark"] .card .qty-btn {
+  background: transparent !important;
+  color: #ffffff !important;
+  border: none !important;
+}
+
+html[data-color-mode="dark"] .card .qty-btn.plus {
+  background: #0a84ff !important;
+  color: #ffffff !important;
+  border-radius: 6px !important;
+}
+
+html[data-color-mode="dark"] .card .qty-value {
+  color: #ffffff !important;
+  font-weight: 600 !important;
+}
+
+/* 5. STICKY BOTTOM ORDER / CHECKOUT BAR */
+html[data-color-mode="dark"] .order-bar {
+  background: rgba(20, 20, 22, 0.88) !important;
+  backdrop-filter: saturate(180%) blur(24px) !important;
+  -webkit-backdrop-filter: saturate(180%) blur(24px) !important;
+  border: 1px solid rgba(255, 255, 255, 0.12) !important;
+  box-shadow: 0 14px 44px rgba(0, 0, 0, 0.75) !important;
+  border-radius: 20px !important;
+  color: #ffffff !important;
+}
+
+html[data-color-mode="dark"] .order-bar .order-breakdown-toggle-btn {
+  color: #a1a1aa !important;
+}
+
+html[data-color-mode="dark"] .order-bar .order-total-amount,
+html[data-color-mode="dark"] .order-bar .odometer {
+  color: #ffffff !important;
+  font-weight: 700 !important;
+}
+
+html[data-color-mode="dark"] .order-bar .checkout-btn,
+html[data-color-mode="dark"] .order-bar #checkout-btn {
+  background: #0a84ff !important;
+  border: 1px solid #0a84ff !important;
+  color: #ffffff !important;
+  border-radius: 14px !important;
+  font-weight: 600 !important;
+  box-shadow: 0 4px 16px rgba(10, 132, 255, 0.4) !important;
+}
+
+html[data-color-mode="dark"] .order-bar .checkout-btn:hover {
+  background: #0071e3 !important;
+}
+
+/* 6. DRAWERS, MODALS & POPUPS */
+html[data-color-mode="dark"] .side-drawer,
+html[data-color-mode="dark"] .spec-drawer,
+html[data-color-mode="dark"] .order-history-drawer,
+html[data-color-mode="dark"] .cart-drawer,
+html[data-color-mode="dark"] .benchmark-drawer {
+  background: rgba(22, 22, 24, 0.96) !important;
+  backdrop-filter: blur(24px) !important;
+  -webkit-backdrop-filter: blur(24px) !important;
+  border-left: 1px solid rgba(255, 255, 255, 0.1) !important;
+  color: #ffffff !important;
+}
+
+html[data-color-mode="dark"] .spec-drawer-section-nav {
+  background: rgba(28, 28, 30, 0.94) !important;
+  backdrop-filter: blur(16px) !important;
+  -webkit-backdrop-filter: blur(16px) !important;
+  border: 1px solid rgba(255, 255, 255, 0.1) !important;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5) !important;
+  border-radius: 12px !important;
+}
+
+html[data-color-mode="dark"] .spec-drawer .spec-sec-nav-btn {
+  color: #aeaeb2 !important;
+}
+
+html[data-color-mode="dark"] .spec-drawer .spec-sec-nav-btn.active {
+  background: #0a84ff !important;
+  border-color: #0a84ff !important;
+  color: #ffffff !important;
+  box-shadow: 0 2px 8px rgba(10, 132, 255, 0.3) !important;
+}
+
+html[data-color-mode="dark"] .product-floating-menu {
+  background: rgba(30, 30, 32, 0.95) !important;
+  backdrop-filter: blur(20px) !important;
+  -webkit-backdrop-filter: blur(20px) !important;
+  border: 1px solid rgba(255, 255, 255, 0.14) !important;
+  box-shadow: 0 14px 40px rgba(0, 0, 0, 0.7) !important;
+  border-radius: 14px !important;
+  color: #ffffff !important;
+}
+
+html[data-color-mode="dark"] .product-menu-item {
+  color: #ffffff !important;
+}
+
+html[data-color-mode="dark"] .product-menu-item:hover {
+  background: rgba(10, 132, 255, 0.2) !important;
+  color: #64d2ff !important;
+}
+
+/* Modals & Dialogs */
+html[data-color-mode="dark"] dialog,
+html[data-color-mode="dark"] .modal-content,
+html[data-color-mode="dark"] .receipt-modal {
+  background: #18181b !important;
+  border: 1px solid rgba(255, 255, 255, 0.12) !important;
+  border-radius: 20px !important;
+  color: #ffffff !important;
+  box-shadow: 0 24px 64px rgba(0, 0, 0, 0.8) !important;
+}
+
+html[data-color-mode="dark"] dialog .card,
+html[data-color-mode="dark"] .modal-content .card,
+html[data-color-mode="dark"] .receipt-stage-card {
+  background: #222226 !important;
+  border: 1px solid rgba(255, 255, 255, 0.08) !important;
+  border-radius: 14px !important;
+}
+
+
+/* 7. RIG BUILDER DRAWER & HARDWARE COMPATIBILITY REFINEMENTS (ANTI-CYAN SLOP) */
+html[data-color-mode="dark"] .drawer-kicker {
+  color: #8e8e93 !important;
+  text-transform: uppercase !important;
+  letter-spacing: 0.04em !important;
+  font-size: 11px !important;
+  font-weight: 600 !important;
+}
+
+html[data-color-mode="dark"] .drawer-title {
+  color: #ffffff !important;
+  font-weight: 700 !important;
+  letter-spacing: -0.02em !important;
+}
+
+html[data-color-mode="dark"] .rig-banner {
+  background: #18181b !important;
+  border: 1px solid rgba(255, 255, 255, 0.08) !important;
+  border-radius: 16px !important;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4) !important;
+}
+
+html[data-color-mode="dark"] .rig-banner.unlocked {
+  background: rgba(10, 132, 255, 0.1) !important;
+  border: 1px solid rgba(10, 132, 255, 0.35) !important;
+}
+
+html[data-color-mode="dark"] .rig-banner-title {
+  color: #0a84ff !important;
+  font-weight: 600 !important;
+  font-size: 14px !important;
+}
+
+html[data-color-mode="dark"] .rig-banner-fraction {
+  color: #a1a1aa !important;
+  font-size: 12px !important;
+}
+
+html[data-color-mode="dark"] .rig-meter-track {
+  background: rgba(255, 255, 255, 0.08) !important;
+  border-radius: 999px !important;
+}
+
+html[data-color-mode="dark"] .rig-meter-fill {
+  background: linear-gradient(90deg, #0a84ff, #30d158) !important;
+  border-radius: 999px !important;
+  box-shadow: 0 0 10px rgba(48, 209, 88, 0.35) !important;
+}
+
+html[data-color-mode="dark"] .rig-banner-sub {
+  color: #a1a1aa !important;
+  font-size: 12.5px !important;
+}
+
+html[data-color-mode="dark"] .rig-slot-card {
+  background: #161618 !important;
+  border: 1px solid rgba(255, 255, 255, 0.08) !important;
+  border-radius: 14px !important;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3) !important;
+  transition: all 0.16s ease !important;
+}
+
+html[data-color-mode="dark"] .rig-slot-card.filled {
+  background: rgba(255, 255, 255, 0.03) !important;
+  border-color: rgba(48, 209, 88, 0.38) !important;
+}
+
+html[data-color-mode="dark"] .rig-slot-name {
+  color: #ffffff !important;
+  font-weight: 600 !important;
+  font-size: 13.5px !important;
+}
+
+html[data-color-mode="dark"] .rig-slot-state {
+  color: #71717a !important;
+}
+
+html[data-color-mode="dark"] .rig-slot-card.filled .rig-slot-state {
+  color: #30d158 !important;
+  font-weight: 600 !important;
+}
+
+html[data-color-mode="dark"] .rig-slot-picked button {
+  background: rgba(255, 69, 58, 0.12) !important;
+  border: 1px solid rgba(255, 69, 58, 0.3) !important;
+  color: #ff453a !important;
+  border-radius: 8px !important;
+  padding: 4px 10px !important;
+  font-size: 11.5px !important;
+  font-weight: 500 !important;
+  transition: background 0.15s ease, border-color 0.15s ease !important;
+}
+
+html[data-color-mode="dark"] .rig-slot-picked button:hover {
+  background: rgba(255, 69, 58, 0.22) !important;
+  border-color: #ff453a !important;
+}
+
+html[data-color-mode="dark"] .rig-slot-empty button {
+  background: rgba(10, 132, 255, 0.12) !important;
+  border: 1px solid rgba(10, 132, 255, 0.3) !important;
+  color: #64d2ff !important;
+  border-radius: 8px !important;
+  padding: 4px 10px !important;
+  font-size: 11.5px !important;
+  font-weight: 500 !important;
+}
+
+html[data-color-mode="dark"] .rig-slot-empty button:hover {
+  background: rgba(10, 132, 255, 0.22) !important;
+  border-color: #0a84ff !important;
+}
+
+/* 8. DEAL BADGE & PRICE ALERT CONTRAST HARDENING */
+html[data-color-mode="dark"] .card-badge,
+html[data-color-mode="dark"] .card-deal-badge,
+html[data-color-mode="dark"] .deal-pill {
+  background: rgba(255, 159, 10, 0.2) !important;
+  border: 1px solid rgba(255, 159, 10, 0.45) !important;
+  color: #ffd60a !important;
+  border-radius: 8px !important;
+  font-weight: 600 !important;
+  font-size: 11.5px !important;
+}
+
+/* Scrollbars in Apple Subtle Translucent Graphite */
+html[data-color-mode="dark"] ::-webkit-scrollbar {
+  width: 7px !important;
+  height: 7px !important;
+}
+
+html[data-color-mode="dark"] ::-webkit-scrollbar-track {
+  background: transparent !important;
+}
+
+html[data-color-mode="dark"] ::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.18) !important;
+  border-radius: 999px !important;
+}
+
+html[data-color-mode="dark"] ::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.28) !important;
+}
+
+/* 9. QR SCANNER 'CLEAR ALL' BUTTON & CONFIRMATION DIALOG + KEYBOARD FOCUS RINGS */
+.qr-scan-history-section {
+  position: relative;
+}
+
+.qr-scan-history-clear-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 4px 10px;
+  font-size: 11.5px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  border-radius: 8px;
+  border: 1px solid rgba(255, 69, 58, 0.35);
+  background: rgba(255, 69, 58, 0.12);
+  color: #ff453a;
+  cursor: pointer;
+  transition: background 0.15s ease, border-color 0.15s ease, transform 0.12s ease;
+}
+
+.qr-scan-history-clear-btn[hidden] {
+  display: none !important;
+}
+
+.qr-scan-history-clear-btn:hover {
+  background: rgba(255, 69, 58, 0.22);
+  border-color: rgba(255, 69, 58, 0.6);
+}
+
+.qr-scan-history-clear-btn:focus-visible {
+  outline: 2px solid #0a84ff;
+  outline-offset: 2px;
+}
+
+html[data-color-mode="light"] .qr-scan-history-clear-btn {
+  background: rgba(255, 59, 48, 0.1);
+  border-color: rgba(255, 59, 48, 0.3);
+  color: #d70015;
+}
+
+html[data-color-mode="light"] .qr-scan-history-clear-btn:hover {
+  background: rgba(255, 59, 48, 0.18);
+  border-color: rgba(255, 59, 48, 0.5);
+}
+
+/* Confirmation Alert Dialog inside #qr-scanner-overlay */
+.qr-clear-confirm-backdrop {
+  position: absolute;
+  inset: 0;
+  z-index: 40;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+  background: rgba(0, 0, 0, 0.62);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  border-radius: 14px;
+  animation: qrConfirmFadeIn 0.16s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.qr-clear-confirm-backdrop[hidden] {
+  display: none !important;
+}
+
+@keyframes qrConfirmFadeIn {
+  from {
+    opacity: 0;
+    transform: scale(0.96);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+.qr-clear-confirm-card {
+  width: 100%;
+  max-width: 310px;
+  padding: 18px 18px 16px;
+  border-radius: 16px;
+  background: #1c1c1e;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  box-shadow: 0 18px 42px rgba(0, 0, 0, 0.65);
+  text-align: center;
+  color: #ffffff;
+}
+
+html[data-color-mode="light"] .qr-clear-confirm-card {
+  background: #ffffff;
+  border: 1px solid rgba(60, 60, 67, 0.16);
+  box-shadow: 0 16px 38px rgba(0, 0, 0, 0.18);
+  color: #1c1c1e;
+}
+
+.qr-clear-confirm-icon {
+  width: 36px;
+  height: 36px;
+  margin: 0 auto 10px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(255, 69, 58, 0.16);
+  color: #ff453a;
+}
+
+html[data-color-mode="light"] .qr-clear-confirm-icon {
+  background: rgba(255, 59, 48, 0.12);
+  color: #ff3b30;
+}
+
+.qr-clear-confirm-title {
+  margin: 0 0 6px;
+  font-size: 15px;
+  font-weight: 700;
+  letter-spacing: -0.015em;
+  color: inherit;
+}
+
+.qr-clear-confirm-desc {
+  margin: 0 0 14px;
+  font-size: 12.5px;
+  line-height: 1.45;
+  color: #a1a1aa;
+}
+
+html[data-color-mode="light"] .qr-clear-confirm-desc {
+  color: #52525b;
+}
+
+.qr-clear-confirm-actions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+
+.qr-clear-cancel-btn,
+.qr-clear-confirm-btn {
+  padding: 8px 12px;
+  border-radius: 10px;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.15s ease, transform 0.1s ease;
+}
+
+.qr-clear-cancel-btn {
+  background: rgba(255, 255, 255, 0.1);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  color: #ffffff;
+}
+
+.qr-clear-cancel-btn:hover {
+  background: rgba(255, 255, 255, 0.16);
+}
+
+html[data-color-mode="light"] .qr-clear-cancel-btn {
+  background: #f2f2f7;
+  border: 1px solid rgba(60, 60, 67, 0.15);
+  color: #1c1c1e;
+}
+
+html[data-color-mode="light"] .qr-clear-cancel-btn:hover {
+  background: #e5e5ea;
+}
+
+.qr-clear-confirm-btn {
+  background: #ff453a;
+  border: 1px solid #ff453a;
+  color: #ffffff;
+}
+
+.qr-clear-confirm-btn:hover {
+  background: #e0352b;
+}
+
+.qr-clear-cancel-btn:focus-visible,
+.qr-clear-confirm-btn:focus-visible {
+  outline: 2px solid #0a84ff;
+  outline-offset: 2px;
+}
+
+/* Catalog Card & Modal Keyboard Focus Rings */
+#product-grid .card:focus-visible,
+#product-grid .card.keyboard-focused:focus {
+  outline: 2px solid #0a84ff !important;
+  outline-offset: 2px !important;
+  box-shadow: 0 0 0 4px rgba(10, 132, 255, 0.25), 0 12px 32px rgba(0, 0, 0, 0.45) !important;
+}
+
+html[data-color-mode="light"] #product-grid .card:focus-visible,
+html[data-color-mode="light"] #product-grid .card.keyboard-focused:focus {
+  outline: 2px solid #007aff !important;
+  outline-offset: 2px !important;
+  box-shadow: 0 0 0 4px rgba(0, 122, 255, 0.2), 0 10px 28px rgba(0, 0, 0, 0.1) !important;
+}
+

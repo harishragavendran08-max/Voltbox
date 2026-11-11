@@ -2181,8 +2181,18 @@
         <video id="qr-scanner-video" class="qr-scanner-video" playsinline muted></video>
         <canvas id="qr-scanner-canvas" class="qr-scanner-canvas" hidden></canvas>
 
-        <!-- Cyber Reticle Overlay with Laser Animation -->
-        <div class="qr-scanner-reticle" id="qr-scanner-reticle">
+        <!-- Cyber Reticle Overlay with Visual 5s Progress Ring & Laser Animation -->
+        <div class="qr-scanner-reticle" id="qr-scanner-reticle" data-scan-state="idle" data-timeout-ms="5000">
+          <!-- Visual Progress Ring Around #qr-scanner-reticle (5s Scan Cycle & Timeout Reset) -->
+          <div class="qr-reticle-progress-ring" id="qr-reticle-progress-ring" data-testid="qr-reticle-progress-ring" role="progressbar" aria-label="QR scan 5-second timeout progress" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0">
+            <svg class="qr-reticle-progress-svg" id="qr-reticle-progress-svg" viewBox="0 0 220 220" preserveAspectRatio="none" aria-hidden="true">
+              <rect class="qr-reticle-ring-track" x="4" y="4" width="212" height="212" rx="12" ry="12" pathLength="100"></rect>
+              <rect class="qr-reticle-ring-progress" id="qr-reticle-ring-progress" data-testid="qr-reticle-ring-progress" x="4" y="4" width="212" height="212" rx="12" ry="12" pathLength="100" stroke-dasharray="100" stroke-dashoffset="100"></rect>
+            </svg>
+            <div class="qr-reticle-timeout-badge" id="qr-reticle-timeout-badge" data-testid="qr-reticle-timeout-badge" aria-live="polite">
+              Scanning · 5.0s
+            </div>
+          </div>
           <div class="qr-scanner-corner tl"></div>
           <div class="qr-scanner-corner tr"></div>
           <div class="qr-scanner-corner bl"></div>
@@ -2248,15 +2258,37 @@
         <div class="qr-scan-history-section" id="qr-scan-history-section" data-testid="qr-scan-history-section">
           <div class="qr-scan-history-head">
             <div class="qr-scan-history-title-wrap">
-              <span class="qr-scan-history-kicker">SCAN HISTORY</span>
+              <span class="qr-scan-history-kicker">RECENT SCAN HISTORY</span>
               <span class="qr-scan-history-count" id="qr-scan-history-count" data-testid="qr-scan-history-count">0 / 10</span>
             </div>
-            <button type="button" class="qr-scan-history-clear-btn" id="qr-scan-history-clear-btn" data-testid="qr-scan-history-clear-btn" hidden aria-label="Clear Scan History">
-              Clear History
+            <button type="button" class="qr-scan-history-clear-btn" id="qr-scan-history-clear-btn" data-testid="qr-scan-history-clear-btn" hidden aria-label="Clear All Scan History" aria-haspopup="dialog" aria-controls="qr-clear-confirm-dialog">
+              <span data-icon="trash" data-icon-size="11"></span>
+              <span>Clear All</span>
             </button>
           </div>
           <div class="qr-scan-history-list" id="qr-scan-history-list" data-testid="qr-scan-history-list" role="list" aria-label="Last 10 scanned products">
             <!-- Populated dynamically by app.js -->
+          </div>
+
+          <!-- Confirmation Dialog for Clear All Scan History -->
+          <div class="qr-clear-confirm-backdrop" id="qr-clear-confirm-dialog" data-testid="qr-clear-confirm-dialog" role="alertdialog" aria-modal="true" aria-labelledby="qr-clear-confirm-title" aria-describedby="qr-clear-confirm-desc" hidden>
+            <div class="qr-clear-confirm-card">
+              <div class="qr-clear-confirm-icon" aria-hidden="true">
+                <span data-icon="trash" data-icon-size="18"></span>
+              </div>
+              <h3 class="qr-clear-confirm-title" id="qr-clear-confirm-title">Clear Recent Scan History?</h3>
+              <p class="qr-clear-confirm-desc" id="qr-clear-confirm-desc">
+                Are you sure you want to delete all <strong id="qr-clear-confirm-count">0</strong> recently scanned components? This action cannot be undone.
+              </p>
+              <div class="qr-clear-confirm-actions">
+                <button type="button" class="qr-clear-cancel-btn" id="qr-clear-cancel-btn" data-testid="qr-clear-cancel-btn">
+                  Cancel
+                </button>
+                <button type="button" class="qr-clear-confirm-btn" id="qr-clear-confirm-btn" data-testid="qr-clear-confirm-btn" data-haptic="warning">
+                  Clear All
+                </button>
+              </div>
+            </div>
           </div>
         </div>
       </div>
