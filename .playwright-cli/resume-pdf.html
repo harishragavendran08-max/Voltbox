@@ -1,0 +1,607 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Voltbox — Resume Project Description &amp; Technical Feature Dossier</title>
+  <style>
+    @page {
+      size: A4;
+      margin: 14mm 15mm 14mm 15mm;
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    :root {
+      --ink: #0f172a;
+      --muted: #475569;
+      --subtle: #64748b;
+      --border: #e2e8f0;
+      --surface: #f8fafc;
+      --accent: #0f766e;
+      --accent-soft: #f0fdfa;
+      --accent-border: #99f6e4;
+    }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+      color: var(--ink);
+      background: #ffffff;
+      font-size: 9.4pt;
+      line-height: 1.44;
+      -webkit-print-color-adjust: exact;
+      print-color-adjust: exact;
+    }
+
+    .page-break {
+      page-break-before: always;
+      break-before: page;
+    }
+
+    .doc-header {
+      background: linear-gradient(135deg, #0b1120 0%, #111c33 100%);
+      color: #f8fafc;
+      border-radius: 10px;
+      padding: 16px 20px;
+      margin-bottom: 12px;
+      border-bottom: 3px solid #14b8a6;
+    }
+
+    .header-top {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      gap: 12px;
+      margin-bottom: 8px;
+    }
+
+    .brand-kicker {
+      font-size: 7.5pt;
+      font-weight: 700;
+      letter-spacing: 1.2px;
+      text-transform: uppercase;
+      color: #5eead4;
+      margin-bottom: 3px;
+    }
+
+    h1 {
+      font-size: 16.5pt;
+      font-weight: 800;
+      letter-spacing: -0.3px;
+      color: #ffffff;
+      line-height: 1.18;
+    }
+
+    .header-subtitle {
+      font-size: 9.3pt;
+      color: #cbd5e1;
+      margin-top: 3px;
+    }
+
+    .badge-col {
+      display: flex;
+      flex-direction: column;
+      align-items: flex-end;
+      gap: 4px;
+      flex-shrink: 0;
+    }
+
+    .status-pill {
+      background: rgba(20, 184, 166, 0.16);
+      border: 1px solid rgba(94, 234, 212, 0.4);
+      color: #99f6e4;
+      font-size: 7.6pt;
+      font-weight: 700;
+      padding: 3px 9px;
+      border-radius: 999px;
+      white-space: nowrap;
+    }
+
+    .tech-strip {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 5px;
+      margin-top: 8px;
+      padding-top: 8px;
+      border-top: 1px solid rgba(148, 163, 184, 0.22);
+    }
+
+    .tech-chip {
+      font-size: 7.5pt;
+      font-weight: 600;
+      color: #e2e8f0;
+      background: rgba(255, 255, 255, 0.08);
+      border: 1px solid rgba(255, 255, 255, 0.14);
+      padding: 2px 7px;
+      border-radius: 4px;
+    }
+
+    .section {
+      margin-bottom: 11px;
+    }
+
+    .section-title {
+      font-size: 9.8pt;
+      font-weight: 800;
+      text-transform: uppercase;
+      letter-spacing: 0.7px;
+      color: var(--accent);
+      border-bottom: 1.5px solid var(--border);
+      padding-bottom: 3px;
+      margin-bottom: 7px;
+      display: flex;
+      justify-content: space-between;
+      align-items: baseline;
+    }
+
+    .section-title span.sub-note {
+      font-size: 7.6pt;
+      font-weight: 600;
+      color: var(--subtle);
+      text-transform: none;
+      letter-spacing: 0;
+    }
+
+    .summary-box {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-left: 3.5px solid var(--accent);
+      border-radius: 6px;
+      padding: 9px 12px;
+      color: #1e293b;
+      font-size: 9.1pt;
+    }
+
+    .metrics-grid {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 8px;
+      margin-top: 8px;
+    }
+
+    .metric-card {
+      background: var(--accent-soft);
+      border: 1px solid var(--accent-border);
+      border-radius: 6px;
+      padding: 7px 9px;
+      text-align: center;
+    }
+
+    .metric-val {
+      font-size: 12pt;
+      font-weight: 800;
+      color: #0f766e;
+      line-height: 1.15;
+    }
+
+    .metric-lbl {
+      font-size: 7.4pt;
+      font-weight: 600;
+      color: #334155;
+      margin-top: 2px;
+    }
+
+    .resume-card {
+      background: #ffffff;
+      border: 1px solid var(--border);
+      border-radius: 7px;
+      padding: 10px 13px;
+    }
+
+    .resume-role-line {
+      display: flex;
+      justify-content: space-between;
+      align-items: baseline;
+      margin-bottom: 5px;
+      padding-bottom: 4px;
+      border-bottom: 1px dashed var(--border);
+    }
+
+    .resume-role-line strong {
+      font-size: 9.8pt;
+      color: var(--ink);
+    }
+
+    .resume-role-line span {
+      font-size: 8pt;
+      font-weight: 600;
+      color: var(--subtle);
+    }
+
+    ul.bullet-list {
+      padding-left: 15px;
+    }
+
+    ul.bullet-list li {
+      margin-bottom: 4.5px;
+      color: #1e293b;
+      font-size: 8.85pt;
+    }
+
+    ul.bullet-list li:last-child {
+      margin-bottom: 0;
+    }
+
+    ul.bullet-list li strong {
+      color: #0f172a;
+    }
+
+    .feature-grid {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 8px;
+    }
+
+    .feature-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 7px;
+      padding: 8px 10px;
+      break-inside: avoid;
+      page-break-inside: avoid;
+    }
+
+    .feature-card h3 {
+      font-size: 9.1pt;
+      font-weight: 800;
+      color: #0f172a;
+      margin-bottom: 3px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+
+    .tag {
+      font-size: 6.9pt;
+      font-weight: 700;
+      color: #0f766e;
+      background: #ccfbf1;
+      padding: 1px 6px;
+      border-radius: 4px;
+      text-transform: uppercase;
+      letter-spacing: 0.3px;
+    }
+
+    .feature-card p {
+      font-size: 8.25pt;
+      color: #334155;
+      line-height: 1.38;
+    }
+
+    table.arch-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 8.3pt;
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      overflow: hidden;
+    }
+
+    table.arch-table th {
+      background: #0f172a;
+      color: #f8fafc;
+      text-align: left;
+      padding: 6px 9px;
+      font-weight: 700;
+      font-size: 8pt;
+      letter-spacing: 0.3px;
+    }
+
+    table.arch-table td {
+      padding: 5.5px 9px;
+      border-top: 1px solid var(--border);
+      vertical-align: top;
+      color: #1e293b;
+    }
+
+    table.arch-table tr:nth-child(even) td {
+      background: #f8fafc;
+    }
+
+    .td-layer {
+      font-weight: 700;
+      color: #0f766e;
+      white-space: nowrap;
+      width: 18%;
+    }
+
+    .td-stack {
+      font-weight: 600;
+      color: #0f172a;
+      width: 28%;
+    }
+
+    .two-col {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 9px;
+    }
+
+    .info-panel {
+      border: 1px solid var(--border);
+      border-radius: 7px;
+      padding: 9px 11px;
+      background: #ffffff;
+      break-inside: avoid;
+      page-break-inside: avoid;
+    }
+
+    .info-panel h4 {
+      font-size: 8.8pt;
+      font-weight: 800;
+      color: #0f172a;
+      margin-bottom: 4px;
+      border-bottom: 1px solid var(--border);
+      padding-bottom: 3px;
+    }
+
+    .info-panel ul {
+      padding-left: 14px;
+      font-size: 8.2pt;
+      color: #334155;
+    }
+
+    .info-panel li {
+      margin-bottom: 3px;
+    }
+
+    .doc-footer {
+      margin-top: 10px;
+      padding-top: 6px;
+      border-top: 1px solid var(--border);
+      display: flex;
+      justify-content: space-between;
+      font-size: 7.5pt;
+      color: var(--subtle);
+    }
+
+    .short-pitch {
+      margin-top: 8px;
+      background: #fffbeb;
+      border: 1px solid #fde68a;
+      border-left: 3.5px solid #d97706;
+      border-radius: 6px;
+      padding: 8px 11px;
+      font-size: 8.35pt;
+      color: #451a03;
+    }
+
+    .short-pitch strong {
+      color: #92400e;
+    }
+  </style>
+</head>
+<body>
+
+  <div class="doc-header">
+    <div class="header-top">
+      <div>
+        <div class="brand-kicker">Project Portfolio &amp; Resume Dossier</div>
+        <h1>Voltbox — Hardware Catalog &amp; Real-Time E-Commerce Platform</h1>
+        <div class="header-subtitle">Full-Stack Electronics Storefront, Price Telemetry Analytics, Optical QR Scanner, Rig Builder &amp; Cloud Sync</div>
+      </div>
+      <div class="badge-col">
+        <span class="status-pill">83 / 83 Unit Tests Passing</span>
+        <span class="status-pill">PWA · Real-Time WebSocket · Firestore</span>
+      </div>
+    </div>
+    <div class="tech-strip">
+      <span class="tech-chip">TypeScript</span>
+      <span class="tech-chip">Node.js &amp; Express</span>
+      <span class="tech-chip">React 19</span>
+      <span class="tech-chip">Recharts &amp; D3.js</span>
+      <span class="tech-chip">GSAP</span>
+      <span class="tech-chip">Firebase Auth &amp; Firestore</span>
+      <span class="tech-chip">WebSockets (ws)</span>
+      <span class="tech-chip">jsQR &amp; QRCode</span>
+      <span class="tech-chip">Google Maps Config</span>
+      <span class="tech-chip">Service Worker PWA</span>
+      <span class="tech-chip">esbuild</span>
+    </div>
+  </div>
+
+  <div class="section">
+    <div class="section-title">
+      <span>Project Overview</span>
+      <span class="sub-note">Portfolio &amp; Interview Elevator Pitch</span>
+    </div>
+    <div class="summary-box">
+      <strong>Voltbox</strong> is a production-grade full-stack electronics hardware marketplace and community-verified pricing reference platform. Built with a TypeScript/Express backend, real-time WebSocket synchronization, Firebase Authentication &amp; Cloud Firestore persistence, and interactive React 19 / D3.js / Recharts visualization bundles, Voltbox combines modern consumer e-commerce (PC Rig Builder, UPI QR &amp; multi-mode checkout, order tracking, thermal receipts) with advanced engineering tools including optical camera/image QR scanning, 6-month statistical volatility telemetry, RBAC community moderation, and batch inventory administration.
+    </div>
+    <div class="metrics-grid">
+      <div class="metric-card">
+        <div class="metric-val">49 SKUs · 20 Cats</div>
+        <div class="metric-lbl">Hardware Parts &amp; Catalog Inventory</div>
+      </div>
+      <div class="metric-card">
+        <div class="metric-val">83 / 83</div>
+        <div class="metric-lbl">Automated Logic &amp; Security Tests</div>
+      </div>
+      <div class="metric-card">
+        <div class="metric-val">3 Roles (RBAC)</div>
+        <div class="metric-lbl">Member · Contributor · Moderator</div>
+      </div>
+      <div class="metric-card">
+        <div class="metric-val">75+ Endpoints</div>
+        <div class="metric-lbl">REST APIs &amp; Live WebSocket Events</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="section">
+    <div class="section-title">
+      <span>Resume-Ready Project Section</span>
+      <span class="sub-note">Copy-paste directly into your Software Engineering Resume</span>
+    </div>
+    <div class="resume-card">
+      <div class="resume-role-line">
+        <strong>Voltbox — Full-Stack Hardware E-Commerce &amp; Telemetry Platform</strong>
+        <span>TypeScript · Node.js/Express · React 19 · D3.js · Firebase Firestore · WebSockets</span>
+      </div>
+      <ul class="bullet-list">
+        <li>
+          <strong>Architected a full-stack hardware marketplace</strong> featuring 49+ electronics SKUs across 20 categories, server-side checkout pricing/tax calculation (8.25%), role-based access control (Member, Contributor, Moderator), and live catalog updates pushed over native WebSockets (<code>ws</code>).
+        </li>
+        <li>
+          <strong>Built interactive price-telemetry visualizations</strong> using React 19, Recharts, D3.js, and GSAP—computing 6-month rolling price averages, volatility envelopes, Z-score anomaly markers, drawdown metrics, and mouse-wheel zoom / drag-to-pan time windows.
+        </li>
+        <li>
+          <strong>Engineered an optical Product QR Scanner &amp; Generator pipeline</strong> pairing browser <code>BarcodeDetector</code> with a contrast-stretched multi-scale and quiet-zone <code>jsQR</code> fallback, corner-resizable scan reticle handles, acoustic ping feedback, and scannable Code-39 + QR verification receipts.
+        </li>
+        <li>
+          <strong>Integrated Firebase Authentication &amp; Cloud Firestore</strong> with strict owner-isolated schema rules (<code>firebase-blueprint.json</code> / <code>firestore.rules</code>) to sync private user carts, wishlists, alerts, and order records across devices alongside Google OAuth and UPI/Card/NetBanking checkout simulation.
+        </li>
+        <li>
+          <strong>Developed a 4-Slot PC Rig Builder &amp; Power Estimator</strong> with auto-bundle discounts (5% off), starter rig presets, price-drop alert subscriptions, and a Slack-style multi-channel Hardware Concierge Messenger with live reactions and specialist feedback.
+        </li>
+        <li>
+          <strong>Hardened security &amp; operational reliability</strong> with salted <code>scrypt</code> password hashing (constant-time comparison + legacy migration), Bucket4j-style IP rate limiting across <code>/api/*</code> routes, batch inventory audit transactions, and 83 unit tests verifying business and security logic.
+        </li>
+      </ul>
+    </div>
+
+    <div class="short-pitch">
+      <strong>Compact 3-Bullet Version (For 1-Page Resumes):</strong><br/>
+      • Built a full-stack electronics catalog &amp; e-commerce web app (TypeScript, Express, React 19, D3.js, WebSockets, Firestore) supporting 49+ hardware SKUs, RBAC community moderation, UPI QR checkout, live order tracking, and offline PWA caching.<br/>
+      • Engineered D3/Recharts 6-month price volatility charts, a 4-slot PC Rig Builder with PSU wattage calculation, and a hybrid BarcodeDetector + multi-scale jsQR camera/image scanner with resizable reticle bounds.<br/>
+      • Implemented <code>scrypt</code> password hashing, IP-based token-bucket rate limiting, owner-isolated Firestore rules, and 83 automated tests covering cart pricing, SKU validation, and batch inventory updates.
+    </div>
+  </div>
+
+  <div class="doc-footer">
+    <span>Voltbox — Resume Project Description</span>
+    <span>Page 1 of 2 · Overview &amp; Resume Bullets</span>
+  </div>
+
+  <div class="page-break"></div>
+
+  <div class="section">
+    <div class="section-title">
+      <span>Complete Application Feature Inventory</span>
+      <span class="sub-note">All Modules &amp; User Flows Implemented</span>
+    </div>
+
+    <div class="feature-grid">
+      <div class="feature-card">
+        <h3>1. Storefront, Smart Search &amp; Filters <span class="tag">Core UI</span></h3>
+        <p>Instant client/server search across titles, SKUs, and hardware categories; quick stock filters (All / Available Now / Backorder); Best Deal vs 6-month average sorting; right-click &amp; long-press quick context menus; progressive local-tile-to-photo image loading; and iOS-inspired Light/Dark theme switcher with haptic feedback.</p>
+      </div>
+
+      <div class="feature-card">
+        <h3>2. Spec Drawer &amp; D3/Recharts Telemetry <span class="tag">Analytics</span></h3>
+        <p>Slide-over hardware specification sheet with tabbed scroll-spy navigation, verified buyer reviews &amp; helpfulness voting, animated price odometer rolls, Recharts historical sparklines, and D3.js 6-month volatility analysis featuring rolling bands, Z-score spikes, zoom/pan, and GSAP transitions.</p>
+      </div>
+
+      <div class="feature-card">
+        <h3>3. Optical Product QR Scanner &amp; Generator <span class="tag">Vision / QR</span></h3>
+        <p>Live webcam viewfinder and image upload decoder combining native <code>BarcodeDetector</code> with multi-pass contrast-stretched &amp; quiet-zone <code>jsQR</code> decoding; 4 interactive corner drag handles to resize the scan reticle; 5-second visual countdown ring; WebAudio ping toggle; 10-item scan history; and manual SKU/URL/JSON lookup.</p>
+      </div>
+
+      <div class="feature-card">
+        <h3>4. PC Rig Builder &amp; Side-by-Side Compare <span class="tag">Builder</span></h3>
+        <p>Interactive 4-slot PC build planner (CPU, GPU, Motherboard, Storage/Memory) with compatibility progress meter, real-time PSU wattage estimator, 1-click Starter Rig auto-fill, automatic 5% bundle discount calculation, promo code engine, and multi-product side-by-side spec comparison modal.</p>
+      </div>
+
+      <div class="feature-card">
+        <h3>5. Multi-Mode Checkout, UPI QR &amp; Receipts <span class="tag">Commerce</span></h3>
+        <p>Server-verified cart &amp; checkout pipeline supporting interactive UPI QR Overlay (GPay/PhonePe/Paytm VPA, copy button, 5-minute countdown timer), Card, NetBanking, and EMI modes; printable thermal-paper receipts embedded with Code-39 barcodes &amp; QR hashes; and 4-stage live order tracking.</p>
+      </div>
+
+      <div class="feature-card">
+        <h3>6. Hardware Concierge &amp; Community Hub <span class="tag">Realtime</span></h3>
+        <p>Multi-channel Workspace Messenger (<code>general</code>, <code>rig-builds</code>, <code>price-drops</code>) with quick prompts, emoji reactions, and typing indicators; contributor application queue; listing flag/report workflow; and real-time WebSocket broadcasts for approvals, catalog changes, and active presence.</p>
+      </div>
+
+      <div class="feature-card">
+        <h3>7. Admin Console &amp; Batch Transactions <span class="tag">Admin RBAC</span></h3>
+        <p>Dedicated admin dashboard (<code>/admin</code>) and inline catalog Batch Edit Mode allowing moderators to select multiple SKUs, preview price/stock deltas, execute atomic audit-logged inventory transactions (<code>INV-XXXX</code>), track zero-result search demand gaps, and restock low-inventory items in one click.</p>
+      </div>
+
+      <div class="feature-card">
+        <h3>8. Cloud Sync, Alerts, Maps &amp; PWA <span class="tag">Platform</span></h3>
+        <p>Firebase Auth &amp; Firestore multi-device sync for carts, wishlists, and orders; Price-Drop Alert subscriptions with drop simulation &amp; email payload formatting; Google Maps Platform config integration; and installable PWA with Service Worker caching, app shortcuts, and maskable icons.</p>
+      </div>
+    </div>
+  </div>
+
+  <div class="section">
+    <div class="section-title">
+      <span>System Architecture &amp; Technical Stack</span>
+      <span class="sub-note">End-to-End Engineering Breakdown</span>
+    </div>
+    <table class="arch-table">
+      <thead>
+        <tr>
+          <th>Layer</th>
+          <th>Technologies Used</th>
+          <th>Key Responsibilities in Voltbox</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td class="td-layer">Frontend &amp; Visualization</td>
+          <td class="td-stack">HTML5, CSS3, Vanilla JS, React 19, Recharts, D3.js v7, GSAP</td>
+          <td>Responsive storefront grid, dark/light Apple HIG design tokens, interactive price volatility graphs, odometer animations, profile/cart drawers, and admin dashboard.</td>
+        </tr>
+        <tr>
+          <td class="td-layer">Vision &amp; Encoding</td>
+          <td class="td-stack">jsQR, qrcode, BarcodeDetector API, HTML5 Canvas &amp; SVG</td>
+          <td>Hybrid camera/upload QR decoding with ROI reticle cropping &amp; quiet-zone padding; server &amp; receipt QR + Code-39 barcode synthesis.</td>
+        </tr>
+        <tr>
+          <td class="td-layer">Backend &amp; Real-Time</td>
+          <td class="td-stack">Node.js, TypeScript, Express.js, WebSocket (ws)</td>
+          <td>75+ RESTful API endpoints, server-authoritative cart/order totals, inventory transaction ledger, real-time moderation &amp; presence sockets.</td>
+        </tr>
+        <tr>
+          <td class="td-layer">Cloud &amp; Persistence</td>
+          <td class="td-stack">Firebase Auth, Cloud Firestore, JSON Store (voltbox-data.json)</td>
+          <td>Dual-layer persistence combining fast local JSON snapshots with owner-isolated Firestore rules for private user state, orders, reviews, and chat.</td>
+        </tr>
+        <tr>
+          <td class="td-layer">Security &amp; QA</td>
+          <td class="td-stack">node:crypto (scrypt), IpRateLimiter, TypeScript, node:test</td>
+          <td>Salted scrypt hashing with constant-time verification, IP rate limiting on sensitive endpoints, strict Firestore rules, and 83 automated unit tests.</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="section">
+    <div class="section-title">
+      <span>Security, Performance &amp; Engineering Highlights</span>
+      <span class="sub-note">Talking Points for Technical Interviews</span>
+    </div>
+    <div class="two-col">
+      <div class="info-panel">
+        <h4>Security &amp; Data Integrity</h4>
+        <ul>
+          <li><strong>Cryptographic Auth:</strong> Scrypt password hashing with per-user 16-byte random salts, <code>timingSafeEqual</code> comparisons, and automatic plaintext-to-scrypt migration.</li>
+          <li><strong>Traffic Protection:</strong> Custom token-bucket IP Rate Limiter (120 general req/min, 30 sensitive auth/checkout req/min) returning standard <code>Retry-After</code> headers.</li>
+          <li><strong>Server-Side Truth:</strong> Checkout line prices, tax (8.25%), promo codes, rig discounts, and RBAC checks are strictly enforced server-side.</li>
+          <li><strong>Database Isolation:</strong> Owner-scoped Firestore rules + ESLint security rules validation preventing cross-user reads or role escalation.</li>
+        </ul>
+      </div>
+      <div class="info-panel">
+        <h4>UX Engineering &amp; Testability</h4>
+        <ul>
+          <li><strong>Pure Logic Decoupling:</strong> Core algorithms (pricing, SKU encoding, volatility stats, reticle clamping, security) isolated in <code>src/logic/</code> with <strong>83/83 unit tests passing</strong>.</li>
+          <li><strong>Perceived Speed:</strong> Instant local SVG category tile placeholders upgrade seamlessly to high-res product photos without layout shift (CLS-safe 4:3 cards).</li>
+          <li><strong>Bundling &amp; Tooling:</strong> Automated <code>esbuild</code> IIFE bundles for React/D3 charts, QR scanner, and Firebase sync verified by <code>tsc --noEmit</code>.</li>
+          <li><strong>Accessible Controls:</strong> Focus-trapped dialogs, roving tablists, 44px touch-target checks, and viewport classification helpers.</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+
+  <div class="doc-footer">
+    <span>Voltbox — Full-Stack Electronics Hardware Platform</span>
+    <span>Page 2 of 2 · Architecture, Feature Matrix &amp; Engineering Highlights</span>
+  </div>
+
+</body>
+</html>

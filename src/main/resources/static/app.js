@@ -3640,54 +3640,154 @@ function updateScannerStatus(text, isError) {
   }
 }
 
+var qrBarcodeDetector = null;
+var qrBarcodeDetectorChecked = false;
+var qrDetectInFlight = false;
+var lastQrPixelScanAt = 0;
+
+function ensureQrBarcodeDetector() {
+  if (qrBarcodeDetectorChecked) return qrBarcodeDetector;
+  qrBarcodeDetectorChecked = true;
+  if (typeof window !== "undefined" && typeof window.BarcodeDetector === "function") {
+    try {
+      qrBarcodeDetector = new window.BarcodeDetector({ formats: ["qr_code"] });
+    } catch (_e) {
+      qrBarcodeDetector = null;
+    }
+  }
+  return qrBarcodeDetector;
+}
+
+function updateQrCameraActionButton(hasLiveStream) {
+  var flipBtn = document.getElementById("qr-scanner-flip-cam-btn");
+  if (!flipBtn) return;
+  var labelSpan = flipBtn.querySelector("span:last-child");
+  if (labelSpan) {
+    labelSpan.textContent = hasLiveStream ? "Switch Camera" : "Retry Camera";
+  }
+  flipBtn.setAttribute(
+    "title",
+    hasLiveStream ? "Switch between front and back camera" : "Retry initializing camera sensor"
+  );
+}
+
+function decodeQrCanvasWithQuietZone(sourceCanvas, paddingPx) {
+  if (!(window.VoltboxQR && typeof window.VoltboxQR.decodeQrFromImageData === "function")) {
+    return null;
+  }
+  var ctx = sourceCanvas.getContext("2d", { willReadFrequently: true });
+  if (!ctx || !sourceCanvas.width || !sourceCanvas.height) return null;
+
+  var raw = ctx.getImageData(0, 0, sourceCanvas.width, sourceCanvas.height);
+  var res = window.VoltboxQR.decodeQrFromImageData(raw);
+  if (res && res.data) return res;
+
+  if (paddingPx > 0) {
+    var pad = paddingPx;
+    var padded = document.createElement("canvas");
+    padded.width = sourceCanvas.width + pad * 2;
+    padded.height = sourceCanvas.height + pad * 2;
+    var pCtx = padded.getContext("2d", { willReadFrequently: true });
+    if (pCtx) {
+      // Sample top-left edge pixel as quiet-zone fill so dark/gold QRs keep contrast
+      var cornerPx = raw.data;
+      pCtx.fillStyle = "rgb(" + cornerPx[0] + "," + cornerPx[1] + "," + cornerPx[2] + ")";
+      pCtx.fillRect(0, 0, padded.width, padded.height);
+      pCtx.drawImage(sourceCanvas, pad, pad);
+      var paddedRes = window.VoltboxQR.decodeQrFromImageData(
+        pCtx.getImageData(0, 0, padded.width, padded.height)
+      );
+      if (paddedRes && paddedRes.data) return paddedRes;
+
+      // Also retry with pure white quiet zone
+      pCtx.fillStyle = "#ffffff";
+      pCtx.fillRect(0, 0, padded.width, padded.height);
+      pCtx.drawImage(sourceCanvas, pad, pad);
+      var whitePadRes = window.VoltboxQR.decodeQrFromImageData(
+        pCtx.getImageData(0, 0, padded.width, padded.height)
+      );
+      if (whitePadRes && whitePadRes.data) return whitePadRes;
+    }
+  }
+  return null;
+}
+
 function startQrCamera() {
   var video = document.getElementById("qr-scanner-video");
   if (!video) return;
 
   qrScanningActive = true;
+  qrDetectInFlight = false;
+  lastQrPixelScanAt = 0;
   setQrReticleScanState("scanning");
   updateScannerStatus("Initializing optical camera sensor…", false);
+  updateQrCameraActionButton(false);
 
   if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
     setQrReticleScanState("idle");
-    updateScannerStatus("Webcam hardware not supported on this browser. Upload QR image or use simulation below.", true);
+    updateScannerStatus("Camera not supported in this browser — upload QR image or simulate below", true);
     return;
   }
 
-  var constraints = {
+  var primaryConstraints = {
     audio: false,
     video: {
-      facingMode: qrFacingMode,
+      facingMode: { ideal: qrFacingMode },
       width: { ideal: 1280 },
       height: { ideal: 720 }
     }
   };
 
-  navigator.mediaDevices.getUserMedia(constraints)
+  navigator.mediaDevices.getUserMedia(primaryConstraints)
+    .catch(function (primaryErr) {
+      if (
+        primaryErr &&
+        (primaryErr.name === "OverconstrainedError" ||
+         primaryErr.name === "ConstraintNotSatisfiedError" ||
+         primaryErr.name === "NotFoundError")
+      ) {
+        return navigator.mediaDevices.getUserMedia({ audio: false, video: true });
+      }
+      throw primaryErr;
+    })
     .then(function (stream) {
       if (!qrScanningActive) {
         stream.getTracks().forEach(function (t) { t.stop(); });
         return;
       }
       qrScanStream = stream;
-      video.srcObject = stream;
+      video.muted = true;
       video.setAttribute("playsinline", "true");
+      video.setAttribute("autoplay", "true");
+      video.srcObject = stream;
+      updateQrCameraActionButton(true);
       return video.play();
     })
     .then(function () {
+      if (!qrScanningActive || !qrScanStream) return;
       setQrReticleScanState("scanning");
       updateScannerStatus("Align product QR code within reticle frame", false);
       qrScanAnimFrame = requestAnimationFrame(scanVideoFrameLoop);
     })
     .catch(function (err) {
       console.warn("Camera sensor unavailable:", err);
+      qrScanningActive = false;
       setQrReticleScanState("idle");
-      updateScannerStatus("Camera unavailable — upload QR image or simulate below", true);
+      updateQrCameraActionButton(false);
+      var errName = (err && err.name) ? err.name : "";
+      if (errName === "NotAllowedError" || errName === "PermissionDeniedError" || errName === "SecurityError") {
+        updateScannerStatus("Camera permission blocked — allow camera, Upload Image, or simulate below", true);
+      } else if (errName === "NotReadableError" || errName === "TrackStartError") {
+        updateScannerStatus("Camera busy in another app — close it or Upload Image below", true);
+      } else {
+        updateScannerStatus("Camera unavailable — upload QR image or simulate below", true);
+      }
     });
 }
 
 function stopQrCamera() {
   qrScanningActive = false;
+  qrDetectInFlight = false;
   var reticle = document.getElementById("qr-scanner-reticle");
   if (reticle && !reticle.classList.contains("scan-detected")) {
     setQrReticleScanState("idle");
@@ -3704,12 +3804,60 @@ function stopQrCamera() {
   if (video) {
     video.srcObject = null;
   }
+  updateQrCameraActionButton(false);
 }
 
 function flipQrCamera() {
-  qrFacingMode = (qrFacingMode === "environment") ? "user" : "environment";
+  if (qrScanStream) {
+    qrFacingMode = (qrFacingMode === "environment") ? "user" : "environment";
+  }
   stopQrCamera();
   startQrCamera();
+}
+
+function runJsQrOnVideoFrame(video, canvas) {
+  var vw = video.videoWidth || 640;
+  var vh = video.videoHeight || 480;
+  if (!vw || !vh) return false;
+
+  var scale = Math.min(1, 640 / Math.max(vw, vh));
+  var cw = Math.max(160, Math.round(vw * scale));
+  var ch = Math.max(120, Math.round(vh * scale));
+  if (canvas.width !== cw || canvas.height !== ch) {
+    canvas.width = cw;
+    canvas.height = ch;
+  }
+
+  var ctx = canvas.getContext("2d", { willReadFrequently: true });
+  if (!ctx) return false;
+  ctx.drawImage(video, 0, 0, cw, ch);
+
+  if (window.VoltboxQR && typeof window.VoltboxQR.decodeQrFromImageData === "function") {
+    var imgData = ctx.getImageData(0, 0, cw, ch);
+    var res = window.VoltboxQR.decodeQrFromImageData(imgData);
+    if (res && res.data) {
+      handleSuccessfulQrScan(res.data);
+      return true;
+    }
+
+    // Also try cropped reticle region in case QR fills a resized reticle box
+    var wrap = document.querySelector(".qr-scanner-viewfinder-wrap");
+    if (wrap && wrap.clientWidth > 0 && wrap.clientHeight > 0 && qrReticleInsetsState) {
+      var rx = Math.max(0, Math.floor((qrReticleInsetsState.left / wrap.clientWidth) * cw));
+      var ry = Math.max(0, Math.floor((qrReticleInsetsState.top / wrap.clientHeight) * ch));
+      var rw = Math.max(64, Math.min(cw - rx, Math.ceil(((wrap.clientWidth - qrReticleInsetsState.left - qrReticleInsetsState.right) / wrap.clientWidth) * cw)));
+      var rh = Math.max(64, Math.min(ch - ry, Math.ceil(((wrap.clientHeight - qrReticleInsetsState.top - qrReticleInsetsState.bottom) / wrap.clientHeight) * ch)));
+      if (rw < cw * 0.9 || rh < ch * 0.9) {
+        var roiData = ctx.getImageData(rx, ry, rw, rh);
+        var roiRes = window.VoltboxQR.decodeQrFromImageData(roiData);
+        if (roiRes && roiRes.data) {
+          handleSuccessfulQrScan(roiRes.data);
+          return true;
+        }
+      }
+    }
+  }
+  return false;
 }
 
 function scanVideoFrameLoop() {
@@ -3721,64 +3869,62 @@ function scanVideoFrameLoop() {
     return;
   }
 
-  var w = video.videoWidth || 640;
-  var h = video.videoHeight || 480;
-  if (canvas.width !== w || canvas.height !== h) {
-    canvas.width = w;
-    canvas.height = h;
+  var nowMs = Date.now();
+  if (nowMs - lastQrPixelScanAt < 90 || qrDetectInFlight) {
+    qrScanAnimFrame = requestAnimationFrame(scanVideoFrameLoop);
+    return;
   }
+  lastQrPixelScanAt = nowMs;
 
-  var ctx = canvas.getContext("2d", { willReadFrequently: true });
-  if (ctx) {
-    ctx.drawImage(video, 0, 0, w, h);
-    var imgData = ctx.getImageData(0, 0, w, h);
-
-    // 1. Native BarcodeDetector (Chrome/Edge/Android)
-    if (window.BarcodeDetector) {
-      try {
-        var detector = new window.BarcodeDetector({ formats: ["qr_code"] });
-        detector.detect(video).then(function (barcodes) {
-          if (barcodes && barcodes.length > 0 && qrScanningActive) {
-            handleSuccessfulQrScan(barcodes[0].rawValue);
-          } else if (qrScanningActive) {
-            qrScanAnimFrame = requestAnimationFrame(scanVideoFrameLoop);
-          }
-        }).catch(function () {
-          decodeWithJsQr(imgData);
-        });
-        return;
-      } catch (e) {
-        decodeWithJsQr(imgData);
-        return;
-      }
-    }
-
-    decodeWithJsQr(imgData);
+  var detector = ensureQrBarcodeDetector();
+  if (detector) {
+    qrDetectInFlight = true;
+    detector.detect(video)
+      .then(function (barcodes) {
+        qrDetectInFlight = false;
+        if (!qrScanningActive) return;
+        if (barcodes && barcodes.length > 0 && barcodes[0].rawValue) {
+          handleSuccessfulQrScan(barcodes[0].rawValue);
+          return;
+        }
+        // Fallback to jsQR whenever native BarcodeDetector returns [] (e.g. colored/dark QRs)
+        if (!runJsQrOnVideoFrame(video, canvas) && qrScanningActive) {
+          qrScanAnimFrame = requestAnimationFrame(scanVideoFrameLoop);
+        }
+      })
+      .catch(function () {
+        qrDetectInFlight = false;
+        if (!qrScanningActive) return;
+        if (!runJsQrOnVideoFrame(video, canvas) && qrScanningActive) {
+          qrScanAnimFrame = requestAnimationFrame(scanVideoFrameLoop);
+        }
+      });
     return;
   }
 
-  qrScanAnimFrame = requestAnimationFrame(scanVideoFrameLoop);
+  if (!runJsQrOnVideoFrame(video, canvas) && qrScanningActive) {
+    qrScanAnimFrame = requestAnimationFrame(scanVideoFrameLoop);
+  }
 }
 
-function decodeWithJsQr(imgData) {
-  if (!qrScanningActive) return;
-  if (window.VoltboxQR && typeof window.VoltboxQR.decodeQrFromImageData === "function") {
-    var res = window.VoltboxQR.decodeQrFromImageData(imgData);
-    if (res && res.data) {
-      handleSuccessfulQrScan(res.data);
-      return;
-    }
-  }
-  qrScanAnimFrame = requestAnimationFrame(scanVideoFrameLoop);
+function getNormalizedQrCatalog() {
+  return (products || []).map(function (p) {
+    return {
+      id: Number(p.id),
+      sku: getSkuFor(p),
+      title: p.title || ""
+    };
+  });
 }
 
 function handleSuccessfulQrScan(rawPayload) {
   if (!rawPayload) return;
   stopQrCamera();
 
+  var catalog = getNormalizedQrCatalog();
   var parseRes = (window.VoltboxQR && typeof window.VoltboxQR.parseScannedProduct === "function")
-    ? window.VoltboxQR.parseScannedProduct(rawPayload, products)
-    : parseFallbackScannedProduct(rawPayload);
+    ? window.VoltboxQR.parseScannedProduct(rawPayload, catalog)
+    : parseFallbackScannedProduct(rawPayload, catalog);
 
   var targetId = parseRes ? parseRes.productId : null;
 
@@ -3817,7 +3963,8 @@ function handleSuccessfulQrScan(rawPayload) {
   } else {
     updateScannerStatus("Unrecognized QR payload: " + rawPayload.slice(0, 36), true);
     setTimeout(function () {
-      if (document.getElementById("qr-scanner-overlay").classList.contains("open")) {
+      var overlayEl = document.getElementById("qr-scanner-overlay");
+      if (overlayEl && overlayEl.classList.contains("open")) {
         startQrCamera();
       }
     }, 1800);
@@ -4107,13 +4254,30 @@ window.clearQrScanHistory = function () {
   showActivityToast("QR Scan History cleared.");
 };
 
-function parseFallbackScannedProduct(rawText) {
+function parseFallbackScannedProduct(rawText, catalog) {
   var clean = String(rawText || "").trim();
+  if (!clean) return { productId: null };
   var qMatch = clean.match(/[?&]product=(\d+)/i) || clean.match(/\/product\/(\d+)/i) || clean.match(/#product[=-](\d+)/i);
   if (qMatch) return { productId: Number(qMatch[1]) };
   if (/^\d+$/.test(clean)) return { productId: Number(clean) };
+  if (Array.isArray(catalog) && catalog.length > 0) {
+    var skuUpper = clean.toUpperCase();
+    for (var i = 0; i < catalog.length; i++) {
+      if (catalog[i].sku && catalog[i].sku.toUpperCase() === skuUpper) {
+        return { productId: catalog[i].id };
+      }
+    }
+  }
   var skuMatch = clean.match(/VB-[A-Z]{3}-(\d+)/i);
   if (skuMatch) return { productId: Number(skuMatch[1]) };
+  if (Array.isArray(catalog) && catalog.length > 0 && clean.length >= 3) {
+    var lower = clean.toLowerCase();
+    for (var j = 0; j < catalog.length; j++) {
+      if (catalog[j].title && catalog[j].title.toLowerCase().indexOf(lower) !== -1) {
+        return { productId: catalog[j].id };
+      }
+    }
+  }
   return { productId: null };
 }
 
@@ -4123,26 +4287,88 @@ window.simulateQrScan = function (productId) {
   handleSuccessfulQrScan(url);
 };
 
+function decodeUploadedQrCanvasPasses(img) {
+  var w = img.naturalWidth || img.width || 0;
+  var h = img.naturalHeight || img.height || 0;
+  if (!w || !h) return null;
+
+  var maxTargetDims = [];
+  if (Math.max(w, h) <= 1200) {
+    maxTargetDims.push(Math.max(w, h));
+  } else {
+    maxTargetDims.push(960);
+    maxTargetDims.push(640);
+  }
+  if (Math.max(w, h) > 520) {
+    maxTargetDims.push(480);
+  }
+
+  for (var i = 0; i < maxTargetDims.length; i++) {
+    var targetMax = maxTargetDims[i];
+    var ratio = Math.min(1, targetMax / Math.max(w, h));
+    var cw = Math.max(64, Math.round(w * ratio));
+    var ch = Math.max(64, Math.round(h * ratio));
+    var c = document.createElement("canvas");
+    c.width = cw;
+    c.height = ch;
+    var ctx = c.getContext("2d", { willReadFrequently: true });
+    if (!ctx) continue;
+    ctx.imageSmoothingEnabled = i === 0;
+    ctx.drawImage(img, 0, 0, cw, ch);
+    var decoded = decodeQrCanvasWithQuietZone(c, i === 0 ? 28 : 0);
+    if (decoded && decoded.data) return decoded;
+  }
+  return null;
+}
+
 function handleQrImageUpload(file) {
   if (!file) return;
   setQrReticleScanState("scanning");
   updateScannerStatus("Processing uploaded QR image…", false);
   var reader = new FileReader();
+  reader.onerror = function () {
+    setQrReticleScanState("idle");
+    updateScannerStatus("Unable to read selected file — try another QR image.", true);
+  };
   reader.onload = function (e) {
     var img = new Image();
+    img.onerror = function () {
+      setQrReticleScanState("idle");
+      updateScannerStatus("Unsupported image format — use PNG, JPG, or WebP QR image.", true);
+    };
     img.onload = function () {
-      var canvas = document.createElement("canvas");
-      canvas.width = img.width;
-      canvas.height = img.height;
-      var ctx = canvas.getContext("2d");
-      ctx.drawImage(img, 0, 0);
-      var imgData = ctx.getImageData(0, 0, canvas.width, canvas.height);
-      if (window.VoltboxQR && typeof window.VoltboxQR.decodeQrFromImageData === "function") {
-        var res = window.VoltboxQR.decodeQrFromImageData(imgData);
-        if (res && res.data) {
-          handleSuccessfulQrScan(res.data);
-          return;
-        }
+      var detector = ensureQrBarcodeDetector();
+      if (detector) {
+        detector.detect(img)
+          .then(function (barcodes) {
+            if (barcodes && barcodes.length > 0 && barcodes[0].rawValue) {
+              handleSuccessfulQrScan(barcodes[0].rawValue);
+              return;
+            }
+            var fallbackRes = decodeUploadedQrCanvasPasses(img);
+            if (fallbackRes && fallbackRes.data) {
+              handleSuccessfulQrScan(fallbackRes.data);
+              return;
+            }
+            setQrReticleScanState("idle");
+            updateScannerStatus("No valid QR code detected in uploaded image.", true);
+          })
+          .catch(function () {
+            var fallbackRes = decodeUploadedQrCanvasPasses(img);
+            if (fallbackRes && fallbackRes.data) {
+              handleSuccessfulQrScan(fallbackRes.data);
+              return;
+            }
+            setQrReticleScanState("idle");
+            updateScannerStatus("No valid QR code detected in uploaded image.", true);
+          });
+        return;
+      }
+
+      var res = decodeUploadedQrCanvasPasses(img);
+      if (res && res.data) {
+        handleSuccessfulQrScan(res.data);
+        return;
       }
       setQrReticleScanState("idle");
       updateScannerStatus("No valid QR code detected in uploaded image.", true);
@@ -5964,9 +6190,11 @@ function wireUpButtons() {
   var qrScannerFileInput = document.getElementById("qr-scanner-file-input");
   if (qrScannerFileInput) {
     qrScannerFileInput.addEventListener("change", function (e) {
-      if (e.target.files && e.target.files[0]) {
-        handleQrImageUpload(e.target.files[0]);
+      var selected = e.target.files && e.target.files[0];
+      if (selected) {
+        handleQrImageUpload(selected);
       }
+      e.target.value = "";
     });
   }
   var qrAudioToggleBtn = document.getElementById("qr-audio-toggle-btn");

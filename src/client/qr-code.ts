@@ -104,6 +104,41 @@ export function decodeQrFromImageData(
     if (result && result.data) {
       return { data: result.data, location: result.location };
     }
+
+    // Secondary contrast-stretched luminance pass for low-contrast / colored / compressed QRs
+    var src = imageData.data;
+    var pixelCount = imageData.width * imageData.height;
+    if (pixelCount > 0 && src.length >= pixelCount * 4) {
+      var minL = 255;
+      var maxL = 0;
+      var step = pixelCount > 200000 ? 4 : 1;
+      for (var i = 0; i < pixelCount; i += step) {
+        var idx = i * 4;
+        var lum = (src[idx] * 77 + src[idx + 1] * 150 + src[idx + 2] * 29) >> 8;
+        if (lum < minL) minL = lum;
+        if (lum > maxL) maxL = lum;
+      }
+      var range = maxL - minL;
+      if (range >= 18 && range < 220) {
+        var stretched = new Uint8ClampedArray(pixelCount * 4);
+        var scale = 255 / range;
+        for (var p = 0; p < pixelCount; p++) {
+          var sIdx = p * 4;
+          var rawL = (src[sIdx] * 77 + src[sIdx + 1] * 150 + src[sIdx + 2] * 29) >> 8;
+          var norm = Math.max(0, Math.min(255, Math.round((rawL - minL) * scale)));
+          stretched[sIdx] = norm;
+          stretched[sIdx + 1] = norm;
+          stretched[sIdx + 2] = norm;
+          stretched[sIdx + 3] = 255;
+        }
+        var enhancedRes = jsQR(stretched, imageData.width, imageData.height, {
+          inversionAttempts: 'attemptBoth',
+        });
+        if (enhancedRes && enhancedRes.data) {
+          return { data: enhancedRes.data, location: enhancedRes.location };
+        }
+      }
+    }
   } catch (err) {
     console.warn('QR decode error:', err);
   }
@@ -118,6 +153,27 @@ export function parseScannedProduct(
     return { productId: null, rawText: '', matchedBy: null };
   }
   var clean = rawText.trim();
+  if (!clean) {
+    return { productId: null, rawText: '', matchedBy: null };
+  }
+
+  // 0. JSON QR payload support (e.g., {"productId": 19} or {"sku": "VB-GPU-019"})
+  if (clean.charAt(0) === '{' && clean.charAt(clean.length - 1) === '}') {
+    try {
+      var parsedJson = JSON.parse(clean);
+      if (parsedJson && typeof parsedJson === 'object') {
+        var jsonPid = Number(parsedJson.productId ?? parsedJson.id);
+        if (Number.isInteger(jsonPid) && jsonPid > 0) {
+          return { productId: jsonPid, rawText: clean, matchedBy: 'json_id' };
+        }
+        if (typeof parsedJson.sku === 'string' && parsedJson.sku.trim()) {
+          clean = parsedJson.sku.trim();
+        } else if (typeof parsedJson.url === 'string' && parsedJson.url.trim()) {
+          clean = parsedJson.url.trim();
+        }
+      }
+    } catch (_e) {}
+  }
 
   // 1. URL Query parameter ?product=19 or &product=19
   var queryMatch = clean.match(/[?&]product=(\d+)/i);
@@ -163,6 +219,23 @@ export function parseScannedProduct(
   // 7. Plain numeric ID (e.g. 19)
   if (/^\d+$/.test(clean)) {
     return { productId: Number(clean), rawText: clean, matchedBy: 'numeric_id' };
+  }
+
+  // 8. Title match fallback (for manual search/QR labels like "RTX 5090" or "AMD RYZEN 9")
+  if (Array.isArray(catalog) && catalog.length > 0 && clean.length >= 3) {
+    var lower = clean.toLowerCase();
+    var exactTitle = catalog.find(function (p) {
+      return p.title && p.title.toLowerCase() === lower;
+    });
+    if (exactTitle) {
+      return { productId: exactTitle.id, rawText: clean, matchedBy: 'catalog_title' };
+    }
+    var partialTitle = catalog.find(function (p) {
+      return p.title && p.title.toLowerCase().indexOf(lower) !== -1;
+    });
+    if (partialTitle) {
+      return { productId: partialTitle.id, rawText: clean, matchedBy: 'catalog_title_partial' };
+    }
   }
 
   return { productId: null, rawText: clean, matchedBy: null };
