@@ -1,6 +1,12 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
+  hashPasswordScrypt,
+  isScryptHash,
+  verifyPasswordScrypt,
+  sanitizeUserRecord,
+} from './security';
+import {
   LOW_STOCK_THRESHOLD,
   getProductQuantity,
   isLowStock,
@@ -185,6 +191,13 @@ import {
   resolveQrReticleAnimationProfile,
   QR_SCAN_TIMEOUT_MS,
   computeQrReticleProgressRingMetrics,
+  QR_RETICLE_DEFAULT_INSET_PX,
+  QR_RETICLE_MIN_SIZE_PX,
+  QR_RETICLE_MIN_INSET_PX,
+  computeQrReticleResizeBounds,
+  computeProfileSheetScrollState,
+  resolveConciergeChannelMetadata,
+  formatConciergeSenderRoleBadge,
 } from './inventory';
 
 
@@ -3229,4 +3242,141 @@ test('QR Scanner Reticle 5-Second Visual Progress Ring: fills from 0% to 100% an
   assert.equal(timedOut.phase, 'timeout-reset');
   assert.ok(timedOut.statusLabel.includes('Resetting'));
 });
+
+test('QR Scanner Reticle Corner Drag Handles: resizes reticle from tl, tr, bl, br with min-size and inset clamping', () => {
+  const defaultInsets = {
+    top: QR_RETICLE_DEFAULT_INSET_PX,
+    right: QR_RETICLE_DEFAULT_INSET_PX,
+    bottom: QR_RETICLE_DEFAULT_INSET_PX,
+    left: QR_RETICLE_DEFAULT_INSET_PX,
+  };
+
+  // 1. Dragging top-left (tl) inward (+18px right, +12px down) shrinks reticle from top & left
+  const tlShrink = computeQrReticleResizeBounds(260, 260, defaultInsets, 'tl', 18, 12);
+  assert.equal(tlShrink.corner, 'tl');
+  assert.equal(tlShrink.cursor, 'nwse-resize');
+  assert.equal(tlShrink.insets.left, 40);
+  assert.equal(tlShrink.insets.top, 34);
+  assert.equal(tlShrink.insets.right, 22);
+  assert.equal(tlShrink.insets.bottom, 22);
+  assert.equal(tlShrink.width, 198);
+  assert.equal(tlShrink.height, 204);
+  assert.equal(tlShrink.isCustomSized, true);
+
+  // 2. Dragging top-right (tr) outward (+10px right, -10px up) expands reticle toward top-right
+  const trExpand = computeQrReticleResizeBounds(260, 260, defaultInsets, 'tr', 10, -10);
+  assert.equal(trExpand.corner, 'tr');
+  assert.equal(trExpand.cursor, 'nesw-resize');
+  assert.equal(trExpand.insets.right, 12);
+  assert.equal(trExpand.insets.top, 12);
+  assert.equal(trExpand.width, 226);
+  assert.equal(trExpand.height, 226);
+
+  // 3. Dragging bottom-left (bl) inward (+15px right, -20px up) shrinks from left & bottom
+  const blShrink = computeQrReticleResizeBounds(260, 260, defaultInsets, 'bl', 15, -20);
+  assert.equal(blShrink.corner, 'bl');
+  assert.equal(blShrink.cursor, 'nesw-resize');
+  assert.equal(blShrink.insets.left, 37);
+  assert.equal(blShrink.insets.bottom, 42);
+  assert.equal(blShrink.width, 201);
+  assert.equal(blShrink.height, 196);
+
+  // 4. Dragging bottom-right (br) far inward clamps at QR_RETICLE_MIN_SIZE_PX (96px)
+  const brClampMin = computeQrReticleResizeBounds(260, 260, defaultInsets, 'br', -500, -500);
+  assert.equal(brClampMin.corner, 'br');
+  assert.equal(brClampMin.cursor, 'nwse-resize');
+  assert.equal(brClampMin.width, QR_RETICLE_MIN_SIZE_PX);
+  assert.equal(brClampMin.height, QR_RETICLE_MIN_SIZE_PX);
+
+  // 5. Dragging bottom-right (br) far outward clamps at QR_RETICLE_MIN_INSET_PX (8px)
+  const brClampMax = computeQrReticleResizeBounds(260, 260, defaultInsets, 'br', 500, 500);
+  assert.equal(brClampMax.insets.right, QR_RETICLE_MIN_INSET_PX);
+  assert.equal(brClampMax.insets.bottom, QR_RETICLE_MIN_INSET_PX);
+});
+
+test('Profile Sheet Independent Scroll State: caps height to viewport and isolates scroll with overscrollBehavior contain', () => {
+  const stateAtTop = computeProfileSheetScrollState(900, 880, 0, 64, 20);
+  assert.equal(stateAtTop.maxHeightPx, 702);
+  assert.equal(stateAtTop.isScrollable, true);
+  assert.equal(stateAtTop.maxScrollTop, 178);
+  assert.equal(stateAtTop.clampedScrollTop, 0);
+  assert.equal(stateAtTop.canScrollUp, false);
+  assert.equal(stateAtTop.canScrollDown, true);
+  assert.equal(stateAtTop.overflowY, 'auto');
+  assert.equal(stateAtTop.overscrollBehavior, 'contain');
+
+  const stateScrolledToBottom = computeProfileSheetScrollState(900, 880, 300, 64, 20);
+  assert.equal(stateScrolledToBottom.clampedScrollTop, 178);
+  assert.equal(stateScrolledToBottom.canScrollUp, true);
+  assert.equal(stateScrolledToBottom.canScrollDown, false);
+});
+
+test('Hardware Concierge Workspace Messenger: resolves channel metadata and structured role badges', () => {
+  const desk = resolveConciergeChannelMetadata('engineering-desk');
+  assert.equal(desk.channelId, 'engineering-desk');
+  assert.equal(desk.title, 'Hardware Concierge');
+  assert.equal(desk.badgeLabel, 'Desk');
+
+  const builds = resolveConciergeChannelMetadata('rig-builds');
+  assert.equal(builds.channelId, 'rig-builds');
+  assert.equal(builds.title, 'Rig Build Lab');
+
+  const drops = resolveConciergeChannelMetadata('stock-radar');
+  assert.equal(drops.channelId, 'stock-radar');
+  assert.equal(drops.title, 'Stock Drop Radar');
+
+  const vip = resolveConciergeChannelMetadata('vip-concierge');
+  assert.equal(vip.channelId, 'vip-concierge');
+  assert.equal(vip.title, 'VIP Order Care');
+
+  const fallback = resolveConciergeChannelMetadata('unknown-thread');
+  assert.equal(fallback.channelId, 'engineering-desk');
+
+  const architectBadge = formatConciergeSenderRoleBadge('STAFF_ARCHITECT');
+  assert.equal(architectBadge.label, 'Lead Architect');
+  assert.equal(architectBadge.tier, 'architect');
+  assert.equal(architectBadge.isVerified, true);
+
+  const builderBadge = formatConciergeSenderRoleBadge('VERIFIED_BUILDER');
+  assert.equal(builderBadge.label, 'Verified Builder');
+  assert.equal(builderBadge.tier, 'builder');
+  assert.equal(builderBadge.isVerified, true);
+
+  const memberBadge = formatConciergeSenderRoleBadge('user');
+  assert.equal(memberBadge.label, 'Builder');
+  assert.equal(memberBadge.tier, 'member');
+  assert.equal(memberBadge.isVerified, false);
+});
+
+test('Password Security & Sanitization: scrypt hashing, timing-safe verification, legacy migration, and password redaction', () => {
+  const hashed = hashPasswordScrypt('Harish123');
+  assert.equal(isScryptHash(hashed), true);
+  assert.notEqual(hashed, 'Harish123');
+
+  // Unique per-user salts
+  const hashed2 = hashPasswordScrypt('Harish123');
+  assert.notEqual(hashed, hashed2);
+
+  // Correct password validates without rehash
+  const validCheck = verifyPasswordScrypt('Harish123', hashed);
+  assert.equal(validCheck.valid, true);
+  assert.equal(validCheck.needsRehash, false);
+
+  // Wrong password rejects
+  const wrongCheck = verifyPasswordScrypt('WrongPass', hashed);
+  assert.equal(wrongCheck.valid, false);
+  assert.equal(wrongCheck.needsRehash, false);
+
+  // Legacy plaintext verifies and requests migration to scrypt
+  const legacyCheck = verifyPasswordScrypt('Shopper123', 'Shopper123');
+  assert.equal(legacyCheck.valid, true);
+  assert.equal(legacyCheck.needsRehash, true);
+
+  // Redacts password field cleanly without mutating source
+  const rawUser = { id: 1, name: 'Harish', email: 'harish@voltbox.test', password: hashed };
+  const safeUser = sanitizeUserRecord(rawUser);
+  assert.equal('password' in safeUser, false);
+  assert.equal(safeUser.email, 'harish@voltbox.test');
+});
+
 

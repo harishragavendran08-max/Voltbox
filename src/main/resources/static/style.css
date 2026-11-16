@@ -154,41 +154,33 @@ body {
   padding: 14px;
   display: flex;
   flex-direction: column;
-  transform-style: preserve-3d;
-  will-change: transform;
-  transform:
-    perspective(1000px)
-    translateY(0)
-    rotateX(var(--card-rx, 0deg))
-    rotateY(var(--card-ry, 0deg))
-    scale3d(1, 1, 1);
+  contain: layout style;
+  transform: translateY(0);
   transition:
-    transform 0.42s cubic-bezier(0.16, 1, 0.3, 1),
-    border-color 0.25s ease,
-    box-shadow 0.25s ease;
+    transform 0.28s cubic-bezier(0.16, 1, 0.3, 1),
+    border-color 0.22s ease,
+    box-shadow 0.22s ease;
 }
 
 .card:hover,
 .card.is-tilting {
+  will-change: transform;
   transform:
     perspective(1000px)
     translateY(-4px)
     rotateX(var(--card-rx, 0deg))
-    rotateY(var(--card-ry, 0deg))
-    scale3d(1.01, 1.01, 1);
+    rotateY(var(--card-ry, 0deg));
   border-color: rgba(var(--accent-rgb), 0.32);
   box-shadow:
-    calc(var(--parallax-x, 0px) * -1.4)
-    calc(14px + var(--parallax-y, 0px) * -1.4)
-    32px rgba(0, 0, 0, 0.46),
+    0 14px 32px rgba(0, 0, 0, 0.46),
     0 0 0 1px rgba(45, 212, 191, 0.08);
 }
 
 .card.is-tilting {
   transition:
-    transform 0.09s ease-out,
+    transform 0.08s ease-out,
     border-color 0.2s ease,
-    box-shadow 0.14s ease-out;
+    box-shadow 0.16s ease-out;
 }
 
 .card-img-wrap {
@@ -201,43 +193,23 @@ body {
   margin-bottom: 8px;
   background: #0f172a;
   border: 1px solid rgba(255, 255, 255, 0.06);
-  transform: translate3d(0, 0, 0);
-  transition: transform 0.32s cubic-bezier(0.16, 1, 0.3, 1), box-shadow 0.28s ease;
-}
-
-.card.is-tilting .card-img-wrap {
-  transition: transform 0.09s ease-out, box-shadow 0.2s ease;
-}
-
-.card:hover .card-img-wrap,
-.card.is-tilting .card-img-wrap {
-  transform: translate3d(
-    calc(var(--parallax-x, 0px) * 0.85),
-    calc(var(--parallax-y, 0px) * 0.85),
-    16px
-  );
-  box-shadow: 0 8px 18px rgba(0, 0, 0, 0.32);
 }
 
 .card-img {
   width: 100%;
   height: 100%;
-  aspect-ratio: auto;
+  aspect-ratio: 4 / 3;
   object-fit: cover;
   object-position: center center;
   border-radius: 10px;
   background: #0f172a;
   display: block;
-  transition: transform 0.3s ease;
+  transition: transform 0.28s cubic-bezier(0.16, 1, 0.3, 1);
 }
 
 .card:hover .card-img,
 .card.is-tilting .card-img {
-  transform: scale(1.045) translate3d(
-    calc(var(--parallax-x, 0px) * 0.45),
-    calc(var(--parallax-y, 0px) * 0.45),
-    0
-  );
+  transform: scale(1.035);
 }
 
 .card-title {
@@ -510,6 +482,11 @@ body {
   top: calc(100% + 12px);
   right: 0;
   width: 320px;
+  max-height: min(78vh, calc(100dvh - 84px));
+  overflow-y: auto;
+  overflow-x: hidden;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
   background: var(--card);
   border: 1px solid var(--line);
   border-radius: 16px;
@@ -2080,8 +2057,9 @@ body.can-report .card-flag { display: grid; }
 }
 
 .sort-wrap select option {
-  background: #181b22;
-  color: var(--text);
+  background-color: #1c1c1e;
+  background: #1c1c1e;
+  color: #ffffff;
 }
 
 .rig-trigger-btn {
@@ -2142,60 +2120,7 @@ body.can-report .card-flag { display: grid; }
 .card-price-row,
 .card-sku-barcode,
 .card .qty {
-  transform: translate3d(0, 0, 0);
-  transition: transform 0.32s cubic-bezier(0.16, 1, 0.3, 1);
-}
-
-.card.is-tilting .card-meta-row,
-.card.is-tilting .card-title,
-.card.is-tilting .card-desc,
-.card.is-tilting .card-rating,
-.card.is-tilting .card-price-row,
-.card.is-tilting .card-sku-barcode,
-.card.is-tilting .qty {
-  transition: transform 0.09s ease-out;
-}
-
-.card:hover .card-meta-row,
-.card.is-tilting .card-meta-row {
-  transform: translate3d(
-    calc(var(--parallax-x, 0px) * 0.45),
-    calc(var(--parallax-y, 0px) * 0.45),
-    10px
-  );
-}
-
-.card:hover .card-title,
-.card.is-tilting .card-title,
-.card:hover .card-desc,
-.card.is-tilting .card-desc,
-.card:hover .card-rating,
-.card.is-tilting .card-rating {
-  transform: translate3d(
-    calc(var(--parallax-x, 0px) * 0.65),
-    calc(var(--parallax-y, 0px) * 0.65),
-    14px
-  );
-}
-
-.card:hover .card-price-row,
-.card.is-tilting .card-price-row,
-.card:hover .card-sku-barcode,
-.card.is-tilting .card-sku-barcode {
-  transform: translate3d(
-    calc(var(--parallax-x, 0px) * 0.55),
-    calc(var(--parallax-y, 0px) * 0.55),
-    12px
-  );
-}
-
-.card:hover .qty,
-.card.is-tilting .qty {
-  transform: translate3d(
-    calc(var(--parallax-x, 0px) * 0.4),
-    calc(var(--parallax-y, 0px) * 0.4),
-    8px
-  );
+  transform: none;
 }
 
 .card-img-wrap {
@@ -6947,6 +6872,97 @@ body.can-report .card-flag {
   border-bottom: 3px solid #ffd23f;
   border-right: 3px solid #ffd23f;
   border-bottom-right-radius: 6px;
+}
+
+/* Interactive Corner Drag Handles for Manual Reticle Resizing */
+#qr-scanner-reticle.is-resizing {
+  transition: none !important;
+  outline: 1px dashed rgba(255, 210, 63, 0.55);
+  outline-offset: 2px;
+}
+
+#qr-scanner-reticle .qr-reticle-drag-handle {
+  position: absolute;
+  width: 16px;
+  height: 16px;
+  padding: 0;
+  margin: 0;
+  border-radius: 5px;
+  border: 1.5px solid #ffd23f;
+  background: rgba(15, 17, 23, 0.94);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.65), 0 0 8px rgba(255, 210, 63, 0.38);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  pointer-events: auto;
+  touch-action: none;
+  user-select: none;
+  z-index: 4;
+  transition:
+    transform 0.16s cubic-bezier(0.22, 1, 0.36, 1),
+    background-color 0.16s ease,
+    border-color 0.16s ease,
+    box-shadow 0.16s ease;
+}
+
+#qr-scanner-reticle .qr-reticle-drag-handle.tl {
+  top: -7px;
+  left: -7px;
+  cursor: nwse-resize;
+}
+
+#qr-scanner-reticle .qr-reticle-drag-handle.tr {
+  top: -7px;
+  right: -7px;
+  cursor: nesw-resize;
+}
+
+#qr-scanner-reticle .qr-reticle-drag-handle.bl {
+  bottom: -7px;
+  left: -7px;
+  cursor: nesw-resize;
+}
+
+#qr-scanner-reticle .qr-reticle-drag-handle.br {
+  bottom: -7px;
+  right: -7px;
+  cursor: nwse-resize;
+}
+
+#qr-scanner-reticle .qr-reticle-drag-handle:hover,
+#qr-scanner-reticle .qr-reticle-drag-handle:focus-visible,
+#qr-scanner-reticle .qr-reticle-drag-handle.is-dragging {
+  background: #ffd23f;
+  border-color: #ffffff;
+  transform: scale(1.22);
+  box-shadow: 0 0 14px rgba(255, 210, 63, 0.9), 0 2px 10px rgba(0, 0, 0, 0.7);
+  outline: none;
+}
+
+#qr-scanner-reticle .qr-reticle-drag-handle .qr-handle-grip {
+  width: 6px;
+  height: 6px;
+  display: block;
+  background-image: radial-gradient(circle, #ffd23f 1.1px, transparent 1.2px);
+  background-size: 3px 3px;
+  background-position: center;
+  opacity: 0.95;
+  pointer-events: none;
+}
+
+#qr-scanner-reticle .qr-reticle-drag-handle:hover .qr-handle-grip,
+#qr-scanner-reticle .qr-reticle-drag-handle:focus-visible .qr-handle-grip,
+#qr-scanner-reticle .qr-reticle-drag-handle.is-dragging .qr-handle-grip {
+  background-image: radial-gradient(circle, #111318 1.1px, transparent 1.2px);
+}
+
+#qr-scanner-reticle.scan-detected .qr-reticle-drag-handle {
+  border-color: #10b981;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.65), 0 0 10px rgba(16, 185, 129, 0.6);
+}
+
+#qr-scanner-reticle.scan-detected .qr-reticle-drag-handle .qr-handle-grip {
+  background-image: radial-gradient(circle, #10b981 1.1px, transparent 1.2px);
 }
 
 /* 1. Subtle Glowing Pulse Animation when #qr-scanner-reticle is Idling */
@@ -13329,68 +13345,91 @@ body[data-ui-theme] .card:hover {
   color: #34d399;
 }
 
-/* 3. Instagram Direct-Style Messenger Drawer (.ig-dm-drawer) */
+/* 3. Hardware Concierge Workspace Messenger Drawer (.concierge-workspace-drawer / .ig-dm-drawer) */
 .side-drawer.messenger-drawer.ig-dm-drawer {
-  width: min(440px, 100vw) !important;
-  background: #0b0f17 !important;
-  border-left: 1px solid rgba(255, 255, 255, 0.1) !important;
+  width: min(432px, 100vw) !important;
+  background: #0d1117 !important;
+  border-left: 1px solid rgba(255, 255, 255, 0.09) !important;
+  box-shadow: -16px 0 48px rgba(0, 0, 0, 0.55) !important;
+  display: flex !important;
+  flex-direction: column !important;
+  overflow: hidden !important;
+}
+
+/* Hide noisy neon momentum scroll bar inside Messenger so native thin scrollbar works cleanly */
+.side-drawer.messenger-drawer .drawer-momentum-track {
+  display: none !important;
 }
 
 .ig-dm-head {
   padding: 14px 16px !important;
-  background: rgba(15, 20, 30, 0.96) !important;
+  background: #111722 !important;
   border-bottom: 1px solid rgba(255, 255, 255, 0.08) !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: space-between !important;
+  gap: 10px !important;
 }
 
 .ig-dm-profile {
   display: flex;
   align-items: center;
   gap: 11px;
+  min-width: 0;
 }
 
 .ig-story-ring {
   position: relative;
-  width: 42px;
-  height: 42px;
-  border-radius: 50%;
-  padding: 2.5px;
-  background: linear-gradient(45deg, #f09433 0%, #e6683c 25%, #dc2743 50%, #cc2366 75%, #bc1888 100%);
+  width: 38px;
+  height: 38px;
+  border-radius: 11px;
+  padding: 0;
+  background: linear-gradient(135deg, #0a84ff 0%, #2563eb 100%);
   display: grid;
   place-items: center;
   flex-shrink: 0;
+  box-shadow: 0 4px 12px rgba(10, 132, 255, 0.28);
 }
 
 .ig-dm-avatar {
   width: 100% !important;
   height: 100% !important;
-  border-radius: 50% !important;
-  background: #0f172a !important;
-  border: 2px solid #0b0f17;
+  border-radius: 11px !important;
+  background: transparent !important;
+  border: none !important;
+  color: #ffffff !important;
   box-shadow: none !important;
 }
 
 .ig-online-dot {
   position: absolute;
-  bottom: 0;
-  right: 0;
+  bottom: -2px;
+  right: -2px;
   width: 11px;
   height: 11px;
   border-radius: 50%;
   background: #10b981;
-  border: 2px solid #0b0f17;
+  border: 2px solid #111722;
+}
+
+.ig-dm-user-meta {
+  min-width: 0;
 }
 
 .ig-dm-title-row {
   display: flex;
   align-items: center;
-  gap: 5px;
+  gap: 6px;
 }
 
 .ig-dm-title-row .messenger-title {
   font-size: 15px !important;
   font-weight: 700 !important;
-  letter-spacing: -0.01em;
+  letter-spacing: -0.015em;
   color: #f8fafc !important;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .ig-verified-badge,
@@ -13401,149 +13440,169 @@ body[data-ui-theme] .card:hover {
   width: 15px;
   height: 15px;
   border-radius: 50%;
-  background: #3897f0;
-  color: #ffffff;
-  font-size: 9.5px;
-  font-weight: 900;
+  background: rgba(10, 132, 255, 0.2);
+  border: 1px solid rgba(10, 132, 255, 0.45);
+  color: #60a5fa;
+  font-size: 9px;
+  font-weight: 800;
   line-height: 1;
   flex-shrink: 0;
 }
 
 .ig-dm-status {
-  margin-top: 1px !important;
+  margin-top: 2px !important;
   font-size: 11.5px !important;
   color: #94a3b8 !important;
+  display: flex !important;
+  align-items: center !important;
+  gap: 6px !important;
+}
+
+.concierge-live-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #10b981;
+  flex-shrink: 0;
 }
 
 .ig-dm-status #messenger-online-pill {
   background: transparent !important;
   border: none !important;
   padding: 0 !important;
-  color: #34d399 !important;
+  color: #94a3b8 !important;
   font-size: 11.5px !important;
-  font-weight: 600 !important;
+  font-weight: 500 !important;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .ig-dm-actions {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
+  gap: 8px;
+  flex-shrink: 0;
 }
 
-.ig-dm-icon-btn {
-  width: 34px !important;
-  height: 34px !important;
-  min-width: 34px !important;
-  min-height: 34px !important;
-  padding: 0 !important;
-  border-radius: 50%;
-  border: 1px solid rgba(255, 255, 255, 0.12);
-  background: rgba(255, 255, 255, 0.05);
-  color: #e2e8f0;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
+.ig-dm-icon-btn.concierge-tag-toggle-btn {
+  width: auto !important;
+  height: 32px !important;
+  min-width: 0 !important;
+  min-height: 32px !important;
+  padding: 0 11px !important;
+  border-radius: 8px !important;
+  border: 1px solid rgba(255, 255, 255, 0.12) !important;
+  background: rgba(255, 255, 255, 0.05) !important;
+  color: #cbd5e1 !important;
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  gap: 6px !important;
+  font-size: 11.5px !important;
+  font-weight: 600 !important;
   cursor: pointer;
   transition: all 0.15s ease;
 }
 
-.ig-dm-icon-btn:hover {
-  background: rgba(255, 255, 255, 0.12);
-  color: #ffffff;
+.ig-dm-icon-btn.concierge-tag-toggle-btn:hover {
+  background: rgba(255, 255, 255, 0.1) !important;
+  color: #ffffff !important;
+  border-color: rgba(255, 255, 255, 0.22) !important;
 }
 
-/* 4-Column Instagram Story-Ring Thread Switcher (Fixes 3-col orphan wrap!) */
+.ig-dm-icon-btn.concierge-tag-toggle-btn.active {
+  background: rgba(10, 132, 255, 0.18) !important;
+  border-color: rgba(10, 132, 255, 0.55) !important;
+  color: #60a5fa !important;
+}
+
+.ig-dm-close {
+  width: 32px !important;
+  height: 32px !important;
+  min-width: 32px !important;
+  min-height: 32px !important;
+  border-radius: 8px !important;
+}
+
+/* Compact 4-Segment Workspace Channel Switcher */
 .ig-stories-tray {
-  padding: 10px 14px !important;
-  background: #0e131d !important;
+  padding: 8px 14px !important;
+  background: #111722 !important;
   border-bottom: 1px solid rgba(255, 255, 255, 0.07) !important;
 }
 
 .messenger-channels.ig-channel-pills {
   display: grid !important;
   grid-template-columns: repeat(4, minmax(0, 1fr)) !important;
-  gap: 6px !important;
-  padding: 0 !important;
-  background: transparent !important;
-  border: none !important;
+  gap: 4px !important;
+  padding: 3px !important;
+  background: #090d14 !important;
+  border: 1px solid rgba(255, 255, 255, 0.07) !important;
+  border-radius: 10px !important;
 }
 
 .ig-channel-pills .msg-channel-btn {
-  display: flex !important;
-  flex-direction: column !important;
+  display: inline-flex !important;
+  flex-direction: row !important;
   align-items: center !important;
   justify-content: center !important;
-  gap: 5px !important;
-  padding: 7px 4px !important;
-  height: auto !important;
-  min-height: 62px !important;
+  gap: 6px !important;
+  padding: 0 6px !important;
+  height: 30px !important;
+  min-height: 30px !important;
   min-width: 0 !important;
-  border-radius: 12px !important;
-  border: 1px solid rgba(255, 255, 255, 0.06) !important;
-  background: rgba(255, 255, 255, 0.025) !important;
+  border-radius: 7px !important;
+  border: 1px solid transparent !important;
+  background: transparent !important;
   color: #94a3b8 !important;
-  transition: all 0.16s ease !important;
+  transition: all 0.15s ease !important;
 }
 
 .ig-channel-pills .msg-channel-btn:hover {
-  background: rgba(255, 255, 255, 0.06) !important;
-  color: #f8fafc !important;
+  color: #e2e8f0 !important;
+  background: rgba(255, 255, 255, 0.04) !important;
 }
 
 .ig-channel-pills .msg-channel-btn.active {
-  background: rgba(56, 189, 248, 0.12) !important;
-  border-color: rgba(56, 189, 248, 0.45) !important;
+  background: #1e293b !important;
+  border-color: rgba(255, 255, 255, 0.1) !important;
   color: #ffffff !important;
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.25) !important;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.35) !important;
 }
 
-.ig-pill-avatar {
-  width: 30px;
-  height: 30px;
+.concierge-chan-dot {
+  width: 6px;
+  height: 6px;
   border-radius: 50%;
-  display: grid;
-  place-items: center;
-  font-size: 10.5px;
-  font-weight: 800;
-  color: #ffffff;
-  background: #1e293b;
-  padding: 2px;
+  flex-shrink: 0;
 }
 
-.ig-pill-avatar.ring-cyan {
-  border: 2px solid #38bdf8;
-}
-
-.ig-pill-avatar.ring-violet {
-  border: 2px solid #a855f7;
-}
-
-.ig-pill-avatar.ring-amber {
-  border: 2px solid #f59e0b;
-}
-
-.ig-pill-avatar.ring-emerald {
-  border: 2px solid #10b981;
-}
+.concierge-chan-dot.dot-cyan { background: #38bdf8; }
+.concierge-chan-dot.dot-violet { background: #a855f7; }
+.concierge-chan-dot.dot-amber { background: #f59e0b; }
+.concierge-chan-dot.dot-emerald { background: #10b981; }
 
 .ig-pill-label {
-  font-size: 11px;
+  font-size: 11.5px;
   font-weight: 600;
-  line-height: 1.1;
+  line-height: 1;
   white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
-/* Instagram Direct Icebreaker Quick-Chips (Zero Overlap Horizontal Pill Tray) */
+/* Streamlined Quick-Prompts Bar */
 .messenger-quick-chips.ig-icebreakers {
   display: flex !important;
   flex-direction: row !important;
   align-items: center !important;
   justify-content: flex-start !important;
   flex-wrap: nowrap !important;
-  gap: 7px !important;
-  padding: 8px 14px !important;
-  background: #0c111b !important;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.07) !important;
+  gap: 6px !important;
+  padding: 7px 14px !important;
+  background: #0d1117 !important;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06) !important;
   overflow-x: auto !important;
   overflow-y: hidden !important;
   scrollbar-width: none !important;
@@ -13553,22 +13612,32 @@ body[data-ui-theme] .card:hover {
   display: none !important;
 }
 
+.concierge-prompts-label {
+  font-size: 10.5px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: #64748b;
+  flex-shrink: 0;
+  margin-right: 2px;
+}
+
 .messenger-quick-chips.ig-icebreakers .msg-quick-chip {
   flex: 0 0 auto !important;
   width: auto !important;
   min-width: max-content !important;
-  height: 28px !important;
-  min-height: 28px !important;
-  padding: 0 11px !important;
+  height: 24px !important;
+  min-height: 24px !important;
+  padding: 0 10px !important;
   margin: 0 !important;
   position: static !important;
   transform: none !important;
-  border-radius: 999px !important;
-  background: rgba(56, 189, 248, 0.1) !important;
-  border: 1px solid rgba(56, 189, 248, 0.28) !important;
-  color: #bae6fd !important;
+  border-radius: 6px !important;
+  background: rgba(255, 255, 255, 0.04) !important;
+  border: 1px solid rgba(255, 255, 255, 0.09) !important;
+  color: #cbd5e1 !important;
   font-size: 11px !important;
-  font-weight: 600 !important;
+  font-weight: 500 !important;
   white-space: nowrap !important;
   display: inline-flex !important;
   align-items: center !important;
@@ -13576,34 +13645,49 @@ body[data-ui-theme] .card:hover {
 }
 
 .messenger-quick-chips.ig-icebreakers .msg-quick-chip:hover {
-  background: rgba(56, 189, 248, 0.2) !important;
-  border-color: #38bdf8 !important;
+  background: rgba(10, 132, 255, 0.14) !important;
+  border-color: rgba(10, 132, 255, 0.4) !important;
   color: #ffffff !important;
 }
 
-/* Instagram Direct Feed & Chat Bubbles */
+/* Clean Scrollable Message Feed & Cards */
 .ig-dm-feed {
-  background: #0b0f17 !important;
-  padding: 14px 14px 18px !important;
+  background: #0d1117 !important;
+  padding: 14px 16px 18px !important;
   gap: 14px !important;
   overflow-x: hidden !important;
+  overflow-y: auto !important;
+  overscroll-behavior: contain !important;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(148, 163, 184, 0.3) transparent;
+}
+
+.ig-dm-feed::-webkit-scrollbar {
+  width: 5px;
+}
+
+.ig-dm-feed::-webkit-scrollbar-thumb {
+  background: rgba(148, 163, 184, 0.3);
+  border-radius: 999px;
 }
 
 .ig-dm-timestamp-divider {
   text-align: center;
-  margin: 2px 0 4px;
+  margin: 0 0 2px;
 }
 
 .ig-dm-timestamp-divider span {
   font-size: 10px;
   font-weight: 700;
-  letter-spacing: 0.08em;
+  letter-spacing: 0.07em;
   color: #64748b;
   background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.06);
   padding: 3px 10px;
   border-radius: 999px;
 }
 
+/* Top-Aligned Message Rows (Fixes Avatar Pushed to Bottom!) */
 .msg-card.ig-dm-row {
   background: transparent !important;
   border: none !important;
@@ -13614,9 +13698,9 @@ body[data-ui-theme] .card:hover {
   max-width: 100% !important;
   display: flex !important;
   flex-direction: row !important;
-  align-items: flex-end !important;
+  align-items: flex-start !important;
   justify-content: flex-start !important;
-  gap: 9px !important;
+  gap: 10px !important;
   box-sizing: border-box !important;
 }
 
@@ -13629,22 +13713,24 @@ body[data-ui-theme] .card:hover {
 
 .ig-msg-avatar-wrap {
   flex-shrink: 0;
-  padding-bottom: 18px;
+  padding-top: 2px;
+  padding-bottom: 0 !important;
 }
 
 .ig-msg-avatar {
-  width: 30px !important;
-  height: 30px !important;
-  border-radius: 50% !important;
-  font-size: 12px !important;
-  color: #090d16 !important;
-  box-shadow: 0 0 0 2px rgba(56, 189, 248, 0.4);
+  width: 32px !important;
+  height: 32px !important;
+  border-radius: 9px !important;
+  font-size: 12.5px !important;
+  font-weight: 700 !important;
+  color: #ffffff !important;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.25);
 }
 
 .msg-card.ig-dm-row .ig-dm-bubble-col {
-  flex: 0 1 auto !important;
+  flex: 1 1 auto !important;
   width: auto !important;
-  max-width: 82% !important;
+  max-width: calc(100% - 42px) !important;
   min-width: 0 !important;
   display: flex !important;
   flex-direction: column !important;
@@ -13654,46 +13740,95 @@ body[data-ui-theme] .card:hover {
 .msg-card.ig-dm-row.self .ig-dm-bubble-col {
   align-items: flex-end !important;
   margin-left: auto !important;
-  max-width: 84% !important;
+  max-width: 88% !important;
 }
 
 .ig-dm-meta {
-  margin-bottom: 3px !important;
-  padding: 0 4px;
-  gap: 5px !important;
+  width: 100%;
+  margin-bottom: 4px !important;
+  padding: 0 2px;
+  gap: 6px !important;
   display: flex !important;
   align-items: center !important;
-  flex-wrap: wrap !important;
+  flex-wrap: nowrap !important;
 }
 
 .msg-card.ig-dm-row.self .ig-dm-meta {
   justify-content: flex-end !important;
 }
 
-.ig-msg-handle {
-  font-size: 11px;
+.ig-dm-meta .msg-author {
+  font-size: 12.5px !important;
+  font-weight: 700 !important;
+  color: #f1f5f9 !important;
+  white-space: nowrap;
+}
+
+.concierge-role-badge {
+  font-size: 10px;
+  font-weight: 600;
+  padding: 1px 6px;
+  border-radius: 5px;
+  line-height: 1.3;
+  white-space: nowrap;
+}
+
+.concierge-role-badge.tier-architect {
+  background: rgba(10, 132, 255, 0.15);
+  border: 1px solid rgba(10, 132, 255, 0.35);
+  color: #60a5fa;
+}
+
+.concierge-role-badge.tier-builder {
+  background: rgba(16, 185, 129, 0.14);
+  border: 1px solid rgba(16, 185, 129, 0.32);
+  color: #34d399;
+}
+
+.concierge-role-badge.tier-member,
+.concierge-role-badge.self-badge {
+  background: rgba(148, 163, 184, 0.12);
+  border: 1px solid rgba(148, 163, 184, 0.24);
+  color: #94a3b8;
+}
+
+.ig-dm-meta .msg-time {
+  margin-left: auto;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 10.5px;
   color: #64748b;
-  font-weight: 500;
+  white-space: nowrap;
+}
+
+.msg-card.ig-dm-row.self .ig-dm-meta .msg-time {
+  margin-left: 4px;
 }
 
 .ig-dm-bubble {
-  padding: 10px 14px;
-  border-radius: 18px 18px 18px 4px;
-  background: #182132;
+  padding: 10px 13px;
+  border-radius: 4px 14px 14px 14px;
+  background: #161d2a;
   border: 1px solid rgba(255, 255, 255, 0.08);
-  color: #f1f5f9;
-  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.2);
-  width: fit-content;
+  color: #e2e8f0;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.18);
+  width: 100%;
   max-width: 100%;
   box-sizing: border-box;
   word-break: break-word;
 }
 
 .msg-card.ig-dm-row.self .ig-dm-bubble {
-  border-radius: 18px 18px 4px 18px;
-  background: linear-gradient(135deg, #2563eb 0%, #4f46e5 55%, #7c3aed 100%);
-  border-color: rgba(255, 255, 255, 0.16);
+  width: fit-content;
+  border-radius: 14px 4px 14px 14px;
+  background: #0a84ff;
+  border-color: rgba(255, 255, 255, 0.15);
   color: #ffffff;
+}
+
+.msg-card.ig-dm-row .msg-text {
+  font-size: 13px !important;
+  line-height: 1.5 !important;
+  color: inherit !important;
 }
 
 .msg-card.ig-dm-row.self .msg-text {
@@ -13701,13 +13836,21 @@ body[data-ui-theme] .card:hover {
   text-align: left;
 }
 
-/* Instagram Shopping-Style Tagged Hardware Drop Card */
+/* Inline Tagged Hardware Card inside Message */
 .ig-product-drop-card {
-  margin-top: 8px !important;
-  background: rgba(9, 13, 22, 0.85) !important;
-  border: 1px solid rgba(255, 255, 255, 0.12) !important;
-  border-radius: 12px !important;
+  margin-top: 9px !important;
+  background: rgba(13, 17, 23, 0.78) !important;
+  border: 1px solid rgba(255, 255, 255, 0.1) !important;
+  border-radius: 10px !important;
   padding: 8px 10px !important;
+  display: flex !important;
+  align-items: center !important;
+  gap: 10px !important;
+}
+
+.msg-card.ig-dm-row.self .ig-product-drop-card {
+  background: rgba(9, 13, 22, 0.35) !important;
+  border-color: rgba(255, 255, 255, 0.22) !important;
 }
 
 .msg-part-actions {
@@ -13722,19 +13865,20 @@ body[data-ui-theme] .card:hover {
   min-height: 26px !important;
   min-width: 0 !important;
   padding: 0 9px !important;
-  border-radius: 999px !important;
+  border-radius: 6px !important;
   font-size: 11px !important;
-  font-weight: 700 !important;
+  font-weight: 600 !important;
   white-space: nowrap;
 }
 
-/* Floating Emoji Reactions Tray */
+/* Decluttered Reactions Row: Only show active reactions by default, reveal others on card hover */
 .ig-reactions-tray {
   display: inline-flex;
   align-items: center;
   gap: 4px;
-  margin-top: 4px;
-  padding: 0 2px;
+  margin-top: 5px;
+  padding: 0;
+  min-height: 22px;
 }
 
 .ig-reactions-tray .msg-reaction-pill {
@@ -13742,34 +13886,67 @@ body[data-ui-theme] .card:hover {
   min-height: 22px !important;
   min-width: 0 !important;
   padding: 0 7px !important;
-  border-radius: 999px !important;
+  border-radius: 6px !important;
   font-size: 11px !important;
-  background: rgba(24, 33, 50, 0.9) !important;
-  border: 1px solid rgba(255, 255, 255, 0.1) !important;
-  color: #cbd5e1 !important;
+  background: rgba(255, 255, 255, 0.04) !important;
+  border: 1px solid rgba(255, 255, 255, 0.08) !important;
+  color: #94a3b8 !important;
   display: inline-flex;
   align-items: center;
-  gap: 3px;
+  gap: 4px;
   cursor: pointer;
+  transition: all 0.14s ease;
+}
+
+/* Hide zero-count reaction buttons until message hover so feed stays super clean */
+.ig-reactions-tray .msg-reaction-pill.idle-reaction {
+  display: none !important;
+}
+
+.msg-card.ig-dm-row:hover .ig-reactions-tray .msg-reaction-pill.idle-reaction,
+.msg-card.ig-dm-row:focus-within .ig-reactions-tray .msg-reaction-pill.idle-reaction {
+  display: inline-flex !important;
+}
+
+.msg-card.ig-dm-row:hover .ig-reactions-tray .msg-reaction-pill.quick-react-trigger {
+  display: none !important;
+}
+
+.ig-reactions-tray .msg-reaction-pill.quick-react-trigger {
+  opacity: 0.55;
+  padding: 0 6px !important;
+}
+
+.ig-reactions-tray .msg-reaction-pill:hover {
+  opacity: 1;
+  background: rgba(10, 132, 255, 0.15) !important;
+  border-color: rgba(10, 132, 255, 0.4) !important;
+  color: #ffffff !important;
 }
 
 .ig-reactions-tray .msg-reaction-pill.reacted {
-  border-color: rgba(56, 189, 248, 0.45) !important;
-  background: rgba(56, 189, 248, 0.15) !important;
-  color: #ffffff !important;
+  border-color: rgba(10, 132, 255, 0.4) !important;
+  background: rgba(10, 132, 255, 0.14) !important;
+  color: #e2e8f0 !important;
+}
+
+.ig-reactions-tray .reaction-count {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 10.5px;
+  font-weight: 700;
 }
 
 .ig-seen-note {
   font-size: 10px;
   color: #64748b;
   margin-top: 3px;
-  padding-right: 4px;
+  padding-right: 2px;
 }
 
-/* Instagram Direct Pill Composer */
+/* Clean Workspace Composer with Collapsible Part Tagging */
 .ig-dm-composer {
-  padding: 10px 14px 14px !important;
-  background: #0e131d !important;
+  padding: 10px 14px calc(12px + env(safe-area-inset-bottom, 0px)) !important;
+  background: #111722 !important;
   border-top: 1px solid rgba(255, 255, 255, 0.08) !important;
   display: flex;
   flex-direction: column;
@@ -13780,10 +13957,14 @@ body[data-ui-theme] .card:hover {
   display: flex;
   align-items: center;
   gap: 8px;
-  background: rgba(255, 255, 255, 0.03);
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  border-radius: 10px;
+  background: #0d1117;
+  border: 1px solid rgba(10, 132, 255, 0.35);
+  border-radius: 9px;
   padding: 5px 10px;
+}
+
+.ig-attach-tray.is-collapsed {
+  display: none !important;
 }
 
 .ig-attach-tray .msg-attach-label {
@@ -13792,7 +13973,7 @@ body[data-ui-theme] .card:hover {
   gap: 5px;
   font-size: 11px;
   font-weight: 700;
-  color: #94a3b8;
+  color: #60a5fa;
   white-space: nowrap;
 }
 
@@ -13803,9 +13984,9 @@ body[data-ui-theme] .card:hover {
   height: 28px !important;
   background: transparent;
   border: none;
-  color: #e2e8f0;
+  color: #f1f5f9;
   font-size: 12px;
-  font-weight: 600;
+  font-weight: 500;
   outline: none;
 }
 
@@ -13813,10 +13994,16 @@ body[data-ui-theme] .card:hover {
   display: flex !important;
   align-items: center !important;
   gap: 6px !important;
-  background: #161f30 !important;
+  background: #0d1117 !important;
   border: 1px solid rgba(255, 255, 255, 0.14) !important;
-  border-radius: 999px !important;
-  padding: 4px 6px 4px 14px !important;
+  border-radius: 11px !important;
+  padding: 4px 6px 4px 12px !important;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.ig-pill-input-bar:focus-within {
+  border-color: #0a84ff !important;
+  box-shadow: 0 0 0 3px rgba(10, 132, 255, 0.18) !important;
 }
 
 .ig-pill-input-bar #chat-input {
@@ -13833,17 +14020,21 @@ body[data-ui-theme] .card:hover {
   box-shadow: none !important;
 }
 
+.ig-pill-input-bar #chat-input::placeholder {
+  color: #64748b !important;
+}
+
 .ig-quick-heart-btn {
   appearance: none;
-  border: none;
-  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(255, 255, 255, 0.04);
   width: 32px !important;
   height: 32px !important;
   min-width: 32px !important;
   min-height: 32px !important;
   padding: 0 !important;
-  border-radius: 50%;
-  font-size: 14px;
+  border-radius: 8px;
+  font-size: 13px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -13853,8 +14044,7 @@ body[data-ui-theme] .card:hover {
 }
 
 .ig-quick-heart-btn:hover {
-  transform: scale(1.1);
-  background: rgba(244, 63, 94, 0.2);
+  background: rgba(255, 255, 255, 0.1);
 }
 
 .ig-send-pill {
@@ -13862,15 +14052,208 @@ body[data-ui-theme] .card:hover {
   min-height: 32px !important;
   min-width: 0 !important;
   padding: 0 14px !important;
-  border-radius: 999px !important;
-  background: linear-gradient(135deg, #38bdf8, #2563eb) !important;
+  border-radius: 8px !important;
+  background: #0a84ff !important;
   color: #ffffff !important;
   font-size: 12.5px !important;
-  font-weight: 700 !important;
+  font-weight: 600 !important;
   border: none !important;
   cursor: pointer;
   white-space: nowrap;
   flex-shrink: 0;
+  transition: background 0.15s ease;
+}
+
+.ig-send-pill:hover:not(:disabled) {
+  background: #0070e0 !important;
+}
+
+/* ───────────────────────────────────────────────────────────────────
+   Light Mode Support for Hardware Concierge Workspace Messenger
+   ─────────────────────────────────────────────────────────────────── */
+html[data-color-mode="light"] .side-drawer.messenger-drawer.ig-dm-drawer {
+  background: #f8fafc !important;
+  border-left: 1px solid rgba(15, 23, 42, 0.1) !important;
+  box-shadow: -16px 0 40px rgba(15, 23, 42, 0.12) !important;
+}
+
+html[data-color-mode="light"] .ig-dm-head {
+  background: #ffffff !important;
+  border-bottom: 1px solid rgba(15, 23, 42, 0.08) !important;
+}
+
+html[data-color-mode="light"] .ig-online-dot {
+  border-color: #ffffff;
+}
+
+html[data-color-mode="light"] .ig-dm-title-row .messenger-title {
+  color: #0f172a !important;
+}
+
+html[data-color-mode="light"] .ig-dm-status,
+html[data-color-mode="light"] .ig-dm-status #messenger-online-pill {
+  color: #64748b !important;
+}
+
+html[data-color-mode="light"] .ig-dm-icon-btn.concierge-tag-toggle-btn {
+  background: #f1f5f9 !important;
+  border-color: rgba(15, 23, 42, 0.12) !important;
+  color: #334155 !important;
+}
+
+html[data-color-mode="light"] .ig-dm-icon-btn.concierge-tag-toggle-btn:hover {
+  background: #e2e8f0 !important;
+  color: #0f172a !important;
+}
+
+html[data-color-mode="light"] .ig-dm-icon-btn.concierge-tag-toggle-btn.active {
+  background: rgba(0, 122, 255, 0.12) !important;
+  border-color: rgba(0, 122, 255, 0.4) !important;
+  color: #007aff !important;
+}
+
+html[data-color-mode="light"] .ig-stories-tray {
+  background: #ffffff !important;
+  border-bottom: 1px solid rgba(15, 23, 42, 0.08) !important;
+}
+
+html[data-color-mode="light"] .messenger-channels.ig-channel-pills {
+  background: #f1f5f9 !important;
+  border-color: rgba(15, 23, 42, 0.07) !important;
+}
+
+html[data-color-mode="light"] .ig-channel-pills .msg-channel-btn {
+  color: #64748b !important;
+}
+
+html[data-color-mode="light"] .ig-channel-pills .msg-channel-btn:hover {
+  color: #0f172a !important;
+}
+
+html[data-color-mode="light"] .ig-channel-pills .msg-channel-btn.active {
+  background: #ffffff !important;
+  border-color: rgba(15, 23, 42, 0.08) !important;
+  color: #0f172a !important;
+  box-shadow: 0 1px 3px rgba(15, 23, 42, 0.08) !important;
+}
+
+html[data-color-mode="light"] .messenger-quick-chips.ig-icebreakers {
+  background: #f8fafc !important;
+  border-bottom: 1px solid rgba(15, 23, 42, 0.07) !important;
+}
+
+html[data-color-mode="light"] .messenger-quick-chips.ig-icebreakers .msg-quick-chip {
+  background: #ffffff !important;
+  border-color: rgba(15, 23, 42, 0.1) !important;
+  color: #334155 !important;
+}
+
+html[data-color-mode="light"] .messenger-quick-chips.ig-icebreakers .msg-quick-chip:hover {
+  background: rgba(0, 122, 255, 0.08) !important;
+  border-color: rgba(0, 122, 255, 0.35) !important;
+  color: #007aff !important;
+}
+
+html[data-color-mode="light"] .ig-dm-feed {
+  background: #f8fafc !important;
+}
+
+html[data-color-mode="light"] .ig-dm-timestamp-divider span {
+  background: #e2e8f0;
+  border-color: rgba(15, 23, 42, 0.06);
+  color: #475569;
+}
+
+html[data-color-mode="light"] .ig-dm-meta .msg-author {
+  color: #0f172a !important;
+}
+
+html[data-color-mode="light"] .concierge-role-badge.tier-architect {
+  background: rgba(0, 122, 255, 0.1);
+  border-color: rgba(0, 122, 255, 0.25);
+  color: #0066cc;
+}
+
+html[data-color-mode="light"] .concierge-role-badge.tier-builder {
+  background: rgba(16, 185, 129, 0.1);
+  border-color: rgba(16, 185, 129, 0.28);
+  color: #059669;
+}
+
+html[data-color-mode="light"] .ig-dm-bubble {
+  background: #ffffff;
+  border-color: rgba(15, 23, 42, 0.09);
+  color: #1e293b;
+  box-shadow: 0 1px 4px rgba(15, 23, 42, 0.05);
+}
+
+html[data-color-mode="light"] .msg-card.ig-dm-row.self .ig-dm-bubble {
+  background: #007aff;
+  border-color: #007aff;
+  color: #ffffff;
+}
+
+html[data-color-mode="light"] .ig-product-drop-card {
+  background: #f8fafc !important;
+  border-color: rgba(15, 23, 42, 0.1) !important;
+}
+
+html[data-color-mode="light"] .ig-product-drop-card .msg-part-title {
+  color: #0f172a !important;
+}
+
+html[data-color-mode="light"] .ig-product-drop-card .msg-part-price {
+  color: #007aff !important;
+}
+
+html[data-color-mode="light"] .ig-product-drop-card .msg-part-btn.specs {
+  background: #ffffff !important;
+  border-color: rgba(15, 23, 42, 0.15) !important;
+  color: #334155 !important;
+}
+
+html[data-color-mode="light"] .ig-reactions-tray .msg-reaction-pill {
+  background: #ffffff !important;
+  border-color: rgba(15, 23, 42, 0.1) !important;
+  color: #475569 !important;
+}
+
+html[data-color-mode="light"] .ig-reactions-tray .msg-reaction-pill.reacted {
+  background: rgba(0, 122, 255, 0.1) !important;
+  border-color: rgba(0, 122, 255, 0.35) !important;
+  color: #0066cc !important;
+}
+
+html[data-color-mode="light"] .ig-dm-composer {
+  background: #ffffff !important;
+  border-top: 1px solid rgba(15, 23, 42, 0.08) !important;
+}
+
+html[data-color-mode="light"] .ig-attach-tray {
+  background: #f8fafc;
+  border-color: rgba(0, 122, 255, 0.35);
+}
+
+html[data-color-mode="light"] .ig-attach-tray .msg-attach-label {
+  color: #007aff;
+}
+
+html[data-color-mode="light"] .ig-attach-tray #chat-product-select {
+  color: #0f172a !important;
+}
+
+html[data-color-mode="light"] .ig-pill-input-bar {
+  background: #f8fafc !important;
+  border-color: rgba(15, 23, 42, 0.14) !important;
+}
+
+html[data-color-mode="light"] .ig-pill-input-bar #chat-input {
+  color: #0f172a !important;
+}
+
+html[data-color-mode="light"] .ig-quick-heart-btn {
+  background: #ffffff;
+  border-color: rgba(15, 23, 42, 0.1);
 }
 
 /* Responsive adjustments for Studio Command Strip */
@@ -21166,6 +21549,14 @@ html[data-color-mode="light"] .compare-visible-btn {
 
 html[data-color-mode="light"] #sort-select {
   color: #1c1c1e !important;
+  color-scheme: light !important;
+}
+
+html[data-color-mode="light"] #sort-select option,
+html[data-color-mode="light"] .sort-wrap select option {
+  background-color: #ffffff !important;
+  background: #ffffff !important;
+  color: #1c1c1e !important;
 }
 
 html[data-color-mode="light"] .view-toggle-btn {
@@ -22517,4 +22908,278 @@ html[data-color-mode="light"] #product-grid .card.keyboard-focused:focus {
   outline-offset: 2px !important;
   box-shadow: 0 0 0 4px rgba(0, 122, 255, 0.2), 0 10px 28px rgba(0, 0, 0, 0.1) !important;
 }
+
+/* Native Select & Option Contrast Fixes (Light & Dark Modes) */
+html[data-color-mode="light"] select,
+html[data-color-mode="light"] #sort-select,
+html[data-color-mode="light"] .sort-wrap select,
+html[data-color-mode="light"] .oh-sort-select,
+html[data-color-mode="light"] .spec-reviews-sort-select,
+html[data-color-mode="light"] input[type="date"] {
+  color-scheme: light !important;
+  color: #1c1c1e !important;
+}
+
+html[data-color-mode="light"] .oh-sort-select,
+html[data-color-mode="light"] .spec-reviews-sort-select,
+html[data-color-mode="light"] .price-alert-expiry-input-row input[type="date"] {
+  background-color: #ffffff !important;
+  background: #ffffff !important;
+  border-color: rgba(60, 60, 67, 0.18) !important;
+  color: #1c1c1e !important;
+}
+
+html[data-color-mode="light"] select option,
+html[data-color-mode="light"] select optgroup,
+html[data-color-mode="light"] #sort-select option,
+html[data-color-mode="light"] .sort-wrap select option,
+html[data-color-mode="light"] .oh-sort-select option,
+html[data-color-mode="light"] .spec-reviews-sort-select option {
+  background-color: #ffffff !important;
+  background: #ffffff !important;
+  color: #1c1c1e !important;
+  font-weight: 500;
+}
+
+html[data-color-mode="dark"] select,
+html[data-color-mode="dark"] #sort-select,
+html[data-color-mode="dark"] .sort-wrap select,
+html[data-color-mode="dark"] .oh-sort-select,
+html[data-color-mode="dark"] .spec-reviews-sort-select,
+html[data-color-mode="dark"] input[type="date"] {
+  color-scheme: dark !important;
+  color: #ffffff !important;
+}
+
+html[data-color-mode="dark"] select option,
+html[data-color-mode="dark"] select optgroup,
+html[data-color-mode="dark"] #sort-select option,
+html[data-color-mode="dark"] .sort-wrap select option,
+html[data-color-mode="dark"] .oh-sort-select option,
+html[data-color-mode="dark"] .spec-reviews-sort-select option {
+  background-color: #1c1c1e !important;
+  background: #1c1c1e !important;
+  color: #ffffff !important;
+  font-weight: 500;
+}
+
+/* ───────────────────────────────────────────────────────────────────
+   Profile Dropdown (#profile-sheet) Independent Scroll & Sticky Topbar Fix
+   Prevents #profile-sheet from scrolling away with the page and enables
+   smooth, isolated internal scrolling with a visible scrollbar.
+   ─────────────────────────────────────────────────────────────────── */
+body {
+  overflow-x: clip !important;
+}
+
+.topbar {
+  position: sticky !important;
+  top: 0 !important;
+  z-index: 1200 !important;
+}
+
+#profile-sheet,
+.profile-sheet,
+.sheet {
+  max-height: min(78vh, calc(100dvh - 84px)) !important;
+  overflow-y: auto !important;
+  overflow-x: hidden !important;
+  overscroll-behavior: contain !important;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(148, 163, 184, 0.45) transparent;
+}
+
+#profile-sheet::-webkit-scrollbar,
+.profile-sheet::-webkit-scrollbar,
+.sheet::-webkit-scrollbar {
+  width: 6px;
+}
+
+#profile-sheet::-webkit-scrollbar-track,
+.profile-sheet::-webkit-scrollbar-track,
+.sheet::-webkit-scrollbar-track {
+  background: rgba(15, 23, 42, 0.28);
+  border-radius: 999px;
+  margin: 10px 0;
+}
+
+#profile-sheet::-webkit-scrollbar-thumb,
+.profile-sheet::-webkit-scrollbar-thumb,
+.sheet::-webkit-scrollbar-thumb {
+  background: rgba(148, 163, 184, 0.45);
+  border-radius: 999px;
+}
+
+#profile-sheet::-webkit-scrollbar-thumb:hover,
+.profile-sheet::-webkit-scrollbar-thumb:hover,
+.sheet::-webkit-scrollbar-thumb:hover {
+  background: rgba(56, 189, 248, 0.75);
+}
+
+html[data-color-mode="light"] #profile-sheet,
+html[data-color-mode="light"] .profile-sheet,
+html[data-color-mode="light"] .sheet {
+  scrollbar-color: rgba(60, 60, 67, 0.32) transparent;
+}
+
+html[data-color-mode="light"] #profile-sheet::-webkit-scrollbar-track,
+html[data-color-mode="light"] .profile-sheet::-webkit-scrollbar-track,
+html[data-color-mode="light"] .sheet::-webkit-scrollbar-track {
+  background: rgba(60, 60, 67, 0.06);
+}
+
+html[data-color-mode="light"] #profile-sheet::-webkit-scrollbar-thumb,
+html[data-color-mode="light"] .profile-sheet::-webkit-scrollbar-thumb,
+html[data-color-mode="light"] .sheet::-webkit-scrollbar-thumb {
+  background: rgba(60, 60, 67, 0.28);
+}
+
+html[data-color-mode="light"] #profile-sheet::-webkit-scrollbar-thumb:hover,
+html[data-color-mode="light"] .profile-sheet::-webkit-scrollbar-thumb:hover,
+html[data-color-mode="light"] .sheet::-webkit-scrollbar-thumb:hover {
+  background: rgba(0, 122, 255, 0.65);
+}
+
+/* Ensure [hidden] typing bar never takes up layout space when idle */
+.messenger-typing-bar[hidden] {
+  display: none !important;
+}
+
+/* Cross-Platform Mobile & Tablet Alignment Polish */
+@media (max-width: 640px) {
+  .ig-channel-pills .msg-channel-btn {
+    padding: 0 3px !important;
+    gap: 4px !important;
+  }
+
+  .ig-channel-pills .ig-pill-label {
+    font-size: 10.5px !important;
+    letter-spacing: -0.01em !important;
+  }
+
+  .topbar-right {
+    max-width: 100% !important;
+    overflow-x: auto !important;
+    scrollbar-width: none !important;
+    padding-bottom: 2px;
+  }
+
+  .topbar-right::-webkit-scrollbar {
+    display: none !important;
+  }
+
+  .catalog-controls .sort-wrap {
+    flex: 1 1 135px !important;
+    min-width: 132px !important;
+  }
+
+  #product-grid .card .card-deal-badge,
+  #product-grid .card .deal-drop-badge {
+    max-width: calc(100% - 46px) !important;
+    font-size: 9.5px !important;
+    padding: 2px 6px !important;
+    white-space: nowrap !important;
+    overflow: hidden !important;
+    text-overflow: ellipsis !important;
+  }
+}
+
+/* ── GPU Compositor & Scroll Smoothness Optimization ── */
+#product-grid .card .card-wishlist-btn,
+#product-grid .card .card-notify-btn,
+#product-grid .card .card-flag,
+#product-grid .card .low-stock-badge,
+#product-grid .card .card-deal-badge,
+#product-grid .card .card-batch-select-btn {
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+}
+
+/* ── Desktop Toolbar Alignment & High-Contrast Card Corner Badges ── */
+@media (min-width: 1261px) {
+  .catalog-primary-bar {
+    gap: 12px !important;
+  }
+
+  .catalog-primary-bar > .filter-bar {
+    flex: 1 1 0% !important;
+    min-width: 0 !important;
+    gap: 4px !important;
+    padding-right: 6px !important;
+  }
+
+  .catalog-primary-bar .filter-tab {
+    flex-shrink: 0 !important;
+    padding: 0 7px !important;
+    font-size: 11.5px !important;
+    gap: 4px !important;
+  }
+
+  .catalog-control-bar {
+    flex-shrink: 0 !important;
+    gap: 6px !important;
+    padding-left: 8px !important;
+    border-left: 1px solid rgba(148, 163, 184, 0.16) !important;
+  }
+
+  .catalog-control-bar .sort-wrap select {
+    width: 122px !important;
+  }
+}
+
+html[data-color-mode="dark"] #product-grid .card .card-deal-badge {
+  background: rgba(15, 23, 42, 0.94) !important;
+  border: 1px solid rgba(251, 191, 36, 0.6) !important;
+  color: #fde047 !important;
+  box-shadow: 0 3px 10px rgba(0, 0, 0, 0.5) !important;
+}
+
+html[data-color-mode="dark"] #product-grid .card .card-notify-btn {
+  background: rgba(15, 23, 42, 0.94) !important;
+  border: 1px solid rgba(148, 163, 184, 0.36) !important;
+  color: #f8fafc !important;
+  box-shadow: 0 3px 10px rgba(0, 0, 0, 0.5) !important;
+}
+
+html[data-color-mode="dark"] #product-grid .card .card-notify-btn.active {
+  background: rgba(6, 78, 59, 0.95) !important;
+  border: 1px solid rgba(52, 211, 153, 0.72) !important;
+  color: #6ee7b7 !important;
+}
+
+html[data-color-mode="dark"] #product-grid .card .card-wishlist-btn,
+html[data-color-mode="dark"] #product-grid .card .card-flag {
+  background: rgba(15, 23, 42, 0.9) !important;
+  border: 1px solid rgba(255, 255, 255, 0.22) !important;
+  color: #f8fafc !important;
+}
+
+html[data-color-mode="light"] #product-grid .card .card-deal-badge {
+  background: rgba(255, 247, 237, 0.96) !important;
+  border: 1px solid rgba(234, 88, 12, 0.5) !important;
+  color: #9a3412 !important;
+  box-shadow: 0 2px 8px rgba(15, 23, 42, 0.14) !important;
+}
+
+html[data-color-mode="light"] #product-grid .card .card-notify-btn {
+  background: rgba(255, 255, 255, 0.96) !important;
+  border: 1px solid rgba(15, 23, 42, 0.22) !important;
+  color: #0f172a !important;
+  box-shadow: 0 2px 8px rgba(15, 23, 42, 0.14) !important;
+}
+
+html[data-color-mode="light"] #product-grid .card .card-notify-btn.active {
+  background: #eff6ff !important;
+  border: 1px solid #2563eb !important;
+  color: #1d4ed8 !important;
+}
+
+html[data-color-mode="light"] #product-grid .card .card-wishlist-btn,
+html[data-color-mode="light"] #product-grid .card .card-flag {
+  background: rgba(255, 255, 255, 0.96) !important;
+  border: 1px solid rgba(15, 23, 42, 0.18) !important;
+  color: #1e293b !important;
+}
+
 

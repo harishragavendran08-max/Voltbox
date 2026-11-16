@@ -9749,3 +9749,227 @@ export function computeQrReticleProgressRingMetrics(
     statusLabel,
   };
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// QR Scanner Reticle Interactive Corner Drag Handles & Resize Bounds Logic
+// ─────────────────────────────────────────────────────────────────────────────
+
+export type QrReticleCornerId = 'tl' | 'tr' | 'bl' | 'br';
+
+export const QR_RETICLE_DEFAULT_INSET_PX = 22;
+export const QR_RETICLE_MIN_SIZE_PX = 96;
+export const QR_RETICLE_MIN_INSET_PX = 8;
+
+export interface QrReticleInsets {
+  top: number;
+  right: number;
+  bottom: number;
+  left: number;
+}
+
+export interface QrReticleResizeBoundsResult {
+  corner: QrReticleCornerId;
+  insets: QrReticleInsets;
+  width: number;
+  height: number;
+  areaCoveragePercent: number;
+  cursor: 'nwse-resize' | 'nesw-resize';
+  isCustomSized: boolean;
+}
+
+/**
+ * Computes clamped inset bounds and dimensions when a user drags one of the four
+ * interactive corner handles (tl, tr, bl, br) on #qr-scanner-reticle.
+ */
+export function computeQrReticleResizeBounds(
+  containerWidth: number,
+  containerHeight: number,
+  initialInsets: QrReticleInsets,
+  corner: QrReticleCornerId,
+  deltaX: number,
+  deltaY: number,
+  minSizePx: number = QR_RETICLE_MIN_SIZE_PX,
+  minInsetPx: number = QR_RETICLE_MIN_INSET_PX
+): QrReticleResizeBoundsResult {
+  const safeW = Math.max(160, Math.round(Number(containerWidth) || 260));
+  const safeH = Math.max(160, Math.round(Number(containerHeight) || 260));
+  const safeMinSize = Math.max(64, Math.min(Math.min(safeW, safeH) - minInsetPx * 2, Number(minSizePx) || QR_RETICLE_MIN_SIZE_PX));
+  const safeMinInset = Math.max(0, Number(minInsetPx) ?? QR_RETICLE_MIN_INSET_PX);
+
+  let top = Math.max(safeMinInset, Math.round(Number(initialInsets?.top) ?? QR_RETICLE_DEFAULT_INSET_PX));
+  let right = Math.max(safeMinInset, Math.round(Number(initialInsets?.right) ?? QR_RETICLE_DEFAULT_INSET_PX));
+  let bottom = Math.max(safeMinInset, Math.round(Number(initialInsets?.bottom) ?? QR_RETICLE_DEFAULT_INSET_PX));
+  let left = Math.max(safeMinInset, Math.round(Number(initialInsets?.left) ?? QR_RETICLE_DEFAULT_INSET_PX));
+
+  const dx = Math.round(Number(deltaX) || 0);
+  const dy = Math.round(Number(deltaY) || 0);
+
+  if (corner === 'tl') {
+    const maxLeft = Math.max(safeMinInset, safeW - right - safeMinSize);
+    const maxTop = Math.max(safeMinInset, safeH - bottom - safeMinSize);
+    left = Math.min(maxLeft, Math.max(safeMinInset, left + dx));
+    top = Math.min(maxTop, Math.max(safeMinInset, top + dy));
+  } else if (corner === 'tr') {
+    const maxRight = Math.max(safeMinInset, safeW - left - safeMinSize);
+    const maxTop = Math.max(safeMinInset, safeH - bottom - safeMinSize);
+    right = Math.min(maxRight, Math.max(safeMinInset, right - dx));
+    top = Math.min(maxTop, Math.max(safeMinInset, top + dy));
+  } else if (corner === 'bl') {
+    const maxLeft = Math.max(safeMinInset, safeW - right - safeMinSize);
+    const maxBottom = Math.max(safeMinInset, safeH - top - safeMinSize);
+    left = Math.min(maxLeft, Math.max(safeMinInset, left + dx));
+    bottom = Math.min(maxBottom, Math.max(safeMinInset, bottom - dy));
+  } else {
+    const maxRight = Math.max(safeMinInset, safeW - left - safeMinSize);
+    const maxBottom = Math.max(safeMinInset, safeH - top - safeMinSize);
+    right = Math.min(maxRight, Math.max(safeMinInset, right - dx));
+    bottom = Math.min(maxBottom, Math.max(safeMinInset, bottom - dy));
+  }
+
+  const width = Math.max(safeMinSize, safeW - left - right);
+  const height = Math.max(safeMinSize, safeH - top - bottom);
+  const areaCoveragePercent = Math.min(100, Math.max(1, Math.round(((width * height) / (safeW * safeH)) * 100)));
+  const cursor = corner === 'tl' || corner === 'br' ? 'nwse-resize' : 'nesw-resize';
+  const isCustomSized =
+    top !== QR_RETICLE_DEFAULT_INSET_PX ||
+    right !== QR_RETICLE_DEFAULT_INSET_PX ||
+    bottom !== QR_RETICLE_DEFAULT_INSET_PX ||
+    left !== QR_RETICLE_DEFAULT_INSET_PX;
+
+  return {
+    corner,
+    insets: { top, right, bottom, left },
+    width,
+    height,
+    areaCoveragePercent,
+    cursor,
+    isCustomSized,
+  };
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Profile Sheet Independent Scroll Container & Viewport Clamping Logic
+// ─────────────────────────────────────────────────────────────────────────────
+
+export interface ProfileSheetScrollState {
+  viewportHeight: number;
+  maxHeightPx: number;
+  scrollHeight: number;
+  maxScrollTop: number;
+  clampedScrollTop: number;
+  isScrollable: boolean;
+  canScrollUp: boolean;
+  canScrollDown: boolean;
+  overflowY: 'auto';
+  overscrollBehavior: 'contain';
+}
+
+/**
+ * Computes the bounded maximum height and independent scroll state for #profile-sheet
+ * so that the profile dropdown scrolls internally without scrolling the underlying page.
+ */
+export function computeProfileSheetScrollState(
+  viewportHeight: number,
+  scrollHeight: number,
+  currentScrollTop: number = 0,
+  topbarOffsetPx: number = 64,
+  bottomMarginPx: number = 20
+): ProfileSheetScrollState {
+  const safeVh = Math.max(320, Math.round(Number(viewportHeight) || 900));
+  const safeTopOffset = Math.max(0, Math.round(Number(topbarOffsetPx) || 64));
+  const safeBottomMargin = Math.max(8, Math.round(Number(bottomMarginPx) || 20));
+  const availableHeight = Math.max(240, safeVh - safeTopOffset - safeBottomMargin);
+  const ratioCap = Math.round(safeVh * 0.78);
+  const maxHeightPx = Math.max(240, Math.min(ratioCap, availableHeight));
+  const safeScrollHeight = Math.max(maxHeightPx, Math.round(Number(scrollHeight) || maxHeightPx));
+  const maxScrollTop = Math.max(0, safeScrollHeight - maxHeightPx);
+  const clampedScrollTop = Math.min(maxScrollTop, Math.max(0, Math.round(Number(currentScrollTop) || 0)));
+  const isScrollable = safeScrollHeight > maxHeightPx;
+
+  return {
+    viewportHeight: safeVh,
+    maxHeightPx,
+    scrollHeight: safeScrollHeight,
+    maxScrollTop,
+    clampedScrollTop,
+    isScrollable,
+    canScrollUp: clampedScrollTop > 0,
+    canScrollDown: clampedScrollTop < maxScrollTop,
+    overflowY: 'auto',
+    overscrollBehavior: 'contain',
+  };
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Hardware Concierge Workspace Messenger Channel & Role Metadata Logic
+// ─────────────────────────────────────────────────────────────────────────────
+
+export type ConciergeChannelId = 'engineering-desk' | 'rig-builds' | 'stock-radar' | 'vip-concierge';
+
+export interface ConciergeChannelMetadata {
+  channelId: ConciergeChannelId;
+  title: string;
+  subtitle: string;
+  placeholder: string;
+  badgeLabel: string;
+  accentColor: string;
+}
+
+const CONCIERGE_CHANNEL_MAP: Record<ConciergeChannelId, ConciergeChannelMetadata> = {
+  'engineering-desk': {
+    channelId: 'engineering-desk',
+    title: 'Hardware Concierge',
+    subtitle: 'Lead Architects · Avg reply < 1m',
+    placeholder: 'Ask a specialist or tag a hardware part…',
+    badgeLabel: 'Desk',
+    accentColor: '#0a84ff',
+  },
+  'rig-builds': {
+    channelId: 'rig-builds',
+    title: 'Rig Build Lab',
+    subtitle: 'ATX 3.1, PCIe 5.0 & Thermal Clearance',
+    placeholder: 'Share your rig build or check PSU headroom…',
+    badgeLabel: 'Builds',
+    accentColor: '#8b5cf6',
+  },
+  'stock-radar': {
+    channelId: 'stock-radar',
+    title: 'Stock Drop Radar',
+    subtitle: 'Live GPU, CPU & Handheld Restock Feed',
+    placeholder: 'Ask about SKU restock windows or allocations…',
+    badgeLabel: 'Drops',
+    accentColor: '#f59e0b',
+  },
+  'vip-concierge': {
+    channelId: 'vip-concierge',
+    title: 'VIP Order Care',
+    subtitle: '1-on-1 Order Tracking & Warranty Desk',
+    placeholder: 'Ask about an order, invoice, or RMA…',
+    badgeLabel: 'VIP',
+    accentColor: '#10b981',
+  },
+};
+
+export function resolveConciergeChannelMetadata(channel?: string | null): ConciergeChannelMetadata {
+  const key = String(channel || '').trim().toLowerCase();
+  if (key in CONCIERGE_CHANNEL_MAP) {
+    return CONCIERGE_CHANNEL_MAP[key as ConciergeChannelId];
+  }
+  return CONCIERGE_CHANNEL_MAP['engineering-desk'];
+}
+
+export function formatConciergeSenderRoleBadge(role?: string | null): {
+  label: string;
+  tier: 'architect' | 'builder' | 'member';
+  isVerified: boolean;
+} {
+  const r = String(role || '').trim().toUpperCase();
+  if (r === 'STAFF_ARCHITECT' || r === 'MODERATOR') {
+    return { label: 'Lead Architect', tier: 'architect', isVerified: true };
+  }
+  if (r === 'VERIFIED_BUILDER' || r === 'CONTRIBUTOR') {
+    return { label: 'Verified Builder', tier: 'builder', isVerified: true };
+  }
+  return { label: 'Builder', tier: 'member', isVerified: false };
+}
+

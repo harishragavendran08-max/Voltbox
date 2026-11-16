@@ -5,18 +5,21 @@
   "type": "module",
   "scripts": {
     "dev": "tsx server.ts",
-    "build": "tsc --noEmit && esbuild src/client/price-chart.tsx --bundle --format=iife --minify --outfile=src/main/resources/static/recharts-bundle.js && esbuild src/client/qr-code.ts --bundle --format=iife --minify --outfile=src/main/resources/static/qr-bundle.js",
+    "build": "tsc --noEmit && esbuild src/client/price-chart.tsx --bundle --format=iife --minify --outfile=src/main/resources/static/recharts-bundle.js && esbuild src/client/qr-code.ts --bundle --format=iife --minify --outfile=src/main/resources/static/qr-bundle.js && esbuild src/client/firebase-sync.ts --bundle --format=iife --minify --outfile=src/main/resources/static/firebase-bundle.js",
     "lint": "tsc --noEmit",
     "start": "tsx server.ts",
     "test": "tsx --test src/logic/inventory.test.ts"
   },
   "dependencies": {
+    "@firebase/eslint-plugin-security-rules": "^0.0.2",
     "@types/d3": "^7.4.3",
     "@types/react": "^19.3.0",
     "@types/react-dom": "^19.3.0",
     "d3": "^7.9.2",
     "esbuild": "^0.28.2",
+    "eslint": "^10.15.0",
     "express": "^4.21.2",
+    "firebase": "^13.3.0",
     "gsap": "^3.15.1",
     "jsqr": "^1.4.0",
     "qrcode": "^1.5.4",

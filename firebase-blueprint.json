@@ -1,0 +1,290 @@
+{
+  "entities": {
+    "AdminMember": {
+      "title": "AdminMember",
+      "description": "Authorized hardware store administrator record verified by UID.",
+      "type": "object",
+      "properties": {
+        "uid": {
+          "type": "string",
+          "description": "Firebase Auth UID of the administrator.",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "email": {
+          "type": "string",
+          "format": "email",
+          "description": "Verified administrator email address.",
+          "maxLength": 200
+        },
+        "role": {
+          "type": "string",
+          "enum": ["admin", "moderator"],
+          "description": "Administrative role level."
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server timestamp when admin entry was created."
+        }
+      },
+      "required": ["uid", "email", "role", "createdAt"]
+    },
+    "UserPublicProfile": {
+      "title": "UserPublicProfile",
+      "description": "Publicly readable non-PII display profile for community reviews and bench chat.",
+      "type": "object",
+      "properties": {
+        "uid": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "displayName": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 80
+        },
+        "avatarColor": {
+          "type": "string",
+          "maxLength": 16,
+          "pattern": "^#[0-9a-fA-F]{3,8}$"
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "required": ["uid", "displayName", "avatarColor", "createdAt", "updatedAt"]
+    },
+    "UserPrivateState": {
+      "title": "UserPrivateState",
+      "description": "Owner-isolated private shopper account state including PII, cart, wishlist, and alerts.",
+      "type": "object",
+      "properties": {
+        "ownerId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "email": {
+          "type": "string",
+          "format": "email",
+          "maxLength": 200
+        },
+        "billEmail": {
+          "type": "string",
+          "format": "email",
+          "maxLength": 200
+        },
+        "cart": {
+          "type": "object",
+          "description": "Map of productId to quantity."
+        },
+        "wishlist": {
+          "type": "array",
+          "description": "Bounded list of wishlisted product IDs."
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "required": ["ownerId", "email", "cart", "wishlist", "createdAt", "updatedAt"]
+    },
+    "OrderRecord": {
+      "title": "OrderRecord",
+      "description": "Customer hardware checkout order stored under owner-isolated user subcollection.",
+      "type": "object",
+      "properties": {
+        "orderId": {
+          "type": "string",
+          "minLength": 3,
+          "maxLength": 64,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "ownerId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "status": {
+          "type": "string",
+          "enum": ["Order Placed", "Processing", "Shipped", "Delivered"]
+        },
+        "total": {
+          "type": "number"
+        },
+        "count": {
+          "type": "integer"
+        },
+        "paymentMethod": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 80
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "required": ["orderId", "ownerId", "status", "total", "count", "paymentMethod", "createdAt", "updatedAt"]
+    },
+    "HardwareProduct": {
+      "title": "HardwareProduct",
+      "description": "Catalog hardware SKU entry managed by administrators.",
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "integer"
+        },
+        "sku": {
+          "type": "string",
+          "minLength": 4,
+          "maxLength": 32,
+          "pattern": "^[A-Z0-9\\-]+$"
+        },
+        "title": {
+          "type": "string",
+          "minLength": 2,
+          "maxLength": 160
+        },
+        "category": {
+          "type": "string",
+          "minLength": 2,
+          "maxLength": 40
+        },
+        "price": {
+          "type": "number"
+        },
+        "quantity": {
+          "type": "integer"
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "required": ["id", "sku", "title", "category", "price", "quantity", "createdAt", "updatedAt"]
+    },
+    "BenchMessage": {
+      "title": "BenchMessage",
+      "description": "Community bench messenger message posted by a verified user.",
+      "type": "object",
+      "properties": {
+        "authorId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "channel": {
+          "type": "string",
+          "enum": ["general", "rig-builds", "price-drops", "engineering-desk"]
+        },
+        "senderName": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 80
+        },
+        "text": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 1000
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "required": ["authorId", "channel", "senderName", "text", "createdAt"]
+    },
+    "ProductReview": {
+      "title": "ProductReview",
+      "description": "Verified buyer review linked to a catalog product.",
+      "type": "object",
+      "properties": {
+        "authorId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "productId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "rating": {
+          "type": "integer"
+        },
+        "title": {
+          "type": "string",
+          "minLength": 2,
+          "maxLength": 120
+        },
+        "comment": {
+          "type": "string",
+          "minLength": 4,
+          "maxLength": 1500
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "required": ["authorId", "productId", "rating", "title", "comment", "createdAt"]
+    }
+  },
+  "firestore": {
+    "/admins/{adminUid}": {
+      "schema": { "$ref": "#/entities/AdminMember" },
+      "description": "Admin membership records used by security rules for RBAC checks."
+    },
+    "/users/{userId}/public/profile": {
+      "schema": { "$ref": "#/entities/UserPublicProfile" },
+      "description": "Public display profile with no PII."
+    },
+    "/users/{userId}/private/state": {
+      "schema": { "$ref": "#/entities/UserPrivateState" },
+      "description": "Private user PII, cart, wishlist, and synced preferences."
+    },
+    "/users/{userId}/orders/{orderId}": {
+      "schema": { "$ref": "#/entities/OrderRecord" },
+      "description": "Individual hardware purchase orders owned by userId."
+    },
+    "/products/{productId}": {
+      "schema": { "$ref": "#/entities/HardwareProduct" },
+      "description": "Publicly readable catalog hardware products managed only by admins."
+    },
+    "/messages/{messageId}": {
+      "schema": { "$ref": "#/entities/BenchMessage" },
+      "description": "Bench Messenger community chat posts."
+    },
+    "/reviews/{reviewId}": {
+      "schema": { "$ref": "#/entities/ProductReview" },
+      "description": "Verified hardware component reviews."
+    }
+  }
+}

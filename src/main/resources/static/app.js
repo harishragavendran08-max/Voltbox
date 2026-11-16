@@ -175,8 +175,58 @@ document.addEventListener("DOMContentLoaded", function () {
   watchCursorSpotlight();
   initQuantumCanvasBg();
   initPwaExperience();
+  initCloudFirestoreBridge();
+  fetchProducts();
   loadMe();
 });
+
+function initCloudFirestoreBridge() {
+  window.addEventListener("voltbox:firebase-auth", function (ev) {
+    var detail = ev && ev.detail ? ev.detail : null;
+    var labelEl = document.getElementById("cloud-sync-status-label");
+    if (labelEl) {
+      labelEl.textContent = detail && detail.email
+        ? ("Cloud Synced (" + detail.email.split("@")[0] + ")")
+        : "Cloud Sync (Google)";
+    }
+    if (detail && detail.emailVerified && window.VoltboxFirebase && typeof window.VoltboxFirebase.syncPrivateStateToFirestore === "function") {
+      window.VoltboxFirebase.syncPrivateStateToFirestore({
+        cart: cart || {},
+        wishlist: Array.isArray(wishlist) ? wishlist : [],
+        billEmail: (me && me.billEmail) ? me.billEmail : detail.email
+      }).catch(function () {});
+    }
+  });
+}
+
+function handleCloudGoogleSyncClick() {
+  if (!window.VoltboxFirebase || typeof window.VoltboxFirebase.signInWithGooglePopup !== "function") {
+    showActivityToast("Cloud Sync module is initializing — try again in a moment.");
+    return;
+  }
+  if (window.VoltboxFirebase.getUid && window.VoltboxFirebase.getUid()) {
+    window.VoltboxFirebase.syncPrivateStateToFirestore({
+      cart: cart || {},
+      wishlist: Array.isArray(wishlist) ? wishlist : [],
+      billEmail: me && me.billEmail ? me.billEmail : undefined
+    }).then(function () {
+      showActivityToast("Cart & wishlist synced to Cloud Firestore.");
+    }).catch(function () {
+      showActivityToast("Couldn't sync with Cloud Firestore right now.");
+    });
+    return;
+  }
+  window.VoltboxFirebase.signInWithGooglePopup()
+    .then(function (u) {
+      if (u) {
+        showActivityToast("Connected Google Cloud Firestore sync (" + (u.email || u.displayName || "verified") + ").");
+      }
+    })
+    .catch(function (err) {
+      console.warn("Google Cloud Sync popup note:", err);
+      showActivityToast("Google sign-in popup was dismissed.");
+    });
+}
 
 var signalBurstTimer = null;
 function triggerPerimeterSignalPulse() {
@@ -194,21 +244,7 @@ function triggerPerimeterSignalPulse() {
 }
 
 function watchCursorSpotlight() {
-  var rafPending = false;
-  var lastX = window.innerWidth * 0.5;
-  var lastY = window.innerHeight * 0.35;
-  window.addEventListener("mousemove", function (e) {
-    lastX = e.clientX;
-    lastY = e.clientY;
-    if (!rafPending) {
-      rafPending = true;
-      window.requestAnimationFrame(function () {
-        document.documentElement.style.setProperty("--mouse-x", lastX + "px");
-        document.documentElement.style.setProperty("--mouse-y", lastY + "px");
-        rafPending = false;
-      });
-    }
-  }, { passive: true });
+  // No-op: avoid mutating root <html> CSS variables at 60Hz on mousemove
 }
 
 
@@ -263,7 +299,25 @@ function loadMe(retriedWithDemoToken) {
       paintProfile();
       paintWishlist();
       paintPriceAlerts();
-      fetchProducts();
+      if (products.length > 0) {
+        for (var pIdx = 0; pIdx < products.length; pIdx++) {
+          var pid = products[pIdx].id;
+          refreshCard(pid);
+          var wBtn = document.getElementById("wishlist-btn-" + pid);
+          if (wBtn) {
+            var isW = isProductInWishlist(pid);
+            wBtn.classList.toggle("active", isW);
+            wBtn.setAttribute("title", isW ? "Remove from wishlist" : "Save to wishlist");
+            wBtn.setAttribute("aria-label", isW ? "Remove from wishlist" : "Save to wishlist");
+          }
+        }
+        if (typeof refreshAllCardNotifyButtons === "function") {
+          refreshAllCardNotifyButtons();
+        }
+        recalc(false);
+      } else if (!initialProductsFetchPromise) {
+        fetchProducts();
+      }
       fetchCart();
       fetchInventorySummary();
       if (window.onMeLoaded) window.onMeLoaded();
@@ -461,6 +515,9 @@ function toggleWishlist(e, productId) {
       updateFilterTabCounts();
       if (activeCategoryFilter === "wishlist") {
         applyFiltersAndSearch();
+      }
+      if (window.VoltboxFirebase && window.VoltboxFirebase.getUid && window.VoltboxFirebase.getUid()) {
+        window.VoltboxFirebase.syncPrivateStateToFirestore({ wishlist: wishlist }).catch(function () {});
       }
       var title = prod ? prod.title : ("Part #" + id);
       if (typeof showWishlistToast === "function") {
@@ -1269,6 +1326,8 @@ function getPriceHistoryFor(p) {
 
 // ── fetch the product list from our backend ──
 
+var initialProductsFetchPromise = null;
+
 function fetchProducts(filterParams) {
   var queryParts = [];
   if (filterParams && typeof filterParams === "object") {
@@ -1279,12 +1338,13 @@ function fetchProducts(filterParams) {
   }
   var endpoint = "/api/products" + (queryParts.length > 0 ? ("?" + queryParts.join("&")) : "");
 
-  return fetch(endpoint)
+  var reqPromise = fetch(endpoint)
     .then(function (res) {
       if (!res.ok) throw new Error("server returned " + res.status);
       return res.json();
     })
     .then(function (data) {
+      initialProductsFetchPromise = null;
       products = Array.isArray(data) ? data.map(normalizeProductEntity) : [];
       renderAllCards();
       recalc();
@@ -1298,6 +1358,7 @@ function fetchProducts(filterParams) {
       return products;
     })
     .catch(function (err) {
+      initialProductsFetchPromise = null;
       console.error("couldn't load products:", err);
       if (loadingEl) {
         loadingEl.innerHTML =
@@ -1305,6 +1366,11 @@ function fetchProducts(filterParams) {
       }
       return [];
     });
+
+  if (queryParts.length === 0) {
+    initialProductsFetchPromise = reqPromise;
+  }
+  return reqPromise;
 }
 
 function normalizeProductEntity(p) {
@@ -1636,6 +1702,8 @@ function renderAllCards() {
   }
 
   var sorted = getSortedProductsList();
+  var frag = document.createDocumentFragment();
+  var chartsToMount = [];
 
   for (var i = 0; i < sorted.length; i++) {
     var p = sorted[i];
@@ -1753,12 +1821,16 @@ function renderAllCards() {
         '<span class="card-batch-check-label">' + (isBatchSel ? 'Selected' : 'Batch Select') + '</span>' +
       '</button>';
 
+    var isAboveFold = i < 8;
     card.innerHTML =
       '<div class="card-img-wrap" onclick="handleCardImageAreaClick(event, ' + p.id + ')">' +
         '<img class="card-img"' +
         '     src="' + esc(directImgSrc) + '"' +
         '     alt="' + esc(p.title) + '"' +
-        '     loading="lazy"' +
+        '     width="280" height="210"' +
+        '     loading="' + (isAboveFold ? 'eager' : 'lazy') + '"' +
+        '     fetchpriority="' + (isAboveFold ? 'high' : 'low') + '"' +
+        '     decoding="async"' +
         '     onerror="this.onerror=null;this.src=\'' + tileFor(p.category) + '\'" />' +
         batchSelectBtn +
         lowStockBadge +
@@ -1838,43 +1910,57 @@ function renderAllCards() {
       }
     });
 
-    // Cursor radial spotlight + 3D parallax tilt tracking (strictly desktop > 1024px only; locked on mobile & iPad)
-    card.addEventListener("mousemove", function (ev) {
-      var tiltDisabled = window.voltboxAdvSettings && window.voltboxAdvSettings.cardParallaxTiltEnabled === false;
-      if (tiltDisabled || window.innerWidth <= 1024 || (window.matchMedia && window.matchMedia("(pointer: coarse)").matches)) {
-        this.classList.remove("is-tilting");
-        this.style.setProperty("--card-rx", "0deg");
-        this.style.setProperty("--card-ry", "0deg");
-        this.style.setProperty("--parallax-x", "0px");
-        this.style.setProperty("--parallax-y", "0px");
-        return;
-      }
-      var rect = this.getBoundingClientRect();
-      var ox = ev.clientX - rect.left;
-      var oy = ev.clientY - rect.top;
-      var tilt = computeCardParallaxTilt(ox, oy, rect.width, rect.height, 4, 3);
+    // Cursor 3D parallax tilt tracking (desktop > 1024px only; rAF-throttled & cached bounds)
+    (function (cardNode) {
+      var cachedRect = null;
+      var tiltRaf = 0;
+      var pendingX = 0;
+      var pendingY = 0;
 
-      this.classList.remove("stagger-in");
-      this.classList.add("is-tilting");
-      this.style.setProperty("--mouse-x", ox.toFixed(1) + "px");
-      this.style.setProperty("--mouse-y", oy.toFixed(1) + "px");
-      this.style.setProperty("--card-rx", tilt.rotateXDeg + "deg");
-      this.style.setProperty("--card-ry", tilt.rotateYDeg + "deg");
-      this.style.setProperty("--parallax-x", tilt.shiftXPx + "px");
-      this.style.setProperty("--parallax-y", tilt.shiftYPx + "px");
-      this.style.setProperty("--glare-x", tilt.glareXPercent + "%");
-      this.style.setProperty("--glare-y", tilt.glareYPercent + "%");
-    });
+      cardNode.addEventListener("mouseenter", function () {
+        if (window.innerWidth > 1024) {
+          cachedRect = cardNode.getBoundingClientRect();
+        }
+      }, { passive: true });
 
-    card.addEventListener("mouseleave", function () {
-      this.classList.remove("is-tilting");
-      this.style.setProperty("--card-rx", "0deg");
-      this.style.setProperty("--card-ry", "0deg");
-      this.style.setProperty("--parallax-x", "0px");
-      this.style.setProperty("--parallax-y", "0px");
-      this.style.setProperty("--glare-x", "50%");
-      this.style.setProperty("--glare-y", "50%");
-    });
+      cardNode.addEventListener("mousemove", function (ev) {
+        var tiltDisabled = window.voltboxAdvSettings && window.voltboxAdvSettings.cardParallaxTiltEnabled === false;
+        if (tiltDisabled || window.innerWidth <= 1024 || (window.matchMedia && window.matchMedia("(pointer: coarse)").matches)) {
+          return;
+        }
+        pendingX = ev.clientX;
+        pendingY = ev.clientY;
+        if (tiltRaf) return;
+        tiltRaf = window.requestAnimationFrame(function () {
+          tiltRaf = 0;
+          var rect = cachedRect || cardNode.getBoundingClientRect();
+          cachedRect = rect;
+          var ox = pendingX - rect.left;
+          var oy = pendingY - rect.top;
+          var tilt = computeCardParallaxTilt(ox, oy, rect.width, rect.height, 3.5, 2.5);
+
+          cardNode.classList.remove("stagger-in");
+          cardNode.classList.add("is-tilting");
+          cardNode.style.setProperty("--card-rx", tilt.rotateXDeg + "deg");
+          cardNode.style.setProperty("--card-ry", tilt.rotateYDeg + "deg");
+          cardNode.style.setProperty("--parallax-x", tilt.shiftXPx + "px");
+          cardNode.style.setProperty("--parallax-y", tilt.shiftYPx + "px");
+        });
+      }, { passive: true });
+
+      cardNode.addEventListener("mouseleave", function () {
+        if (tiltRaf) {
+          window.cancelAnimationFrame(tiltRaf);
+          tiltRaf = 0;
+        }
+        cachedRect = null;
+        cardNode.classList.remove("is-tilting");
+        cardNode.style.setProperty("--card-rx", "0deg");
+        cardNode.style.setProperty("--card-ry", "0deg");
+        cardNode.style.setProperty("--parallax-x", "0px");
+        cardNode.style.setProperty("--parallax-y", "0px");
+      }, { passive: true });
+    })(card);
 
     // Keyboard navigation focus management
     (function (currentCard, currentProd) {
@@ -1895,11 +1981,16 @@ function renderAllCards() {
       });
     })(card, p);
 
-    gridEl.appendChild(card);
+    frag.appendChild(card);
 
     if (isChartOpen) {
-      mountCardRecharts(p);
+      chartsToMount.push(p);
     }
+  }
+
+  gridEl.appendChild(frag);
+  for (var m = 0; m < chartsToMount.length; m++) {
+    mountCardRecharts(chartsToMount[m]);
   }
 
   upgradeCardPhotos();
@@ -3324,6 +3415,189 @@ function setQrReticleScanState(state) {
 }
 window.setQrReticleScanState = setQrReticleScanState;
 
+var qrReticleInsetsState = { top: 22, right: 22, bottom: 22, left: 22 };
+var qrReticleHandlesInitialized = false;
+
+function computeQrReticleBoundsClient(containerWidth, containerHeight, initialInsets, corner, deltaX, deltaY) {
+  var safeW = Math.max(160, Math.round(Number(containerWidth) || 260));
+  var safeH = Math.max(160, Math.round(Number(containerHeight) || 260));
+  var minInset = 8;
+  var minSize = Math.max(64, Math.min(Math.min(safeW, safeH) - minInset * 2, 96));
+
+  var top = Math.max(minInset, Math.round(Number(initialInsets && initialInsets.top) || 22));
+  var right = Math.max(minInset, Math.round(Number(initialInsets && initialInsets.right) || 22));
+  var bottom = Math.max(minInset, Math.round(Number(initialInsets && initialInsets.bottom) || 22));
+  var left = Math.max(minInset, Math.round(Number(initialInsets && initialInsets.left) || 22));
+
+  var dx = Math.round(Number(deltaX) || 0);
+  var dy = Math.round(Number(deltaY) || 0);
+
+  if (corner === "tl") {
+    left = Math.min(Math.max(minInset, safeW - right - minSize), Math.max(minInset, left + dx));
+    top = Math.min(Math.max(minInset, safeH - bottom - minSize), Math.max(minInset, top + dy));
+  } else if (corner === "tr") {
+    right = Math.min(Math.max(minInset, safeW - left - minSize), Math.max(minInset, right - dx));
+    top = Math.min(Math.max(minInset, safeH - bottom - minSize), Math.max(minInset, top + dy));
+  } else if (corner === "bl") {
+    left = Math.min(Math.max(minInset, safeW - right - minSize), Math.max(minInset, left + dx));
+    bottom = Math.min(Math.max(minInset, safeH - top - minSize), Math.max(minInset, bottom - dy));
+  } else {
+    right = Math.min(Math.max(minInset, safeW - left - minSize), Math.max(minInset, right - dx));
+    bottom = Math.min(Math.max(minInset, safeH - top - minSize), Math.max(minInset, bottom - dy));
+  }
+
+  var width = Math.max(minSize, safeW - left - right);
+  var height = Math.max(minSize, safeH - top - bottom);
+  var isCustomSized = top !== 22 || right !== 22 || bottom !== 22 || left !== 22;
+
+  return {
+    corner: corner,
+    insets: { top: top, right: right, bottom: bottom, left: left },
+    width: width,
+    height: height,
+    isCustomSized: isCustomSized
+  };
+}
+
+function applyQrReticleInsets(insets) {
+  var reticle = document.getElementById("qr-scanner-reticle");
+  if (!reticle || !insets) return null;
+  qrReticleInsetsState = {
+    top: insets.top,
+    right: insets.right,
+    bottom: insets.bottom,
+    left: insets.left
+  };
+  reticle.style.inset = insets.top + "px " + insets.right + "px " + insets.bottom + "px " + insets.left + "px";
+  var isCustom = insets.top !== 22 || insets.right !== 22 || insets.bottom !== 22 || insets.left !== 22;
+  reticle.setAttribute("data-custom-resized", isCustom ? "true" : "false");
+  reticle.setAttribute("data-reticle-insets", insets.top + "," + insets.right + "," + insets.bottom + "," + insets.left);
+  return qrReticleInsetsState;
+}
+
+function resizeQrScannerReticleByCorner(corner, deltaX, deltaY) {
+  var reticle = document.getElementById("qr-scanner-reticle");
+  if (!reticle) return null;
+  var wrap = reticle.parentElement;
+  var cw = (wrap && wrap.clientWidth) ? wrap.clientWidth : 260;
+  var ch = (wrap && wrap.clientHeight) ? wrap.clientHeight : 260;
+  var result = computeQrReticleBoundsClient(cw, ch, qrReticleInsetsState, corner || "br", deltaX, deltaY);
+  applyQrReticleInsets(result.insets);
+  return result;
+}
+window.resizeQrScannerReticleByCorner = resizeQrScannerReticleByCorner;
+
+function resetQrScannerReticleBounds() {
+  applyQrReticleInsets({ top: 22, right: 22, bottom: 22, left: 22 });
+  if (typeof window.triggerHaptic === "function") {
+    window.triggerHaptic("light", document.getElementById("qr-scanner-reticle"));
+  }
+  return qrReticleInsetsState;
+}
+window.resetQrScannerReticleBounds = resetQrScannerReticleBounds;
+
+function initQrReticleDragHandles() {
+  if (qrReticleHandlesInitialized) return;
+  var reticle = document.getElementById("qr-scanner-reticle");
+  if (!reticle) return;
+  var handles = reticle.querySelectorAll(".qr-reticle-drag-handle");
+  if (!handles || !handles.length) return;
+  qrReticleHandlesInitialized = true;
+
+  Array.prototype.forEach.call(handles, function (handle) {
+    var corner = handle.getAttribute("data-corner") || "br";
+
+    handle.addEventListener("pointerdown", function (e) {
+      if (e.button !== undefined && e.button !== 0) return;
+      e.preventDefault();
+      e.stopPropagation();
+
+      if (handle.setPointerCapture && e.pointerId !== undefined) {
+        try { handle.setPointerCapture(e.pointerId); } catch (err) {}
+      }
+
+      var startX = e.clientX;
+      var startY = e.clientY;
+      var startInsets = {
+        top: qrReticleInsetsState.top,
+        right: qrReticleInsetsState.right,
+        bottom: qrReticleInsetsState.bottom,
+        left: qrReticleInsetsState.left
+      };
+
+      reticle.classList.add("is-resizing");
+      handle.classList.add("is-dragging");
+      if (typeof window.triggerHaptic === "function") {
+        window.triggerHaptic("selection", handle);
+      }
+
+      function onPointerMove(moveEvent) {
+        moveEvent.preventDefault();
+        var wrap = reticle.parentElement;
+        var cw = (wrap && wrap.clientWidth) ? wrap.clientWidth : 260;
+        var ch = (wrap && wrap.clientHeight) ? wrap.clientHeight : 260;
+        var dx = moveEvent.clientX - startX;
+        var dy = moveEvent.clientY - startY;
+        var computed = computeQrReticleBoundsClient(cw, ch, startInsets, corner, dx, dy);
+        applyQrReticleInsets(computed.insets);
+      }
+
+      function onPointerUp(upEvent) {
+        if (handle.releasePointerCapture && upEvent && upEvent.pointerId !== undefined) {
+          try { handle.releasePointerCapture(upEvent.pointerId); } catch (err) {}
+        }
+        reticle.classList.remove("is-resizing");
+        handle.classList.remove("is-dragging");
+        window.removeEventListener("pointermove", onPointerMove);
+        window.removeEventListener("pointerup", onPointerUp);
+        window.removeEventListener("pointercancel", onPointerUp);
+      }
+
+      window.addEventListener("pointermove", onPointerMove);
+      window.addEventListener("pointerup", onPointerUp);
+      window.addEventListener("pointercancel", onPointerUp);
+    });
+
+    handle.addEventListener("dblclick", function (e) {
+      e.preventDefault();
+      e.stopPropagation();
+      resetQrScannerReticleBounds();
+    });
+
+    handle.addEventListener("keydown", function (e) {
+      var step = e.shiftKey ? 14 : 6;
+      var dx = 0;
+      var dy = 0;
+      if (e.key === "ArrowLeft") dx = -step;
+      else if (e.key === "ArrowRight") dx = step;
+      else if (e.key === "ArrowUp") dy = -step;
+      else if (e.key === "ArrowDown") dy = step;
+      else if (e.key === "Home" || e.key === "0") {
+        e.preventDefault();
+        e.stopPropagation();
+        resetQrScannerReticleBounds();
+        return;
+      } else {
+        return;
+      }
+      e.preventDefault();
+      e.stopPropagation();
+      resizeQrScannerReticleByCorner(corner, dx, dy);
+      if (typeof window.triggerHaptic === "function") {
+        window.triggerHaptic("selection", handle);
+      }
+    });
+  });
+}
+
+if (typeof document !== "undefined") {
+  if (document.readyState === "loading") {
+    document.addEventListener("DOMContentLoaded", initQrReticleDragHandles);
+  } else {
+    setTimeout(initQrReticleDragHandles, 0);
+  }
+}
+
 function resetQrScanPingFeedback() {
   setQrReticleScanState(qrScanningActive && qrScanStream ? "scanning" : "idle");
   var flash = document.getElementById("qr-scanner-ping-flash");
@@ -3335,6 +3609,7 @@ function resetQrScanPingFeedback() {
 function openQrScannerModal() {
   var overlay = document.getElementById("qr-scanner-overlay");
   if (!overlay) return;
+  initQrReticleDragHandles();
   initOrResumeQrAudioContext();
   updateQrAudioToggleUi();
   resetQrScanPingFeedback();
@@ -4756,6 +5031,9 @@ function saveCart() {
       if (data && data.cart) {
         window.serverCartState = data.cart;
       }
+      if (window.VoltboxFirebase && window.VoltboxFirebase.getUid && window.VoltboxFirebase.getUid()) {
+        window.VoltboxFirebase.syncPrivateStateToFirestore({ cart: cart }).catch(function () {});
+      }
       fetchInventorySummary();
       return data;
     })
@@ -5237,11 +5515,40 @@ function computeTotals() {
 }
 
 
+function ensureSheetScrollIsolation(sheetEl) {
+  if (!sheetEl || sheetEl.getAttribute("data-scroll-isolated") === "true") return;
+  sheetEl.setAttribute("data-scroll-isolated", "true");
+  sheetEl.addEventListener("wheel", function (e) {
+    e.stopPropagation();
+    var target = e.target;
+    var nestedScrollable = target && target.closest ? target.closest(".wishlist-list, .history-list, .sheet-body") : null;
+    if (nestedScrollable && nestedScrollable !== sheetEl && nestedScrollable.scrollHeight > nestedScrollable.clientHeight) {
+      var atNestedTop = nestedScrollable.scrollTop <= 0 && e.deltaY < 0;
+      var atNestedBottom = Math.ceil(nestedScrollable.scrollTop + nestedScrollable.clientHeight) >= nestedScrollable.scrollHeight && e.deltaY > 0;
+      if (!atNestedTop && !atNestedBottom) {
+        return;
+      }
+    }
+    var canScrollSheet = sheetEl.scrollHeight > sheetEl.clientHeight;
+    if (!canScrollSheet) {
+      e.preventDefault();
+      return;
+    }
+    var atTop = sheetEl.scrollTop <= 0 && e.deltaY < 0;
+    var atBottom = Math.ceil(sheetEl.scrollTop + sheetEl.clientHeight) >= sheetEl.scrollHeight && e.deltaY > 0;
+    if (atTop || atBottom) {
+      e.preventDefault();
+    }
+  }, { passive: false });
+}
+
 function toggleSheet(sheetEl, buttonEl) {
   var opening = sheetEl.hidden;
   closeAllSheets();
   if (opening) {
+    ensureSheetScrollIsolation(sheetEl);
     sheetEl.hidden = false;
+    sheetEl.scrollTop = 0;
     buttonEl.setAttribute("aria-expanded", "true");
   }
 }
@@ -6961,6 +7268,20 @@ function payNow() {
       cart = {};
       fetchProducts();
 
+      if (window.VoltboxFirebase && window.VoltboxFirebase.getUid && window.VoltboxFirebase.getUid()) {
+        var orderObj = (result.data && result.data.order) ? result.data.order : null;
+        if (orderObj && orderObj.id) {
+          window.VoltboxFirebase.syncOrderToFirestore({
+            id: orderObj.id,
+            total: orderObj.total,
+            count: orderObj.count,
+            paymentMethod: orderObj.paymentMethod,
+            status: orderObj.status
+          }).catch(function () {});
+        }
+        window.VoltboxFirebase.syncPrivateStateToFirestore({ cart: {} }).catch(function () {});
+      }
+
       me.orderCount++;
       paintHistoryCount(me.orderCount);
       collapseHistory();
@@ -8205,11 +8526,14 @@ function starRating(rate) {
 
 function watchScroll() {
   var bar = document.getElementById("topbar");
+  if (!bar) return;
+  var wasScrolled = window.scrollY > 10;
+  bar.classList.toggle("scrolled", wasScrolled);
   window.addEventListener("scroll", function () {
-    if (window.scrollY > 10) {
-      bar.classList.add("scrolled");
-    } else {
-      bar.classList.remove("scrolled");
+    var nextScrolled = window.scrollY > 10;
+    if (nextScrolled !== wasScrolled) {
+      wasScrolled = nextScrolled;
+      bar.classList.toggle("scrolled", nextScrolled);
     }
   }, { passive: true });
 }
@@ -8495,7 +8819,23 @@ function initStudioCommandStrip() {
   var attachTrayEl = document.getElementById("ig-attach-tray");
   if (attachToggleBtn && attachTrayEl) {
     attachToggleBtn.addEventListener("click", function () {
-      if (chatProductSelectEl) chatProductSelectEl.focus();
+      var isCollapsed = attachTrayEl.classList.toggle("is-collapsed");
+      var isOpen = !isCollapsed;
+      attachToggleBtn.classList.toggle("active", isOpen);
+      attachToggleBtn.setAttribute("aria-expanded", isOpen ? "true" : "false");
+      if (isOpen && chatProductSelectEl) {
+        chatProductSelectEl.focus();
+      }
+    });
+  }
+  if (chatProductSelectEl && attachTrayEl && attachToggleBtn) {
+    chatProductSelectEl.addEventListener("change", function () {
+      var hasPart = Boolean(chatProductSelectEl.value);
+      if (hasPart) {
+        attachTrayEl.classList.remove("is-collapsed");
+        attachToggleBtn.classList.add("active");
+        attachToggleBtn.setAttribute("aria-expanded", "true");
+      }
     });
   }
 
@@ -8503,7 +8843,7 @@ function initStudioCommandStrip() {
   if (quickHeartBtn) {
     quickHeartBtn.addEventListener("click", function () {
       if (!chatMessageInputEl) return;
-      chatMessageInputEl.value = "❤️ Loving this hardware setup! Can we verify PSU headroom?";
+      chatMessageInputEl.value = "👍 Looks great! Can we verify PSU and thermal headroom for this setup?";
       sendMessengerMessage();
     });
   }
@@ -8515,7 +8855,7 @@ setTimeout(initStudioCommandStrip, 0);
 
 
 // ═══════════════════════════════════════════════════════════════════
-// INSTAGRAM DIRECT-STYLE MESSENGER (REAL-TIME THREADS & PRODUCT TAGS)
+// HARDWARE CONCIERGE WORKSPACE MESSENGER (REAL-TIME CHANNELS & TAGS)
 // ═══════════════════════════════════════════════════════════════════
 
 function setMobileDockActive(navKey) {
@@ -8590,6 +8930,20 @@ function formatIgHandleForSender(name, role) {
   return "@" + slug;
 }
 
+function resolveConciergeRoleBadge(role) {
+  if (window.VoltboxQR && typeof window.VoltboxQR.formatConciergeSenderRoleBadge === "function") {
+    return window.VoltboxQR.formatConciergeSenderRoleBadge(role);
+  }
+  var r = String(role || "").toUpperCase();
+  if (r === "STAFF_ARCHITECT" || r === "MODERATOR") {
+    return { label: "Lead Architect", tier: "architect", isVerified: true };
+  }
+  if (r === "VERIFIED_BUILDER" || r === "CONTRIBUTOR") {
+    return { label: "Verified Builder", tier: "builder", isVerified: true };
+  }
+  return { label: "Builder", tier: "member", isVerified: false };
+}
+
 function loadMessengerMessages() {
   api("/api/messages")
     .then(function (r) { return r.json(); })
@@ -8598,7 +8952,7 @@ function loadMessengerMessages() {
         chatMessages = data.messages;
       }
       if (data && typeof data.onlineCount === "number" && messengerOnlineEl) {
-        messengerOnlineEl.textContent = "Active now · " + Math.max(4, data.onlineCount) + " specialists";
+        messengerOnlineEl.textContent = "Lead Architects · " + Math.max(4, data.onlineCount) + " specialists online";
       }
       renderMessengerFeed();
     })
@@ -8609,16 +8963,21 @@ function renderMessengerFeed() {
   if (!messengerFeedEl) return;
   var currentChan = activeChatChannel || "engineering-desk";
 
-  // Sync Instagram Direct Header Handle & Subtitle with active channel pill
   var activeChanBtn = document.querySelector('#messenger-channels .msg-channel-btn[data-channel="' + currentChan + '"]');
   var igTitleEl = document.getElementById("ig-dm-active-title");
+  var chanMeta = (window.VoltboxQR && typeof window.VoltboxQR.resolveConciergeChannelMetadata === "function")
+    ? window.VoltboxQR.resolveConciergeChannelMetadata(currentChan)
+    : null;
+
   if (activeChanBtn) {
-    var handleAttr = activeChanBtn.getAttribute("data-ig-handle");
-    var subAttr = activeChanBtn.getAttribute("data-ig-sub");
+    var handleAttr = activeChanBtn.getAttribute("data-ig-handle") || (chanMeta && chanMeta.title);
+    var subAttr = activeChanBtn.getAttribute("data-ig-sub") || (chanMeta && chanMeta.subtitle);
     if (igTitleEl && handleAttr) igTitleEl.textContent = handleAttr;
     if (messengerOnlineEl && subAttr) messengerOnlineEl.textContent = subAttr;
-    if (chatMessageInputEl && handleAttr) {
-      chatMessageInputEl.placeholder = "Message @" + handleAttr + "…";
+    if (chatMessageInputEl) {
+      chatMessageInputEl.placeholder = (chanMeta && chanMeta.placeholder)
+        ? chanMeta.placeholder
+        : ("Message " + (handleAttr || "Hardware Concierge") + "…");
     }
   }
 
@@ -8635,19 +8994,20 @@ function renderMessengerFeed() {
   if (filtered.length === 0) {
     messengerFeedEl.innerHTML =
       '<div class="msg-empty ig-dm-empty">' +
-        '<p>No direct messages in this thread yet.</p>' +
-        '<span>Send a message or tag a hardware part below to start an Instagram Direct consultation.</span>' +
+        '<p>No messages in this channel yet.</p>' +
+        '<span>Ask a question or click "Tag Part" above to attach a component for specialist review.</span>' +
       '</div>';
     return;
   }
 
-  var html = '<div class="ig-dm-timestamp-divider"><span>TODAY · DIRECT ENCRYPTED</span></div>';
+  var html = '<div class="ig-dm-timestamp-divider"><span>TODAY · LIVE ENGINEERING DESK</span></div>';
   for (var j = 0; j < filtered.length; j++) {
     var msg = filtered[j];
     var isSelf = me && msg.senderEmail === me.email;
-    var isVerified = msg.senderRole === "STAFF_ARCHITECT" || msg.senderRole === "moderator" || msg.senderRole === "VERIFIED_BUILDER" || msg.senderRole === "contributor";
-    var handleText = msg.senderHandle || formatIgHandleForSender(msg.senderName, msg.senderRole);
-    var verifiedTick = isVerified ? '<span class="ig-msg-verified" title="Verified Specialist">✓</span>' : '';
+    var roleBadge = resolveConciergeRoleBadge(msg.senderRole);
+    var rolePillHtml = isSelf
+      ? '<span class="concierge-role-badge self-badge">You</span>'
+      : '<span class="concierge-role-badge tier-' + esc(roleBadge.tier) + '">' + esc(roleBadge.label) + '</span>';
 
     var when = new Date(msg.createdAt || Date.now());
     var timeLabel = formatTime(when);
@@ -8667,43 +9027,50 @@ function renderMessengerFeed() {
             '<span class="msg-part-price">$' + Number(pPrice).toFixed(2) + '</span>' +
           '</div>' +
           '<div class="msg-part-actions">' +
-            '<button type="button" class="msg-part-btn specs" onclick="closeMessenger();openSpecDrawer(' + Number(msg.productId) + ')">View</button>' +
-            '<button type="button" class="msg-part-btn add" onclick="inc(' + Number(msg.productId) + ')">+ Bag</button>' +
+            '<button type="button" class="msg-part-btn specs" onclick="closeMessenger();openSpecDrawer(' + Number(msg.productId) + ')">Specs</button>' +
+            '<button type="button" class="msg-part-btn add" onclick="inc(' + Number(msg.productId) + ')">+ Cart</button>' +
           '</div>' +
         '</div>';
     }
 
-    var reactions = msg.reactions || { "❤️": 1 };
-    var reactionsHtml = '<div class="msg-reactions-row ig-reactions-tray">';
+    var reactions = msg.reactions || {};
     var emojis = ["❤️", "🔥", "⚡", "🚀"];
+    var reactionsHtml = '<div class="msg-reactions-row ig-reactions-tray">';
+    var hasAnyActiveReaction = false;
     for (var e = 0; e < emojis.length; e++) {
       var em = emojis[e];
       var cnt = reactions[em] || 0;
+      if (cnt > 0) hasAnyActiveReaction = true;
       reactionsHtml +=
-        '<button type="button" class="msg-reaction-pill' + (cnt > 0 ? ' reacted' : '') + '" onclick="toggleMsgReaction(' + msg.id + ', \'' + em + '\')">' +
-          em + (cnt > 0 ? (' <span>' + cnt + '</span>') : '') +
+        '<button type="button" class="msg-reaction-pill' + (cnt > 0 ? ' reacted' : ' idle-reaction') + '" onclick="toggleMsgReaction(' + msg.id + ', \'' + em + '\')" title="React with ' + em + '">' +
+          '<span class="reaction-emoji">' + em + '</span>' + (cnt > 0 ? ('<span class="reaction-count">' + cnt + '</span>') : '') +
+        '</button>';
+    }
+    if (!hasAnyActiveReaction) {
+      reactionsHtml +=
+        '<button type="button" class="msg-reaction-pill quick-react-trigger" onclick="toggleMsgReaction(' + msg.id + ', \'❤️\')" title="Like message">' +
+          '<span class="reaction-emoji">❤️</span>' +
         '</button>';
     }
     reactionsHtml += '</div>';
 
     var seenHtml = isSelf
-      ? '<div class="ig-seen-note">' + esc(msg.seenStatus || "Seen just now") + ' · ' + esc(timeLabel) + '</div>'
+      ? '<div class="ig-seen-note">' + esc(msg.seenStatus || "Delivered to desk") + ' · ' + esc(timeLabel) + '</div>'
       : '';
 
     html +=
       '<article class="msg-card ig-dm-row' + (isSelf ? ' self' : '') + '" data-testid="messenger-msg-card">' +
         (isSelf ? '' : (
           '<div class="ig-msg-avatar-wrap">' +
-            '<div class="msg-avatar ig-msg-avatar" style="background:' + esc(msg.senderColor || "#3b82f6") + '">' +
+            '<div class="msg-avatar ig-msg-avatar" style="background:' + esc(msg.senderColor || "#0a84ff") + '">' +
               esc((msg.senderName || "V").charAt(0).toUpperCase()) +
             '</div>' +
           '</div>'
         )) +
         '<div class="msg-body ig-dm-bubble-col">' +
           '<div class="msg-meta ig-dm-meta">' +
-            '<span class="msg-author">' + esc(msg.senderName || "Specialist") + '</span>' +
-            verifiedTick +
-            '<span class="ig-msg-handle">' + esc(handleText) + '</span>' +
+            '<span class="msg-author">' + esc(isSelf ? (me.name || "You") : (msg.senderName || "Specialist")) + '</span>' +
+            rolePillHtml +
             '<span class="msg-time">' + esc(timeLabel) + '</span>' +
           '</div>' +
           '<div class="ig-dm-bubble">' +
@@ -8769,6 +9136,13 @@ function sendMessengerMessage() {
       if (result.ok && result.data) {
         chatMessageInputEl.value = "";
         if (chatProductSelectEl) chatProductSelectEl.value = "";
+        var attachTrayEl = document.getElementById("ig-attach-tray");
+        var attachToggleBtn = document.getElementById("ig-dm-attach-toggle");
+        if (attachTrayEl) attachTrayEl.classList.add("is-collapsed");
+        if (attachToggleBtn) {
+          attachToggleBtn.classList.remove("active");
+          attachToggleBtn.setAttribute("aria-expanded", "false");
+        }
         appendIncomingChatMessage(result.data);
         triggerPerimeterSignalPulse();
       }
@@ -8794,14 +9168,14 @@ function appendIncomingChatMessage(msg) {
 
 window.onChatMessageReceived = function (msg, onlineCount) {
   if (typeof onlineCount === "number" && messengerOnlineEl) {
-    messengerOnlineEl.textContent = Math.max(3, onlineCount + 2) + " builders online";
+    messengerOnlineEl.textContent = "Lead Architects · " + Math.max(4, onlineCount + 2) + " specialists online";
   }
   appendIncomingChatMessage(msg);
 };
 
 window.onPresenceUpdate = function (onlineCount) {
   if (typeof onlineCount === "number" && messengerOnlineEl) {
-    messengerOnlineEl.textContent = Math.max(3, onlineCount + 2) + " builders online";
+    messengerOnlineEl.textContent = "Lead Architects · " + Math.max(4, onlineCount + 2) + " specialists online";
   }
 };
 
@@ -9299,23 +9673,8 @@ function createMomentumDrawerController(key, drawerEl, scrollEl) {
     onGestureEnd();
   });
 
-  // Smooth Wheel Impulse (converts stepped wheel ticks into smooth momentum coasting)
-  drawerEl.addEventListener("wheel", function (e) {
-    if (e.ctrlKey) return;
-    state.maxScroll = getMaxScroll();
-    if (state.maxScroll <= 0) return;
-
-    e.preventDefault();
-    var rawDelta = e.deltaMode === 1 ? (e.deltaY * 18) : e.deltaY;
-    var impulse = Math.max(-42, Math.min(42, rawDelta * 0.28));
-
-    if (!state.rafId) {
-      state.scrollTop = scrollEl.scrollTop;
-    }
-    state.velocity = Math.max(-68, Math.min(68, state.velocity + impulse));
-    state.phase = "coasting";
-    startMomentumLoop();
-  }, { passive: false });
+  // Native hardware-accelerated wheel/trackpad scrolling inside drawers
+  // (scroll listener below passively syncs custom scrollbar thumb & overscroll state)
 
   // Native scroll fallback synchronization
   scrollEl.addEventListener("scroll", function () {
@@ -13124,8 +13483,8 @@ function executeProductCardContextAction(actionId, productId) {
 
   if (actionId === "add-to-cart") {
     inc(pid);
-    if (typeof showWishlistToast === "function") {
-      showWishlistToast("Added " + p.title + " ($" + p.price.toFixed(2) + ") to cart", "added");
+    if (typeof showActivityToast === "function") {
+      showActivityToast("Added " + p.title + " ($" + p.price.toFixed(2) + ") to cart");
     }
     closeProductCardContextMenu();
     return;
@@ -13149,8 +13508,8 @@ function executeProductCardContextAction(actionId, productId) {
       ? window.VoltboxQR.formatProductCopyPayload({ id: p.id, title: p.title, sku: sku, price: p.price }, "name")
       : p.title;
     copyTextToClipboardWithFallback(namePayload).then(function () {
-      if (typeof showWishlistToast === "function") {
-        showWishlistToast('Copied "' + namePayload + '" to clipboard', "added");
+      if (typeof showActivityToast === "function") {
+        showActivityToast('Copied "' + namePayload + '" to clipboard');
       }
     });
     closeProductCardContextMenu();
@@ -13162,8 +13521,8 @@ function executeProductCardContextAction(actionId, productId) {
       ? window.VoltboxQR.formatProductCopyPayload({ id: p.id, title: p.title, sku: sku, price: p.price }, "sku-price")
       : (p.title + " (" + sku + ") — $" + p.price.toFixed(2));
     copyTextToClipboardWithFallback(skuPayload).then(function () {
-      if (typeof showWishlistToast === "function") {
-        showWishlistToast("Copied SKU & price: " + skuPayload, "added");
+      if (typeof showActivityToast === "function") {
+        showActivityToast("Copied SKU & price: " + skuPayload);
       }
     });
     closeProductCardContextMenu();
@@ -13359,10 +13718,9 @@ function toggleVoltboxColorMode() {
   if (window.triggerHaptic) {
     window.triggerHaptic("selection");
   }
-  if (typeof showWishlistToast === "function") {
-    showWishlistToast(
-      nextMode === "light" ? "Switched to iOS Light Mode" : "Switched to iOS Dark Mode",
-      "added"
+  if (typeof showActivityToast === "function") {
+    showActivityToast(
+      nextMode === "light" ? "Switched to Light Mode" : "Switched to Dark Mode"
     );
   }
   return nextMode;

@@ -390,6 +390,14 @@
                 <span class="pwa-btn-text">Install Voltbox App</span>
               </button>
 
+              <!-- Cloud Firestore Sync Button (Google Auth) -->
+              <button class="sheet-btn ghost wide" id="cloud-sync-google-btn" type="button"
+                      onclick="handleCloudGoogleSyncClick()"
+                      aria-label="Sync profile with Google Cloud Firestore" style="display:flex;align-items:center;justify-content:center;gap:8px;margin-bottom:8px;">
+                <span data-icon="globe" data-icon-size="14"></span>
+                <span id="cloud-sync-status-label">Cloud Sync (Google)</span>
+              </button>
+
               <!-- Support & Donate Button -->
               <button class="sheet-btn ghost wide" id="donate-btn" type="button"
                       aria-label="Donate" style="display:flex;align-items:center;justify-content:center;gap:8px;margin-bottom:8px;">
@@ -2021,13 +2029,13 @@
     </div>
   </div>
 
-  <!-- Instagram Direct-Style Hardware Concierge & Community Messenger Drawer -->
+  <!-- Hardware Concierge & Engineering Workspace Messenger Drawer -->
   <div class="drawer-overlay" id="messenger-overlay" aria-hidden="true">
-    <aside class="side-drawer messenger-drawer ig-dm-drawer momentum-drawer" id="messenger-drawer" data-momentum-drawer="messenger" role="dialog" aria-modal="true" aria-label="Voltbox Direct Messenger">
-      <!-- Instagram Direct Header -->
+    <aside class="side-drawer messenger-drawer ig-dm-drawer concierge-workspace-drawer momentum-drawer" id="messenger-drawer" data-momentum-drawer="messenger" role="dialog" aria-modal="true" aria-label="Voltbox Hardware Concierge">
+      <!-- Concierge Workspace Header -->
       <div class="drawer-head messenger-head ig-dm-head">
         <div class="messenger-brand-wrap ig-dm-profile">
-          <div class="ig-story-ring active-ring" aria-hidden="true">
+          <div class="ig-story-ring active-ring concierge-avatar-badge" aria-hidden="true">
             <div class="messenger-brand-icon ig-dm-avatar">
               <span data-icon="cpu" data-icon-size="16"></span>
             </div>
@@ -2035,17 +2043,19 @@
           </div>
           <div class="ig-dm-user-meta">
             <div class="ig-dm-title-row">
-              <h2 class="drawer-title messenger-title" id="ig-dm-active-title">voltbox.concierge</h2>
-              <span class="ig-verified-badge" title="Verified Voltbox Hardware Architect" aria-label="Verified">✓</span>
+              <h2 class="drawer-title messenger-title" id="ig-dm-active-title">Hardware Concierge</h2>
+              <span class="ig-verified-badge" title="Verified Voltbox Engineering Desk" aria-label="Verified">✓</span>
             </div>
             <div class="messenger-subtitle ig-dm-status">
-              <span id="messenger-online-pill">Active now · 8 specialists</span>
+              <span class="concierge-live-dot" aria-hidden="true"></span>
+              <span id="messenger-online-pill">Lead Architects · 8 specialists online</span>
             </div>
           </div>
         </div>
         <div class="messenger-head-right ig-dm-actions">
-          <button type="button" class="ig-dm-icon-btn" id="ig-dm-attach-toggle" title="Attach hardware component to message" aria-label="Attach hardware component">
-            <span data-icon="sliders" data-icon-size="15"></span>
+          <button type="button" class="ig-dm-icon-btn concierge-tag-toggle-btn" id="ig-dm-attach-toggle" title="Tag a hardware part in your message" aria-label="Tag hardware component" aria-expanded="false">
+            <span data-icon="cpu" data-icon-size="13"></span>
+            <span class="concierge-tag-toggle-label">Tag Part</span>
           </button>
           <button class="modal-close ig-dm-close" id="messenger-close" aria-label="Close Messenger">
             <span data-icon="x" data-icon-size="18"></span>
@@ -2053,37 +2063,38 @@
         </div>
       </div>
 
-      <!-- Instagram Story-Ring Specialist & Thread Switcher -->
+      <!-- Segmented 4-Channel Workspace Switcher -->
       <div class="messenger-channels-wrap ig-stories-tray">
-        <div class="messenger-channels ig-channel-pills" id="messenger-channels" role="tablist" aria-label="Direct message threads">
-          <button type="button" class="msg-channel-btn active" data-channel="engineering-desk" data-ig-handle="voltbox.concierge" data-ig-sub="Active now · Lead Architects" role="tab" aria-selected="true">
-            <span class="ig-pill-avatar ring-cyan">EL</span>
-            <span class="ig-pill-label">Primary</span>
+        <div class="messenger-channels ig-channel-pills" id="messenger-channels" role="tablist" aria-label="Concierge channels">
+          <button type="button" class="msg-channel-btn active" data-channel="engineering-desk" data-ig-handle="Hardware Concierge" data-ig-sub="Lead Architects · Avg reply &lt; 1m" role="tab" aria-selected="true">
+            <span class="concierge-chan-dot dot-cyan" aria-hidden="true"></span>
+            <span class="ig-pill-label">Desk</span>
           </button>
-          <button type="button" class="msg-channel-btn" data-channel="rig-builds" data-ig-handle="rig.builds.club" data-ig-sub="Active now · Custom Loop &amp; ATX 3.1" role="tab" aria-selected="false">
-            <span class="ig-pill-avatar ring-violet">MC</span>
+          <button type="button" class="msg-channel-btn" data-channel="rig-builds" data-ig-handle="Rig Build Lab" data-ig-sub="ATX 3.1, PCIe 5.0 &amp; Thermal Clearance" role="tab" aria-selected="false">
+            <span class="concierge-chan-dot dot-violet" aria-hidden="true"></span>
             <span class="ig-pill-label">Rig Builds</span>
           </button>
-          <button type="button" class="msg-channel-btn" data-channel="stock-radar" data-ig-handle="voltbox.drops" data-ig-sub="Live GPU &amp; Console Restock Alerts" role="tab" aria-selected="false">
-            <span class="ig-pill-avatar ring-amber">PN</span>
+          <button type="button" class="msg-channel-btn" data-channel="stock-radar" data-ig-handle="Stock Drop Radar" data-ig-sub="Live GPU, CPU &amp; Handheld Restock Feed" role="tab" aria-selected="false">
+            <span class="concierge-chan-dot dot-amber" aria-hidden="true"></span>
             <span class="ig-pill-label">Stock Drops</span>
           </button>
-          <button type="button" class="msg-channel-btn" data-channel="vip-concierge" data-ig-handle="vip.care.desk" data-ig-sub="1-on-1 Order &amp; Warranty Concierge" role="tab" aria-selected="false">
-            <span class="ig-pill-avatar ring-emerald">VP</span>
-            <span class="ig-pill-label">VIP Desk</span>
+          <button type="button" class="msg-channel-btn" data-channel="vip-concierge" data-ig-handle="VIP Order Care" data-ig-sub="1-on-1 Order Tracking &amp; Warranty Desk" role="tab" aria-selected="false">
+            <span class="concierge-chan-dot dot-emerald" aria-hidden="true"></span>
+            <span class="ig-pill-label">VIP Care</span>
           </button>
         </div>
       </div>
 
-      <!-- Quick-Prompt Icebreakers (Instagram Direct Icebreaker Pills) -->
-      <div class="messenger-quick-chips ig-icebreakers" id="messenger-quick-chips">
-        <button type="button" class="msg-quick-chip" data-prompt="Bottleneck check: Does the Intel Core Ultra 9 pair with the RTX 5090?">⚡ Ultra 9 + RTX 5090</button>
-        <button type="button" class="msg-quick-chip" data-prompt="VRM Thermal headroom on ROG X870E under sustained workloads?">🔥 X870E Thermals</button>
-        <button type="button" class="msg-quick-chip" data-prompt="Any restock update on the Aethel VX-1 OLED Handheld?">🚀 OLED Restock</button>
-        <button type="button" class="msg-quick-chip" data-prompt="Just unlocked the 5% Rig Bundle + VOLT10 promo code!">💎 5% Bundle + VOLT10</button>
+      <!-- Compact Quick-Prompt Suggestions -->
+      <div class="messenger-quick-chips ig-icebreakers" id="messenger-quick-chips" aria-label="Suggested questions">
+        <span class="concierge-prompts-label">Ask:</span>
+        <button type="button" class="msg-quick-chip" data-prompt="Bottleneck check: Does the Intel Core Ultra 9 pair with the RTX 5090?">Ultra 9 + RTX 5090</button>
+        <button type="button" class="msg-quick-chip" data-prompt="VRM Thermal headroom on ROG X870E under sustained workloads?">X870E Thermals</button>
+        <button type="button" class="msg-quick-chip" data-prompt="Any restock update on the Aethel VX-1 OLED Handheld?">OLED Restock</button>
+        <button type="button" class="msg-quick-chip" data-prompt="Just unlocked the 5% Rig Bundle + VOLT10 promo code!">5% Bundle + VOLT10</button>
       </div>
 
-      <!-- Scrollable Real-Time Instagram Direct Message Feed -->
+      <!-- Scrollable Real-Time Message Feed -->
       <div class="messenger-feed ig-dm-feed momentum-scroll-body" id="messenger-feed" data-testid="messenger-feed" data-momentum-scroll="true" aria-live="polite"></div>
 
       <!-- Typing Indicator -->
@@ -2091,15 +2102,15 @@
         <span class="typing-dot"></span>
         <span class="typing-dot"></span>
         <span class="typing-dot"></span>
-        <span class="typing-text" id="messenger-typing-text">voltbox.concierge is typing…</span>
+        <span class="typing-text" id="messenger-typing-text">Specialist is typing…</span>
       </div>
 
-      <!-- Instagram Direct Pill Composer with Hardware Product Tagging -->
+      <!-- Workspace Message Composer with Collapsible Hardware Tagging -->
       <form class="messenger-composer ig-dm-composer" id="messenger-form" autocomplete="off">
-        <div class="messenger-attach-row ig-attach-tray" id="ig-attach-tray">
+        <div class="messenger-attach-row ig-attach-tray is-collapsed" id="ig-attach-tray">
           <label class="msg-attach-label" for="chat-product-select">
             <span data-icon="cpu" data-icon-size="13"></span>
-            <span>Tag Part:</span>
+            <span>Attach SKU:</span>
           </label>
           <select id="chat-product-select" aria-label="Attach hardware component to message">
             <option value="">None (Text message only)</option>
@@ -2107,9 +2118,9 @@
         </div>
         <div class="messenger-input-row ig-pill-input-bar">
           <input id="chat-input" type="text" maxlength="420"
-                 placeholder="Message @voltbox.concierge…"
+                 placeholder="Ask a specialist or tag a hardware part…"
                  aria-label="Message text" autocomplete="off" />
-          <button type="button" class="ig-quick-heart-btn" id="ig-quick-heart-btn" title="Send quick heart" aria-label="Send quick heart">❤️</button>
+          <button type="button" class="ig-quick-heart-btn" id="ig-quick-heart-btn" title="Send quick thumbs-up" aria-label="Send quick reaction">👍</button>
           <button type="submit" class="messenger-send-btn ig-send-pill" id="chat-send-btn" aria-label="Send message">
             <span>Send</span>
           </button>
@@ -2193,10 +2204,26 @@
               Scanning · 5.0s
             </div>
           </div>
-          <div class="qr-scanner-corner tl"></div>
-          <div class="qr-scanner-corner tr"></div>
-          <div class="qr-scanner-corner bl"></div>
-          <div class="qr-scanner-corner br"></div>
+          <div class="qr-scanner-corner tl">
+            <button type="button" class="qr-reticle-drag-handle tl" id="qr-reticle-handle-tl" data-corner="tl" data-testid="qr-reticle-handle-tl" aria-label="Resize scanner reticle from top-left corner" title="Drag to resize scanner area (double-click to reset)">
+              <span class="qr-handle-grip" aria-hidden="true"></span>
+            </button>
+          </div>
+          <div class="qr-scanner-corner tr">
+            <button type="button" class="qr-reticle-drag-handle tr" id="qr-reticle-handle-tr" data-corner="tr" data-testid="qr-reticle-handle-tr" aria-label="Resize scanner reticle from top-right corner" title="Drag to resize scanner area (double-click to reset)">
+              <span class="qr-handle-grip" aria-hidden="true"></span>
+            </button>
+          </div>
+          <div class="qr-scanner-corner bl">
+            <button type="button" class="qr-reticle-drag-handle bl" id="qr-reticle-handle-bl" data-corner="bl" data-testid="qr-reticle-handle-bl" aria-label="Resize scanner reticle from bottom-left corner" title="Drag to resize scanner area (double-click to reset)">
+              <span class="qr-handle-grip" aria-hidden="true"></span>
+            </button>
+          </div>
+          <div class="qr-scanner-corner br">
+            <button type="button" class="qr-reticle-drag-handle br" id="qr-reticle-handle-br" data-corner="br" data-testid="qr-reticle-handle-br" aria-label="Resize scanner reticle from bottom-right corner" title="Drag to resize scanner area (double-click to reset)">
+              <span class="qr-handle-grip" aria-hidden="true"></span>
+            </button>
+          </div>
           <div class="qr-scanner-laser" id="qr-scanner-laser"></div>
         </div>
 
@@ -2692,6 +2719,7 @@
   <script src="icons.js"></script>
   <script src="recharts-bundle.js"></script>
   <script src="qr-bundle.js"></script>
+  <script src="firebase-bundle.js"></script>
   <script src="app.js"></script>
   <script src="community.js"></script>
 </body>

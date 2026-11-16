@@ -1030,7 +1030,7 @@ app.post('/api/login', (req, res) => {
   const loginType = typeof req.body?.loginType === 'string' ? req.body.loginType.trim().toLowerCase() : 'user';
 
   const user = store.findByEmail(email);
-  if (!user || user.password !== password) {
+  if (!user || !store.verifyPassword(user, password)) {
     return res.status(401).json({ ok: false, message: 'Wrong email or password.' });
   }
 
@@ -2835,10 +2835,29 @@ app.post(
 
 // ── Serve Static Frontend & Generated Assets ──
 const assetsDir = path.resolve(process.cwd(), 'src/assets');
-app.use('/src/assets', express.static(assetsDir));
+app.use(
+  '/src/assets',
+  express.static(assetsDir, {
+    maxAge: '1d',
+    etag: true,
+    setHeaders: (res) => {
+      res.setHeader('Cache-Control', 'public, max-age=86400');
+    },
+  })
+);
 
 const staticDir = path.resolve(process.cwd(), 'src/main/resources/static');
-app.use(express.static(staticDir));
+app.use(
+  '/images',
+  express.static(path.join(staticDir, 'images'), {
+    maxAge: '1d',
+    etag: true,
+    setHeaders: (res) => {
+      res.setHeader('Cache-Control', 'public, max-age=86400');
+    },
+  })
+);
+app.use(express.static(staticDir, { etag: true }));
 
 app.get(['/admin', '/admin.html'], (_req, res) => {
   res.sendFile(path.join(staticDir, 'admin.html'));

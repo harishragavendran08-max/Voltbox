@@ -14,6 +14,7 @@ import {
   DEFAULT_SEEDED_SEARCH_LOGS,
   createSearchQueryLogEntry,
 } from './logic/inventory';
+import { hashPasswordScrypt, isScryptHash, verifyPasswordScrypt } from './logic/security';
 
 export interface OrderLine {
   productId: number;
@@ -218,6 +219,14 @@ export class Store {
           p.image = '/src/assets/images/product_ps5_controller_1793511428886.jpg';
           updated = true;
         }
+        if (p.image && p.image.startsWith('http')) {
+          const cachedRel = `/src/assets/images/product_cached_${p.id}.jpg`;
+          const cachedAbs = path.resolve(process.cwd(), `src/assets/images/product_cached_${p.id}.jpg`);
+          if (fs.existsSync(cachedAbs)) {
+            p.image = cachedRel;
+            updated = true;
+          }
+        }
         // Enrich existing items that had blank descriptions or 0 ratings
         if (!p.description) {
           const defaultDescs: Record<number, { desc: string; rate: number; count: number }> = {
@@ -411,7 +420,7 @@ export class Store {
           price: 178,
           description: 'Flagship RDNA 3 gaming graphics card with 24GB GDDR6, vapor chamber cooling, and 2.5 GHz boost frequency.',
           category: 'gpus',
-          image: 'https://images.unsplash.com/photo-1587202372775-e229f172b9d7?auto=format&fit=crop&w=900&q=80',
+          image: '/src/assets/images/product_cached_42.jpg',
           ratingRate: 4.9,
           ratingCount: 88,
           quantity: 4,
@@ -422,7 +431,7 @@ export class Store {
           price: 165,
           description: '8-Core / 16-Thread Zen 4 processor with 3D V-Cache technology, 5.0 GHz boost clock, and 104MB combined cache.',
           category: 'cpus',
-          image: 'https://images.unsplash.com/photo-1555680202-c86f0e12f086?auto=format&fit=crop&w=900&q=80',
+          image: '/src/assets/images/product_cached_43.jpg',
           ratingRate: 4.9,
           ratingCount: 142,
           quantity: 6,
@@ -488,7 +497,7 @@ export class Store {
           price: 125,
           description: 'Dual-chamber modern ATX mid-tower chassis with wrap-around tempered glass, reversible layout, and integrated ARGB light strips.',
           category: 'cases',
-          image: 'https://images.unsplash.com/photo-1593640408182-31c70c8268f5?auto=format&fit=crop&w=900&q=80',
+          image: '/src/assets/images/product_cached_49.jpg',
           ratingRate: 4.9,
           ratingCount: 104,
           quantity: 3,
@@ -544,6 +553,10 @@ export class Store {
         updated = true;
       }
       for (const u of this.users) {
+        if (u.password && !isScryptHash(u.password)) {
+          u.password = hashPasswordScrypt(u.password);
+          updated = true;
+        }
         if (!Array.isArray(u.wishlist)) {
           u.wishlist = [];
           updated = true;
@@ -1011,12 +1024,23 @@ export class Store {
     return user.name.trim().substring(0, 1).toUpperCase();
   }
 
+  public verifyPassword(user: User, candidatePassword: string): boolean {
+    const check = verifyPasswordScrypt(candidatePassword, user.password);
+    if (!check.valid) return false;
+    if (check.needsRehash) {
+      user.password = hashPasswordScrypt(candidatePassword);
+      this.save();
+    }
+    return true;
+  }
+
   public add(name: string, email: string, password: string): User {
+    const storedPassword = isScryptHash(password) ? password : hashPasswordScrypt(password);
     const user: User = {
       id: this.nextId,
       name,
       email,
-      password,
+      password: storedPassword,
       avatarColor: COLORS[(this.nextId - 1) % COLORS.length],
       billEmail: null,
       role: 'member',

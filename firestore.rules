@@ -1,0 +1,253 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Global safety net: default-deny catch-all
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // ── Reusable Security Primitives ──
+    function isValidId(id) {
+      return id is string && id.size() >= 1 && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function existing() {
+      return resource.data;
+    }
+
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isVerifiedUser() {
+      return isSignedIn() && request.auth.token.email_verified == true;
+    }
+
+    function isOwner(userId) {
+      return isVerifiedUser() && request.auth.uid == userId;
+    }
+
+    function isAdmin() {
+      return isVerifiedUser() && (
+        exists(/databases/$(database)/documents/admins/$(request.auth.uid)) ||
+        request.auth.token.email == 'harishragavendran56@gmail.com'
+      );
+    }
+
+    // ── Entity Validation Helpers (Blueprint Synchronicity) ──
+    function isValidAdminMember(data) {
+      return data is map &&
+        data.keys().hasAll(['uid', 'email', 'role', 'createdAt']) &&
+        data.keys().hasOnly(['uid', 'email', 'role', 'createdAt']) &&
+        isValidId(data.uid) &&
+        data.email is string && data.email.size() >= 3 && data.email.size() <= 200 &&
+        data.role in ['admin', 'moderator'] &&
+        data.createdAt is timestamp;
+    }
+
+    function isValidUserPublicProfile(data) {
+      return data is map &&
+        data.keys().hasAll(['uid', 'displayName', 'avatarColor', 'createdAt', 'updatedAt']) &&
+        data.keys().hasOnly(['uid', 'displayName', 'avatarColor', 'createdAt', 'updatedAt']) &&
+        isValidId(data.uid) &&
+        data.uid == request.auth.uid &&
+        data.displayName is string && data.displayName.size() >= 1 && data.displayName.size() <= 80 &&
+        data.avatarColor is string && data.avatarColor.size() >= 4 && data.avatarColor.size() <= 16 &&
+        data.avatarColor.matches('^#[0-9a-fA-F]{3,8}$') &&
+        data.createdAt is timestamp &&
+        data.updatedAt is timestamp;
+    }
+
+    function isValidUserPrivateState(data) {
+      return data is map &&
+        data.keys().hasAll(['ownerId', 'email', 'cart', 'wishlist', 'createdAt', 'updatedAt']) &&
+        data.keys().hasOnly(['ownerId', 'email', 'billEmail', 'cart', 'wishlist', 'createdAt', 'updatedAt']) &&
+        isValidId(data.ownerId) &&
+        data.ownerId == request.auth.uid &&
+        data.email is string && data.email.size() >= 3 && data.email.size() <= 200 &&
+        (!('billEmail' in data) || (data.billEmail is string && data.billEmail.size() <= 200)) &&
+        data.cart is map && data.cart.keys().size() <= 50 &&
+        data.wishlist is list && data.wishlist.size() <= 50 &&
+        (data.wishlist.size() == 0 || data.wishlist[0] is int) &&
+        data.createdAt is timestamp &&
+        data.updatedAt is timestamp;
+    }
+
+    function isValidOrderRecord(data) {
+      return data is map &&
+        data.keys().hasAll(['orderId', 'ownerId', 'status', 'total', 'count', 'paymentMethod', 'createdAt', 'updatedAt']) &&
+        data.keys().hasOnly(['orderId', 'ownerId', 'status', 'total', 'count', 'paymentMethod', 'createdAt', 'updatedAt']) &&
+        isValidId(data.orderId) && data.orderId.size() >= 3 && data.orderId.size() <= 64 &&
+        isValidId(data.ownerId) &&
+        data.ownerId == request.auth.uid &&
+        data.status in ['Order Placed', 'Processing', 'Shipped', 'Delivered'] &&
+        data.total is number && data.total >= 0 && data.total <= 1000000 &&
+        data.count is int && data.count >= 1 && data.count <= 200 &&
+        data.paymentMethod is string && data.paymentMethod.size() >= 1 && data.paymentMethod.size() <= 80 &&
+        data.createdAt is timestamp &&
+        data.updatedAt is timestamp;
+    }
+
+    function isValidHardwareProduct(data) {
+      return data is map &&
+        data.keys().hasAll(['id', 'sku', 'title', 'category', 'price', 'quantity', 'createdAt', 'updatedAt']) &&
+        data.keys().hasOnly(['id', 'sku', 'title', 'category', 'price', 'quantity', 'createdAt', 'updatedAt']) &&
+        data.id is int && data.id >= 1 &&
+        data.sku is string && data.sku.size() >= 4 && data.sku.size() <= 32 && data.sku.matches('^[A-Z0-9\\-]+$') &&
+        data.title is string && data.title.size() >= 2 && data.title.size() <= 160 &&
+        data.category is string && data.category.size() >= 2 && data.category.size() <= 40 &&
+        data.price is number && data.price >= 0 && data.price <= 500000 &&
+        data.quantity is int && data.quantity >= 0 && data.quantity <= 100000 &&
+        data.createdAt is timestamp &&
+        data.updatedAt is timestamp;
+    }
+
+    function isValidBenchMessage(data) {
+      return data is map &&
+        data.keys().hasAll(['authorId', 'channel', 'senderName', 'text', 'createdAt']) &&
+        data.keys().hasOnly(['authorId', 'channel', 'senderName', 'text', 'createdAt']) &&
+        isValidId(data.authorId) &&
+        data.authorId == request.auth.uid &&
+        data.channel in ['general', 'rig-builds', 'price-drops', 'engineering-desk'] &&
+        data.senderName is string && data.senderName.size() >= 1 && data.senderName.size() <= 80 &&
+        data.text is string && data.text.size() >= 1 && data.text.size() <= 1000 &&
+        data.createdAt is timestamp;
+    }
+
+    function isValidProductReview(data) {
+      return data is map &&
+        data.keys().hasAll(['authorId', 'productId', 'rating', 'title', 'comment', 'createdAt']) &&
+        data.keys().hasOnly(['authorId', 'productId', 'rating', 'title', 'comment', 'createdAt']) &&
+        isValidId(data.authorId) &&
+        data.authorId == request.auth.uid &&
+        isValidId(data.productId) && data.productId.size() <= 64 &&
+        data.rating is int && data.rating >= 1 && data.rating <= 5 &&
+        data.title is string && data.title.size() >= 2 && data.title.size() <= 120 &&
+        data.comment is string && data.comment.size() >= 4 && data.comment.size() <= 1500 &&
+        data.createdAt is timestamp;
+    }
+
+    // ── Collection Rules ──
+    match /admins/{adminUid} {
+      allow get: if isValidId(adminUid) && (isOwner(adminUid) || isAdmin());
+      allow list: if false;
+      allow create: if isValidId(adminUid) && isAdmin() &&
+        isValidAdminMember(incoming()) &&
+        incoming().uid == adminUid &&
+        incoming().createdAt == request.time;
+      allow update: if isValidId(adminUid) && isAdmin() &&
+        isValidAdminMember(incoming()) &&
+        incoming().uid == existing().uid &&
+        incoming().createdAt == existing().createdAt &&
+        incoming().diff(existing()).affectedKeys().hasOnly(['role', 'email']);
+      allow delete: if isValidId(adminUid) && isAdmin();
+    }
+
+    match /users/{userId}/public/profile {
+      allow get: if isValidId(userId);
+      allow create: if isValidId(userId) && isOwner(userId) &&
+        isValidUserPublicProfile(incoming()) &&
+        incoming().createdAt == request.time &&
+        incoming().updatedAt == request.time;
+      allow update: if isValidId(userId) && isOwner(userId) &&
+        isValidUserPublicProfile(incoming()) &&
+        incoming().uid == existing().uid &&
+        incoming().createdAt == existing().createdAt &&
+        incoming().updatedAt == request.time &&
+        incoming().diff(existing()).affectedKeys().hasOnly(['displayName', 'avatarColor', 'updatedAt']);
+      allow delete: if isValidId(userId) && (isOwner(userId) || isAdmin());
+    }
+
+    match /users/{userId}/private/state {
+      allow get: if isValidId(userId) && isOwner(userId);
+      allow create: if isValidId(userId) && isOwner(userId) &&
+        isValidUserPrivateState(incoming()) &&
+        incoming().createdAt == request.time &&
+        incoming().updatedAt == request.time;
+      allow update: if isValidId(userId) && isOwner(userId) &&
+        isValidUserPrivateState(incoming()) &&
+        incoming().ownerId == existing().ownerId &&
+        incoming().email == existing().email &&
+        incoming().createdAt == existing().createdAt &&
+        incoming().updatedAt == request.time &&
+        (
+          incoming().diff(existing()).affectedKeys().hasOnly(['cart', 'updatedAt']) ||
+          incoming().diff(existing()).affectedKeys().hasOnly(['wishlist', 'updatedAt']) ||
+          incoming().diff(existing()).affectedKeys().hasOnly(['billEmail', 'updatedAt']) ||
+          incoming().diff(existing()).affectedKeys().hasOnly(['cart', 'wishlist', 'billEmail', 'updatedAt'])
+        );
+      allow delete: if isValidId(userId) && isOwner(userId);
+    }
+
+    match /users/{userId}/orders/{orderId} {
+      allow get: if isValidId(userId) && isValidId(orderId) && (isOwner(userId) || isAdmin());
+      allow list: if isValidId(userId) && isVerifiedUser() &&
+        (resource.data.ownerId == request.auth.uid || request.auth.token.email == 'harishragavendran56@gmail.com');
+      allow create: if isValidId(userId) && isValidId(orderId) && isOwner(userId) &&
+        isValidOrderRecord(incoming()) &&
+        incoming().orderId == orderId &&
+        incoming().status == 'Order Placed' &&
+        incoming().createdAt == request.time &&
+        incoming().updatedAt == request.time;
+      allow update: if isValidId(userId) && isValidId(orderId) &&
+        isValidOrderRecord(incoming()) &&
+        incoming().ownerId == existing().ownerId &&
+        incoming().orderId == existing().orderId &&
+        incoming().createdAt == existing().createdAt &&
+        incoming().updatedAt == request.time &&
+        (
+          isAdmin() ||
+          (
+            isOwner(userId) &&
+            existing().status != 'Delivered' &&
+            incoming().diff(existing()).affectedKeys().hasOnly(['status', 'updatedAt'])
+          )
+        );
+      allow delete: if isValidId(userId) && isValidId(orderId) && isAdmin();
+    }
+
+    match /products/{productId} {
+      allow get: if isValidId(productId);
+      allow list: if resource.data.id is int && resource.data.quantity is int;
+      allow create: if isValidId(productId) && isAdmin() &&
+        isValidHardwareProduct(incoming()) &&
+        incoming().createdAt == request.time &&
+        incoming().updatedAt == request.time;
+      allow update: if isValidId(productId) && isAdmin() &&
+        isValidHardwareProduct(incoming()) &&
+        incoming().id == existing().id &&
+        incoming().createdAt == existing().createdAt &&
+        incoming().updatedAt == request.time &&
+        incoming().diff(existing()).affectedKeys().hasOnly(['sku', 'title', 'category', 'price', 'quantity', 'updatedAt']);
+      allow delete: if isValidId(productId) && isAdmin();
+    }
+
+    match /messages/{messageId} {
+      allow get: if isValidId(messageId) && isVerifiedUser();
+      allow list: if isVerifiedUser() &&
+        resource.data.channel in ['general', 'rig-builds', 'price-drops', 'engineering-desk'];
+      allow create: if isValidId(messageId) && isVerifiedUser() &&
+        isValidBenchMessage(incoming()) &&
+        incoming().createdAt == request.time;
+      allow update: if false;
+      allow delete: if isValidId(messageId) && ((isVerifiedUser() && existing().authorId == request.auth.uid) || isAdmin());
+    }
+
+    match /reviews/{reviewId} {
+      allow get: if isValidId(reviewId);
+      allow list: if resource.data.rating is int && resource.data.rating >= 1;
+      allow create: if isValidId(reviewId) && isVerifiedUser() &&
+        isValidProductReview(incoming()) &&
+        exists(/databases/$(database)/documents/products/$(incoming().productId)) &&
+        incoming().createdAt == request.time;
+      allow update: if false;
+      allow delete: if isValidId(reviewId) && ((isVerifiedUser() && existing().authorId == request.auth.uid) || isAdmin());
+    }
+  }
+}
